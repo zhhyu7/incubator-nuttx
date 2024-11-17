@@ -72,9 +72,6 @@ static uint16_t udp_datahandler(FAR struct net_driver_s *dev,
     {
       conn_unlock(&conn->sconn);
       netdev_iob_release(dev);
-#ifdef CONFIG_NET_STATISTICS
-      g_netstats.udp.drop++;
-#endif
       return 0;
     }
 #endif
