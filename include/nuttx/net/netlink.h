@@ -61,7 +61,12 @@ struct netlink_response_s
   sq_entry_t flink;
   struct nlmsghdr msg;
 
-  /* Message-specific data may follow */
+  /* Message-specific data follows.  Declared as a flexible array member so
+   * that writes into the trailing space allocated by
+   * SIZEOF_NETLINK_RESPONSE_S() stay within a declared object.
+   */
+
+  uint8_t data[];
 };
 
 #define SIZEOF_NETLINK_RESPONSE_S(n) (sizeof(struct netlink_response_s) + (n))

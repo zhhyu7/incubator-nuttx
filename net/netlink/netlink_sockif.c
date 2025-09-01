@@ -50,6 +50,10 @@
  * Private Function Prototypes
  ****************************************************************************/
 
+#if defined(CONFIG_NETLINK_GENERIC) && defined(CONFIG_WIRELESS_NL80211)
+void nl80211_unregister_frame_conn(FAR struct netlink_conn_s *conn);
+#endif
+
 static int  netlink_setup(FAR struct socket *psock);
 static sockcaps_t netlink_sockcaps(FAR struct socket *psock);
 static void netlink_addref(FAR struct socket *psock);
@@ -806,6 +810,13 @@ static int netlink_close(FAR struct socket *psock)
 
   if (conn->crefs <= 1)
     {
+#if defined(CONFIG_NETLINK_GENERIC) && defined(CONFIG_WIRELESS_NL80211)
+      if (conn->protocol == NETLINK_GENERIC)
+        {
+          nl80211_unregister_frame_conn(conn);
+        }
+#endif
+
       /* Free the connection structure */
 
       conn->crefs = 0;

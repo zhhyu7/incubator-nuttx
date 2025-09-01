@@ -27,6 +27,7 @@ include $(TOPDIR)/Make.defs
 include bluetooth/Make.defs
 include ieee802154/Make.defs
 include pktradio/Make.defs
+include nl80211/Make.defs
 
 AOBJS = $(ASRCS:.S=$(OBJEXT))
 COBJS = $(CSRCS:.c=$(OBJEXT))

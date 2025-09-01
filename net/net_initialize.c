@@ -50,6 +50,10 @@
 #include "vsock/vsock.h"
 #include "rpmsg/rpmsg.h"
 
+#if defined(CONFIG_WIRELESS_NL80211) && defined(CONFIG_NETLINK_GENERIC)
+int nl80211_init(void);
+#endif
+
 /****************************************************************************
  * Public Functions
  ****************************************************************************/
@@ -117,6 +121,12 @@ void net_initialize(void)
 
 #ifdef CONFIG_NET_RPMSG
   rpmsg_socket_initialize();
+#endif
+
+#if defined(CONFIG_WIRELESS_NL80211) && defined(CONFIG_NETLINK_GENERIC)
+  /* Initialize the nl80211 generic netlink family */
+
+  nl80211_init();
 #endif
 }
 

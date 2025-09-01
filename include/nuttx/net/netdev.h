@@ -65,6 +65,10 @@
 #  include <nuttx/net/cangw.h>
 #endif
 
+#ifdef CONFIG_WIRELESS_NL80211
+#  include <net/cfg80211.h>
+#endif
+
 #ifdef CONFIG_NET_IGMP
 #  include <nuttx/net/igmp.h>
 #endif
@@ -333,6 +337,12 @@ struct net_driver_s
    */
 
   char d_ifname[IFNAMSIZ];
+#endif
+
+#ifdef CONFIG_WIRELESS_NL80211
+  FAR struct wiphy *d_wiphy;
+  FAR struct wireless_dev *d_wdev;
+  FAR struct cfg80211_ops *d_cfg80211ops;
 #endif
 
   rmutex_t d_lock;

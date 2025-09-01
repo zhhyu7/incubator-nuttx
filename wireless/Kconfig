@@ -14,5 +14,6 @@ if WIRELESS
 source "wireless/bluetooth/Kconfig"
 source "wireless/ieee802154/Kconfig"
 source "wireless/pktradio/Kconfig"
+source "wireless/nl80211/Kconfig"
 
 endif # WIRELESS

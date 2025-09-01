@@ -1,0 +1,10 @@
+#
+# For a description of the syntax of this configuration file,
+# see the file kconfig-language.txt in the NuttX tools repository.
+#
+
+config WIRELESS_NL80211
+	bool "nl80211 Wireless Support"
+	default n
+	---help---
+		Enable nl80211 wireless subsystem for NuttX
