@@ -1739,18 +1739,23 @@ int swcr_newsession(FAR uint32_t *sid, FAR struct cryptoini *cri)
 #endif
               }
 
-            if (keylen / 8 > axf->keysize || keylen > axf->blocksize)
-              {
-                swcr_freesession(i);
-                return -EINVAL;
-              }
-
             /* Work on a local copy of the key so the caller's key
              * buffer (which may be read-only) is never modified by the
-             * HMAC ipad/opad XOR operations.
+             * HMAC ipad/opad XOR operations. If the key is too long,
+             * hash it first using ictx.
              */
 
-            bcopy(key, hmackey, keylen);
+            if (keylen > axf->keysize)
+              {
+                axf->init((*swd)->sw_ictx);
+                axf->update((*swd)->sw_ictx, key, keylen);
+                axf->final(hmackey, (*swd)->sw_ictx);
+                keylen = axf->hashsize;
+              }
+            else
+              {
+                bcopy(key, hmackey, keylen);
+              }
 
             for (k = 0; k < keylen; k++)
               {
