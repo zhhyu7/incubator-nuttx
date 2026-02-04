@@ -35,7 +35,7 @@
 #include <arpa/inet.h>
 
 #include <net/route.h>
-#include <netpacket/netlink.h>
+#include <netpacket/rtnetlink.h>
 #include <netinet/if_ether.h>
 
 #include <nuttx/kmalloc.h>
@@ -2599,7 +2599,7 @@ void netlink_device_notify(FAR struct net_driver_s *dev)
                             NULL);
   if (resp != NULL)
     {
-      netlink_add_broadcast(RTNLGRP_LINK, resp);
+      netlink_add_broadcast(NETLINK_ROUTE, RTNLGRP_LINK, resp);
       netlink_add_terminator(NULL, NULL, RTNLGRP_LINK);
     }
 }
@@ -2648,7 +2648,7 @@ void netlink_device_notify_ipaddr(FAR struct net_driver_s *dev,
           return;
         }
 
-      netlink_add_broadcast(group, resp);
+      netlink_add_broadcast(NETLINK_ROUTE, group, resp);
       netlink_add_terminator(NULL, NULL, group);
     }
 }
@@ -2701,7 +2701,7 @@ void netlink_route_notify(FAR const void *route, int type, int domain)
 
   if (resp != NULL)
     {
-      netlink_add_broadcast(group, resp);
+      netlink_add_broadcast(NETLINK_ROUTE, group, resp);
       netlink_add_terminator(NULL, NULL, group);
     }
 }
@@ -2726,7 +2726,7 @@ void netlink_neigh_notify(FAR const void *neigh, int type, int domain)
       return;
     }
 
-  netlink_add_broadcast(RTNLGRP_NEIGH, resp);
+  netlink_add_broadcast(NETLINK_ROUTE, RTNLGRP_NEIGH, resp);
   netlink_add_terminator(NULL, NULL, RTNLGRP_NEIGH);
 }
 #endif
@@ -2751,7 +2751,7 @@ void netlink_ipv6_prefix_notify(FAR struct net_driver_s *dev, int type,
       return;
     }
 
-  netlink_add_broadcast(RTNLGRP_IPV6_PREFIX, resp);
+  netlink_add_broadcast(NETLINK_ROUTE, RTNLGRP_IPV6_PREFIX, resp);
   netlink_add_terminator(NULL, NULL, RTNLGRP_IPV6_PREFIX);
 }
 #endif

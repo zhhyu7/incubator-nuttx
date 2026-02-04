@@ -47,6 +47,7 @@
 #define PF_UNIX        1         /* Local communication */
 #define PF_LOCAL       1         /* Local communication */
 #define PF_INET        2         /* IPv4 Internet protocols */
+#define PF_BRIDGE      7
 #define PF_INET6      10         /* IPv6 Internet protocols */
 #define PF_NETLINK    16         /* Netlink IPC socket */
 #define PF_ROUTE      PF_NETLINK /* 4.4BSD Compatibility*/
@@ -66,6 +67,7 @@
 #define AF_UNIX        PF_UNIX
 #define AF_LOCAL       PF_LOCAL
 #define AF_INET        PF_INET
+#define AF_BRIDGE      PF_BRIDGE
 #define AF_INET6       PF_INET6
 #define AF_NETLINK     PF_NETLINK
 #define AF_ROUTE       PF_ROUTE
@@ -247,6 +249,7 @@
 #define SO_SNDBUFFORCE  74
 #define SO_RCVBUFFORCE  75
 #define SO_RXQ_OVFL     76
+#define SO_ATTACH_FILTER 77
 
 /* Timestamp generation
  *
@@ -281,6 +284,9 @@
 #define SOL_RFCOMM      18 /* See options in include/netpacket/bluetooth.h */
 
 #define SOL_PACKET      19
+#define SOL_NETLINK     20
+
+/* Protocol-level socket options may begin with this value */
 
 /* Values for the 'how' argument of shutdown() */
 

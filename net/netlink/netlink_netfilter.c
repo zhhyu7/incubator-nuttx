@@ -32,7 +32,7 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#include <netpacket/netlink.h>
+#include <netpacket/nfnetlink.h>
 
 #include <nuttx/kmalloc.h>
 #include <nuttx/net/net.h>
@@ -698,7 +698,7 @@ void netlink_conntrack_notify(uint8_t type, uint8_t domain,
 
   if (resp != NULL)
     {
-      netlink_add_broadcast(group, resp);
+      netlink_add_broadcast(NETLINK_NETFILTER, group, resp);
     }
 }
 

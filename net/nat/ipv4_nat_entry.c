@@ -34,6 +34,8 @@
 #include <nuttx/kmalloc.h>
 #include <nuttx/nuttx.h>
 
+#include <netpacket/nfnetlink.h>
+
 #include "nat/nat.h"
 #include "netlink/netlink.h"
 
