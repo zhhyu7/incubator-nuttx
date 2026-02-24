@@ -194,7 +194,7 @@ pid_t up_fork(void)
   struct fork_s context;
   uintptr_t *csa_addr;
 
-  __asm__ volatile ("svlcx" ::: "memory");
+  __asm__ __volatile__ ("svlcx" ::: "memory");
   csa_addr = tricore_csa2addr(tricore_mfcr(CPU_PCXI));
   memcpy((void *)context.lcsa, csa_addr, TC_CONTEXT_SIZE);
 
@@ -207,7 +207,7 @@ pid_t up_fork(void)
    * case trap because of csa_addr[0] inconsistent value
    */
 
-  __asm__ volatile ("rslcx" ::: "memory");
+  __asm__ __volatile__ ("rslcx" ::: "memory");
 
   sinfo("lcsa=0x%zX pucsa=%p recalc=%p\n",
         context.lcsa[TRICORE_CSA_NEXT], context.pucsa,

@@ -53,7 +53,7 @@
   ({                                               \
     __label__ l_jmp, l_end;                        \
     bool __jl_res;                                 \
-    asm goto (                                     \
+    __asm__ goto (                                 \
       ".balign 4\n\t"                              \
       "1:\n\t"                                     \
       "nop\n\t"                                    \
@@ -78,7 +78,7 @@
   ({                                               \
     __label__ l_jmp, l_end;                        \
     bool __jl_res;                                 \
-    asm goto (                                     \
+    __asm__ goto (                                 \
       ".balign 4\n\t"                              \
       "1:\n\t"                                     \
       "j %l[l_jmp]\n\t"                            \

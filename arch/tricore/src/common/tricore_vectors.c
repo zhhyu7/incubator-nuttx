@@ -259,7 +259,7 @@ static void tricore_fcutrap_recover(uint8_t tin, uint8_t tclass)
 used_code noinstrument_function
 static void tricore_fcutrap_entry(void)
 {
-  __asm__ volatile
+  __asm__ __volatile__
   (
 #if defined(__TASKING__)
     "movh.a  a4, #@his(g_fcu_csa_base)\n\t"

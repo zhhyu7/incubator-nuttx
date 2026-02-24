@@ -383,7 +383,7 @@ noinstrument_function static inline_function irqstate_t up_irq_save(void)
 #elif defined(CONFIG_TRICORE_TOOLCHAIN_TASKING)
   flags = __disable_and_save();
 #else
-  __asm__ volatile ("disable %0" : "=d"(flags) :: "memory");
+  __asm__ __volatile__ ("disable %0" : "=d"(flags) :: "memory");
 #endif
 
   return flags;
@@ -416,7 +416,7 @@ void up_irq_restore(irqstate_t flags)
 #elif defined(CONFIG_TRICORE_TOOLCHAIN_TASKING)
   __restore(flags);
 #else
-  __asm__ volatile ("restore %0" :: "d"(flags) : "memory");
+  __asm__ __volatile__ ("restore %0" :: "d"(flags) : "memory");
 #endif
 }
 

@@ -291,7 +291,7 @@ static inline_function void tricore_cpucallinitialize(void)
 
 void up_irq_enable(void)
 {
-  __asm__ volatile ("enable" ::: "memory");
+  __asm__ __volatile__ ("enable" ::: "memory");
 }
 
 /****************************************************************************

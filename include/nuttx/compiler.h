@@ -1408,6 +1408,9 @@
 #  define strftime_like(a)
 #  define object_size(o, t) ((size_t)-1)
 
+#  define __asm__      __asm
+#  define __volatile__ volatile
+
 #  define FAR
 #  define NEAR
 #  define DSEG

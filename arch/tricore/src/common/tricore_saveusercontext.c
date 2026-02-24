@@ -54,7 +54,7 @@ int up_saveusercontext(void *saveregs_)
 
   /* Save and copy the current lowe csa to the saveregs second half */
 
-  __asm("svlcx");
+  __asm__("svlcx");
 
   pcxi = tricore_mfcr(CPU_PCXI);
   regs = tricore_csa2addr(pcxi);
@@ -68,7 +68,7 @@ int up_saveusercontext(void *saveregs_)
   regs[REG_PSW] &= ~PSW_STATUS_BITS;
   memcpy(saveregs, regs, TC_CONTEXT_SIZE);
 
-  __asm("rslcx");
+  __asm__("rslcx");
 
   return 0;
 }

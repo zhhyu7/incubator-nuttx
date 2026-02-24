@@ -84,13 +84,13 @@
 #else
   #define tricore_mtcr(reg, val)                                           \
     ({                                                                     \
-      __asm__ volatile ("mtcr %0,%1\n\t"::"i"(reg),"d"(val):"memory");     \
+      __asm__ __volatile__ ("mtcr %0,%1\n\t"::"i"(reg),"d"(val):"memory"); \
     })
 
   #define tricore_mfcr(reg)                                                \
     ({                                                                     \
       uint32_t __val;                                                      \
-      __asm__ volatile ("mfcr %0,%1": "=d" (__val) :"i"(reg): "memory"); \
+      __asm__ __volatile__("mfcr %0,%1": "=d"(__val) :"i"(reg): "memory"); \
       __val;                                                               \
     })
 #endif
@@ -98,9 +98,9 @@
 /* Jump back to the return address. */
 
 #ifdef CONFIG_TRICORE_TOOLCHAIN_TASKING
-  #define tricore_jump_backto_link()  __asm__ volatile ("ji a11");
+  #define tricore_jump_backto_link()  __asm__ __volatile__ ("ji a11");
 #else
-  #define tricore_jump_backto_link()  __asm__ volatile ("ji %a11");
+  #define tricore_jump_backto_link()  __asm__ __volatile__ ("ji %a11");
 #endif
 
 /* Read the return address register. */
@@ -109,14 +109,14 @@
   #define tricore_get_a11()                                                \
     ({                                                                     \
       uintptr_t __ra;                                                      \
-      __asm__ volatile ("mov.aa %0, a11" : "=a"(__ra) : : "a11");          \
+      __asm__ __volatile__ ("mov.aa %0, a11" : "=a"(__ra) : : "a11");      \
       __ra;                                                                \
     })
 #else
   #define tricore_get_a11()                                                \
     ({                                                                     \
       uintptr_t __ra;                                                      \
-      __asm__ volatile ("mov.aa %0, %%a11" : "=a"(__ra) : : "a11");        \
+      __asm__ __volatile__ ("mov.aa %0, %%a11" : "=a"(__ra) : : "a11");    \
       __ra;                                                                \
     })
 #endif
@@ -127,25 +127,29 @@
   #define read_sysreg(reg)                                                 \
     ({                                                                     \
       uint32_t __val;                                                      \
-      __asm__ volatile("mov.d\t %0, "#reg"" : "=d" (__val) :: "memory");   \
+      __asm__ __volatile__("mov.d\t %0, "#reg""                            \
+                           : "=d"(__val) :: "memory");                     \
       __val;                                                               \
     })
 
   #define write_sysreg(__val, reg)                                         \
     ({                                                                     \
-      __asm__ volatile("mov.a\t "#reg", %0" :: "d" (__val) : "memory");    \
+      __asm__ __volatile__("mov.a\t "#reg", %0"                            \
+                           :: "d"(__val) : "memory");                      \
     })
 #else
   #define read_sysreg(reg)                                                 \
     ({                                                                     \
       uint32_t __val;                                                      \
-      __asm__ volatile("mov.d\t %0, %%"#reg"" : "=d" (__val) :: "memory"); \
+      __asm__ __volatile__("mov.d\t %0, %%"#reg""                          \
+                           : "=d"(__val) :: "memory");                     \
       __val;                                                               \
     })
 
   #define write_sysreg(__val, reg)                                         \
     ({                                                                     \
-      __asm__ volatile("mov.a\t %%"#reg", %0" :: "d" (__val) : "memory");  \
+      __asm__ __volatile__("mov.a\t %%"#reg", %0"                          \
+                           :: "d"(__val) : "memory");                      \
     })
 #endif
 

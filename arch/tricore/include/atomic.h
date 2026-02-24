@@ -171,8 +171,8 @@ static uint32_t tricore_atomic_swap(volatile void *addr, uint32_t value)
 {
   uint32_t res;
 
-  __asm__ volatile ("swap.w [%1]0, %2"
-                    : "=d"(res) : "a"(addr), "0"(value));
+  __asm__ __volatile__ ("swap.w [%1]0, %2"
+                        : "=d"(res) : "a"(addr), "0"(value));
   return res;
 }
 
