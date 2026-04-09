@@ -102,6 +102,10 @@
 #  include <sys/boardctl.h>
 #endif
 
+#ifdef CONFIG_USBHOST_CONFIGURATION_SELECTION
+#  include <nuttx/usb/usb.h>
+#endif
+
 /****************************************************************************
  * Public Function Prototypes
  *
@@ -925,6 +929,32 @@ struct mm_heap_s; /* Forward reference */
 bool board_heap_forbid_hook(FAR struct mm_heap_s *heap, FAR void *mem,
                             size_t size);
 #endif
+
+#ifdef CONFIG_USBHOST_CONFIGURATION_SELECTION
+
+/****************************************************************************
+ * Name: board_usbhost_select_configuration
+ *
+ * Description:
+ *   Board specific function to select the correct USB configuration
+ *   for a given device. The function may use the device descriptor
+ *   or make additional requests using the hport to decide which
+ *   configuration to use.
+ *
+ * Input Parameters:
+ *   hport - The port for the USB device
+ *   devdesc - The device descriptor of the USB device
+ *   id - device identification
+ *
+ * Returned Value:
+ *   USB configuration index to use.
+ *
+ ****************************************************************************/
+
+int board_usbhost_select_configuration(FAR struct usbhost_hubport_s *hport,
+                                 FAR const struct usb_devdesc_s *devdesc,
+                                 FAR const struct usbhost_id_s *id);
+#endif /* CONFIG_USBHOST_CONFIGURATION_SELECTION */
 
 #undef EXTERN
 #ifdef __cplusplus
