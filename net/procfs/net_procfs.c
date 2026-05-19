@@ -473,7 +473,7 @@ static int netprocfs_readdir(FAR struct fs_dirent_s *dir,
 
       /* Process other enabled net components, except netdev */
 
-      if (index < nitems(g_net_entries) - 1)
+      if (index + 1U < nitems(g_net_entries))
         {
           entry->d_type = g_net_entries[index].type;
           strlcpy(entry->d_name,
