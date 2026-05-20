@@ -133,6 +133,9 @@ int cpufreq_init(FAR struct cpufreq_driver *driver)
       return -ENOMEM;
     }
 
+  g_cpufreq_data.policy.min_freq = g_cpufreq_data.dev->min;
+  g_cpufreq_data.policy.max_freq = g_cpufreq_data.dev->max;
+
   return 0;
 }
 
