@@ -187,6 +187,8 @@ int nxsched_set_scheduler(pid_t pid, int policy,
 #else
                 policy = SCHED_FIFO;
 #endif
+                /* FALLTHROUGH */
+
               case SCHED_FIFO:
 #if CONFIG_RR_INTERVAL > 0
               case SCHED_RR:
