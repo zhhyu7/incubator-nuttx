@@ -38,6 +38,7 @@
 
 #include "virtio-blk.h"
 #include "virtio-crypto.h"
+#include "virtio-gpio.h"
 #include "virtio-gpu.h"
 #include "virtio-i2c.h"
 #include "virtio-input.h"
@@ -309,6 +310,14 @@ void virtio_register_drivers(void)
   if (ret < 0)
     {
       vrterr("virtio_register_blk_driver failed, ret=%d\n", ret);
+    }
+#endif
+
+#ifdef CONFIG_DRIVERS_VIRTIO_GPIO
+  ret = virtio_register_gpio_driver();
+  if (ret < 0)
+    {
+      vrterr("virtio_register_gpio_driver failed, ret=%d\n", ret);
     }
 #endif
 
