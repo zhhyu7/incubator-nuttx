@@ -46,6 +46,7 @@
 #include "vhost-rpmsg.h"
 #include "vhost-rpmb.h"
 #include "vhost-serial.h"
+#include "vhost-gpio.h"
 #include "vhost-net.h"
 #include "vhost-spi.h"
 
@@ -658,6 +659,14 @@ void vhost_register_drivers(void)
     {
       vhosterr("register_driver /dev/vhost failed, ret=%d\n", ret);
     }
+
+#ifdef CONFIG_DRIVERS_VHOST_GPIO
+  ret = vhost_register_gpio_driver();
+  if (ret < 0)
+    {
+      vhosterr("vhost_register_gpio_driver failed, ret=%d\n", ret);
+    }
+#endif
 
 #ifdef CONFIG_DRIVERS_VHOST_BLK
   ret = vhost_register_blk_driver();

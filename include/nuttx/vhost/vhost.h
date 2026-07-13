@@ -162,6 +162,21 @@ void vhost_register_drivers(void);
 int vhost_foreach_device(uint32_t id, vhost_foreach_t handler,
                          FAR void *arg);
 
+/****************************************************************************
+ * Name: vhost_gpio_get_ioe
+ *
+ * Description:
+ *   Return the local ioexpander for the bus index carried in a vhost GPIO
+ *   device's config space (struct vhost_gpio_config_s bus), or NULL.
+ *   Implemented by board logic.
+ *
+ ****************************************************************************/
+
+#ifdef CONFIG_DRIVERS_VHOST_GPIO
+struct ioexpander_dev_s;
+FAR struct ioexpander_dev_s *vhost_gpio_get_ioe(int index);
+#endif
+
 #undef EXTERN
 #ifdef __cplusplus
 }

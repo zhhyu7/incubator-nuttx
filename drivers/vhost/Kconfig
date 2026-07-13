@@ -5,8 +5,8 @@
 
 config DRIVERS_VHOST
 	bool
+	depends on SCHED_WORKQUEUE
 	select OPENAMP
-	select SCHED_WORKQUEUE
 	default n
 
 config DRIVERS_VHOST_BLK
@@ -145,3 +145,17 @@ config DRIVERS_VHOST_RPMB_STACKSIZE
 	default DEFAULT_TASK_STACKSIZE
 
 endif
+
+config DRIVERS_VHOST_GPIO
+	bool "Virtual Host GPIO Device Support"
+	depends on IOEXPANDER
+	default n
+	select DRIVERS_VHOST
+	---help---
+		Enable the vhost GPIO backend.  It bridges a VirtIO GPIO device
+		(device ID 41) to a local ioexpander, forwarding pin requests and
+		interrupt events over the guest request/event virtqueues.
+
+		With IOEXPANDER_INT_ENABLE the device also offers VIRTIO_GPIO_F_IRQ
+		and forwards local pin interrupts over the eventq; without it the
+		feature is not offered and the device is polled only.

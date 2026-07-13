@@ -61,6 +61,10 @@ if(CONFIG_DRIVERS_VHOST_SERIAL)
   list(APPEND SRCS vhost-serial.c)
 endif()
 
+if(CONFIG_DRIVERS_VHOST_GPIO)
+  list(APPEND SRCS vhost-gpio.c)
+endif()
+
 if(CONFIG_DRIVERS_VHOST_NET)
   list(APPEND SRCS vhost-net.c)
 endif()
