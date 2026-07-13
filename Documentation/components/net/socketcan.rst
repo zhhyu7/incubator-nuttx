@@ -110,3 +110,6 @@ Shares a CAN controller over VirtIO, using the OASIS VirtIO CAN device
 ``CONFIG_DRIVERS_VHOST_CAN`` enables the device side, which bridges the
 virtqueues to the local SocketCAN interface named by ``ifname`` in the
 device config, ``struct vhost_can_config_s``.
+
+``CONFIG_DRIVERS_VIRTIO_CAN`` enables the driver side, which registers a
+SocketCAN interface for the VirtIO CAN device it probes.

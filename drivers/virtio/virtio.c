@@ -37,6 +37,7 @@
 #include <nuttx/virtio/virtio-ping.h>
 
 #include "virtio-blk.h"
+#include "virtio-can.h"
 #include "virtio-crypto.h"
 #include "virtio-gpio.h"
 #include "virtio-gpu.h"
@@ -310,6 +311,14 @@ void virtio_register_drivers(void)
   if (ret < 0)
     {
       vrterr("virtio_register_blk_driver failed, ret=%d\n", ret);
+    }
+#endif
+
+#ifdef CONFIG_DRIVERS_VIRTIO_CAN
+  ret = virtio_register_can_driver();
+  if (ret < 0)
+    {
+      vrterr("virtio_register_can_driver failed, ret=%d\n", ret);
     }
 #endif
 

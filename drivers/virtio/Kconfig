@@ -42,6 +42,36 @@ config DRIVERS_VIRTIO_BLK
 	default n
 	select DRIVERS_VIRTIO
 
+config DRIVERS_VIRTIO_CAN
+	bool "Virtio CAN support"
+	depends on NET_CAN
+	depends on (!BMP && IOB_EXTRA_HEADS > 0) || \
+		(BMP && (IOB_EXTRA_HEADS_CPU0 > 0 || \
+			 IOB_EXTRA_HEADS_CPU1 > 0 || \
+			 IOB_EXTRA_HEADS_CPU2 > 0 || \
+			 IOB_EXTRA_HEADS_CPU3 > 0 || \
+			 IOB_EXTRA_HEADS_CPU4 > 0 || \
+			 IOB_EXTRA_HEADS_CPU5 > 0))
+	default n
+	select DRIVERS_VIRTIO
+	select NET_CAN_HAVE_CANFD
+	---help---
+		Enable the native VirtIO CAN frontend driver.  It probes a VirtIO
+		CAN device (device ID 36), registers a SocketCAN network interface,
+		and moves frames through the tx/rx/control virtqueues using the
+		OASIS VirtIO CAN wire format.
+
+if DRIVERS_VIRTIO_CAN
+
+config DRIVERS_VIRTIO_CAN_RXTHREAD_PRIORITY
+	int "Virtio CAN RX thread priority"
+	default 100
+	range 1 255
+	---help---
+		The priority of the VirtIO CAN RX thread.
+
+endif # DRIVERS_VIRTIO_CAN
+
 config DRIVERS_VIRTIO_CRYPTO
 	bool "Virtio Crypto support"
 	depends on CRYPTO
