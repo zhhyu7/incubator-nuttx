@@ -108,6 +108,20 @@ static void notebuf_flush_all(FAR struct note_driver_s *drv)
     }
 }
 
+#if CONFIG_DRIVERS_NOTEBUF_FLUSH_WATERMARK > 0 || \
+    CONFIG_DRIVERS_NOTEBUF_FLUSH_TIMEOUT > 0
+static void notebuf_schedule(FAR struct notebuf_driver_s *buf,
+                             clock_t delay)
+{
+  if (!buf->scheduling)
+    {
+      buf->scheduling = true;
+      work_queue(NOTEBUF_HPWORK, &buf->work, notebuf_flush, buf, delay);
+      buf->scheduling = false;
+    }
+}
+#endif
+
 static ssize_t notebuf_add(FAR struct note_driver_s *drv,
                            FAR const void *note, size_t len,
                            bool noswitches)
@@ -156,17 +170,14 @@ static ssize_t notebuf_add(FAR struct note_driver_s *drv,
   if (ring_space(&buf->ring) * 100 <=
       ring_capacity(&buf->ring) * CONFIG_DRIVERS_NOTEBUF_FLUSH_WATERMARK)
     {
-      work_queue(NOTEBUF_HPWORK, &buf->work,
-                 notebuf_flush, buf, 0);
+      notebuf_schedule(buf, 0);
     }
 #endif
 
 #if CONFIG_DRIVERS_NOTEBUF_FLUSH_TIMEOUT > 0
   if (work_available(&buf->work))
     {
-      work_queue(NOTEBUF_HPWORK, &buf->work,
-                 notebuf_flush, buf,
-                 MSEC2TICK(CONFIG_DRIVERS_NOTEBUF_FLUSH_TIMEOUT));
+      notebuf_schedule(buf, MSEC2TICK(CONFIG_DRIVERS_NOTEBUF_FLUSH_TIMEOUT));
     }
 #endif
 

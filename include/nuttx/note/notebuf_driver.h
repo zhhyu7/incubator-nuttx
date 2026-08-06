@@ -49,6 +49,7 @@ struct notebuf_driver_s
 #if CONFIG_DRIVERS_NOTEBUF_FLUSH_WATERMARK > 0 || \
     CONFIG_DRIVERS_NOTEBUF_FLUSH_TIMEOUT > 0
   struct work_s work;
+  bool scheduling;
 #endif
 };
 
