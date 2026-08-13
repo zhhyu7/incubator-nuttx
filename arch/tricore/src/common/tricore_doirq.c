@@ -127,13 +127,11 @@ static DEFINE_PER_CPU_BSS_BMP(struct csa_info, g_switchcsa);
 
 TRICORE_INTERRUPT_DEFINE(tricore_irq_direct)
 {
-  Ifx_CPU_ICR icr;
   int irq;
 
   up_irq_enable();
 
-  icr.U = tricore_mfcr(CPU_ICR);
-  irq = tricore_srpn_to_irq(icr.B.CCPN);
+  irq = tricore_srpn_to_irq(tricore_mfcr(CPU_ICR) & ICR_CCPN_MASK);
   tricore_ack_irq(irq);
   irq_dispatch(irq, NULL);
 
@@ -170,7 +168,6 @@ TRICORE_INTERRUPT_DEFINE(tricore_irq_sched)
   struct tcb_s *tcb;
   uintptr_t *regs;
 #ifndef CONFIG_ARCH_IRQPRIO
-  Ifx_CPU_ICR icr;
   int irq;
 #endif
 
@@ -187,8 +184,7 @@ TRICORE_INTERRUPT_DEFINE(tricore_irq_sched)
   board_autoled_on(LED_INIRQ);
 
 #ifndef CONFIG_ARCH_IRQPRIO
-  icr.U = tricore_mfcr(CPU_ICR);
-  irq = tricore_srpn_to_irq(icr.B.CCPN);
+  irq = tricore_srpn_to_irq(tricore_mfcr(CPU_ICR) & ICR_CCPN_MASK);
   tricore_ack_irq(irq);
   irq_dispatch(irq, regs);
 #endif

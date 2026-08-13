@@ -29,6 +29,7 @@
 
 #include "tricore_internal.h"
 
+#include "IfxSrc.h"
 #include "IfxStm.h"
 
 /****************************************************************************
@@ -108,7 +109,7 @@ static void tricore_systimer_updata(struct oneshot_lowerhalf_s *lower,
   if (IfxStm_get(priv->tbase) > expected)
     {
       IfxStm_clearCompareFlag(priv->tbase, IfxStm_Comparator_0);
-      IfxSrc_setRequest(TRICORE_IRQ2SRC(priv->irq));
+      IfxSrc_setRequest((volatile Ifx_SRC_SRCR *)TRICORE_IRQ2SRC(priv->irq));
     }
 
   up_irq_restore(flags);

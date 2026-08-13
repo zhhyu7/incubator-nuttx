@@ -26,6 +26,8 @@
 
 #include <nuttx/arch.h>
 
+#include "tricore_internal.h"
+
 /****************************************************************************
  * Public Functions
  ****************************************************************************/
@@ -46,7 +48,7 @@
 
 void up_send_cpu_call(cpu_set_t cpuset)
 {
-  volatile Ifx_SRC_SRCR *src;
+  uintptr_t src;
   int i;
 
   for (i = 0; i < CONFIG_NCPUS; i++)
@@ -54,7 +56,7 @@ void up_send_cpu_call(cpu_set_t cpuset)
       if (CPU_ISSET(i, &cpuset))
         {
           src = TRICORE_CPUCALL_SRC(i);
-          src->B.SETR = 1;
+          putreg32(getreg32(src) | SRCR_SETR, src);
         }
     }
 }

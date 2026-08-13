@@ -33,6 +33,32 @@
 
 #define NR_IRQS 2048
 
+/* Service Request Control (SRC) register bit definitions.
+ *
+ * TC3xx layout:
+ *   [7:0]   SRPN  - Service Request Priority Number
+ *   [10]    SRE   - Service Request Enable
+ *   [13:11] TOS   - Type of Service (3-bit, CPU0-5/DMA)
+ *   No VM / CS fields.
+ *
+ * Common bits (identical on both TC3xx/TC4xx):
+ *   [24] SRR, [25] CLRR, [26] SETR, [27] IOV, [28] IOVCLR
+ */
+
+#define SRCR_SRPN_SHIFT        0
+#define SRCR_SRPN_MASK         (0xffu << SRCR_SRPN_SHIFT)
+#define SRCR_VM_SHIFT          0
+#define SRCR_VM_MASK           0
+#define SRCR_CS                0
+#define SRCR_TOS_SHIFT         11
+#define SRCR_TOS_MASK          (0x7u << SRCR_TOS_SHIFT)
+#define SRCR_SRE               (1u << 10)
+#define SRCR_SRR               (1u << 24)
+#define SRCR_CLRR              (1u << 25)
+#define SRCR_SETR              (1u << 26)
+#define SRCR_IOV               (1u << 27)
+#define SRCR_IOVCLR            (1u << 28)
+
 /* Service Request Control (SRC) */
 
 #define TRICORE_SRC_BASEADDR   0xf0038000

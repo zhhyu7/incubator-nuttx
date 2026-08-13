@@ -123,7 +123,7 @@
 
 #ifdef CONFIG_LIB_SYSCALL
 #  define up_addrenv_is_kernel() \
-     ((__mfcr(CPU_PSW) & PSW_MODE_MASK) == PSW_IO_SUPERVISOR)
+     ((tricore_mfcr(CPU_PSW) & PSW_MODE_MASK) == PSW_IO_SUPERVISOR)
 #endif
 
 #ifdef CONFIG_ARCH_HAVE_PPRS
@@ -173,7 +173,7 @@
 #define TRICORE_SRC2IRQ(src) \
   (((uintptr_t)(src) - TRICORE_SRC_BASEADDR) / TRICORE_SRC_SPACING)
 #define TRICORE_IRQ2SRC(irq) \
-  ((volatile uint32_t *)(TRICORE_SRC_BASEADDR + (irq) * TRICORE_SRC_SPACING))
+  (TRICORE_SRC_BASEADDR + (irq) * TRICORE_SRC_SPACING)
 #define TRICORE_GPSR2IRQ(src_cpu, dest_cpu) \
   TRICORE_SRC2IRQ(TRICORE_SRC_GPSR0_SR0 + \
                   (src_cpu) * TRICORE_SRCNUM_PER_GPSR * TRICORE_SRC_SPACING + \
@@ -188,9 +188,8 @@
  */
 
 #define TRICORE_CPUCALL_SRC(cpu) \
-  ((volatile uint32_t *)(TRICORE_SRC_GPSR0_SR0 + (cpu) * \
-                         TRICORE_SRCNUM_PER_GPSR * TRICORE_SRC_SPACING + \
-                         7 * TRICORE_SRC_SPACING))
+  (TRICORE_SRC_GPSR0_SR0 + (cpu) * TRICORE_SRCNUM_PER_GPSR * \
+   TRICORE_SRC_SPACING + 7 * TRICORE_SRC_SPACING)
 #define TRICORE_CPUCALL_IRQNUM(cpu) \
   TRICORE_SRC2IRQ(TRICORE_CPUCALL_SRC(cpu))
 
@@ -202,6 +201,18 @@
 
 #define TRICORE_IRQ_MIN_PRIORITY 1
 #define TRICORE_IRQ_MAX_PRIORITY CONFIG_ARCH_IRQ_MAX_PRIORITY
+
+/* ICR (Interrupt Control Register) bit definitions.
+ *   [7:0]   CCPN  - Current CPU Priority Number
+ *   [15]    IE    - Interrupt Enable (global)
+ *   [23:16] PIPN  - Previous Interrupt Priority Number
+ */
+
+#define ICR_CCPN_SHIFT  0
+#define ICR_CCPN_MASK   (0xffu << ICR_CCPN_SHIFT)
+#define ICR_IE          (1u << 15)
+#define ICR_PIPN_SHIFT  16
+#define ICR_PIPN_MASK   (0xffu << ICR_PIPN_SHIFT)
 
 /* For use with EABI and floating point, the stack must be aligned to 8-byte
  * addresses.
@@ -300,7 +311,9 @@ struct xcptcontext
 noinstrument_function
 static inline_function int up_cpu_index(void)
 {
-  return IfxCpu_getCoreIndex();
+  /* Register CPU_CORE_ID[2:0] holds cpu number. */
+
+  return tricore_mfcr(CPU_CORE_ID) & 0x7;
 }
 #endif /* CONFIG_ARCH_HAVE_MULTICPU */
 
@@ -359,24 +372,25 @@ noinstrument_function static inline_function uintptr_t up_getsp(void)
 
 noinstrument_function static inline_function irqstate_t up_irq_save(void)
 {
+  irqstate_t state;
+
 #ifdef CONFIG_ARCH_HIPRI_INTERRUPT
-  Ifx_CPU_ICR icr;
-  irqstate_t ccpn;
+  uint32_t icr = tricore_mfcr(CPU_ICR);
 
-  icr.U = tricore_mfcr(CPU_ICR);
-  ccpn   = icr.B.CCPN;
+  state = icr & ICR_CCPN_MASK;
 
-  if (TRICORE_IRQ_DISABLE_PRIORITY > ccpn)
+  if (TRICORE_IRQ_DISABLE_PRIORITY > state)
     {
-      icr.B.CCPN = TRICORE_IRQ_DISABLE_PRIORITY;
-      tricore_mtcr(CPU_ICR, icr.U);
+      icr = (icr & ~ICR_CCPN_MASK) |
+            (TRICORE_IRQ_DISABLE_PRIORITY << ICR_CCPN_SHIFT);
+      tricore_mtcr(CPU_ICR, icr);
       UP_ISB();
     }
-
-  return ccpn;
 #else
-  return __disable_and_save();
+  __asm__ volatile ("disable %0" : "=d"(state) :: "memory");
 #endif
+
+  return state;
 }
 
 /****************************************************************************
@@ -394,17 +408,17 @@ noinstrument_function static inline_function
 void up_irq_restore(irqstate_t flags)
 {
 #ifdef CONFIG_ARCH_HIPRI_INTERRUPT
-  Ifx_CPU_ICR icr;
+  uint32_t icr = tricore_mfcr(CPU_ICR);
 
-  icr.U = tricore_mfcr(CPU_ICR);
-  if (flags < icr.B.CCPN)
+  if (flags < (icr & ICR_CCPN_MASK))
     {
-      icr.B.CCPN = flags;
-      tricore_mtcr(CPU_ICR, icr.U);
+      icr = (icr & ~ICR_CCPN_MASK) |
+            ((flags & ICR_CCPN_MASK) << ICR_CCPN_SHIFT);
+      tricore_mtcr(CPU_ICR, icr);
       UP_ISB();
     }
 #else
-  __restore(flags);
+  __asm__ volatile ("restore %0" :: "d"(flags) : "memory");
 #endif
 }
 

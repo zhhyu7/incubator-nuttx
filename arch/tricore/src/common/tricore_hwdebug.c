@@ -61,12 +61,7 @@
 #define CPU_TR7_EVT                   0xF038
 #define CPU_TR7_ADR                   0xF03C
 
-/* Trigger event register (TREVT) bit field offsets/masks and the CBS_OEC
- * register address.  These were previously pulled in from the iLLD SFR
- * headers (IfxCpu_bf.h, IfxCbs_reg.h); define them locally with a TC_
- * prefix so this file no longer depends on those headers.  The CSFR
- * numbers (CPU_*) are still provided transitively through arch/irq.h.
- */
+/* Trigger event register (TREVT) bit field offsets/masks */
 
 #define TC_TREVT_BBM_OFF              3       /* Break Before Make */
 #define TC_TREVT_TYP_OFF              12      /* 0: watchpoint 1: breakpoint */
