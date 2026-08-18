@@ -24,6 +24,22 @@
 
 if(CONFIG_NET_IPTABLES)
 
+  list(APPEND SRCS xt_repl_pool.c)
+
+  if(CONFIG_BMP)
+    foreach(cpu RANGE 0 5)
+      set(varname "CONFIG_NET_IPTABLES_REPL_SECTION_CPU${cpu}")
+      if(DEFINED ${varname} AND NOT "${${varname}}" STREQUAL "")
+        target_compile_options(
+          net PRIVATE -DXT_REPL_SECTION_CPU${cpu}="${${varname}}")
+      endif()
+    endforeach()
+  elseif(DEFINED CONFIG_NET_IPTABLES_REPL_SECTION
+         AND NOT "${CONFIG_NET_IPTABLES_REPL_SECTION}" STREQUAL "")
+    target_compile_options(
+      net PRIVATE -DXT_REPL_SECTION="${CONFIG_NET_IPTABLES_REPL_SECTION}")
+  endif()
+
   if(CONFIG_NET_IPv4)
     list(APPEND SRCS ipt_sockopt.c)
   endif()

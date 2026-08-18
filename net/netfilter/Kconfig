@@ -11,3 +11,126 @@ config NET_IPTABLES
 	depends on NET_NAT || NET_IPFILTER
 	---help---
 		Enable or disable iptables compatible interface (for NAT).
+
+if NET_IPTABLES
+
+if BMP
+
+config NET_IPTABLES_REPL_SIZE_CPU0
+	int "Iptables replace buffer size for CPU0"
+	default 0
+	range 0 65535
+	---help---
+		Size in bytes of each statically pre-allocated iptables
+		replacement buffer for CPU0. Set to 0 to use heap allocation
+		only on this CPU. Requests that cannot be served by the static
+		pool fall back to the heap.
+
+config NET_IPTABLES_REPL_SECTION_CPU0
+	string "Section name of iptables replace buffers for CPU0"
+
+if NCPUS > 1
+
+config NET_IPTABLES_REPL_SIZE_CPU1
+	int "Iptables replace buffer size for CPU1"
+	default 0
+	range 0 65535
+	---help---
+		Size in bytes of each statically pre-allocated iptables
+		replacement buffer for CPU1. Set to 0 to use heap allocation
+		only on this CPU. Requests that cannot be served by the static
+		pool fall back to the heap.
+
+config NET_IPTABLES_REPL_SECTION_CPU1
+	string "Section name of iptables replace buffers for CPU1"
+
+endif # NCPUS > 1
+
+if NCPUS > 2
+
+config NET_IPTABLES_REPL_SIZE_CPU2
+	int "Iptables replace buffer size for CPU2"
+	default 0
+	range 0 65535
+	---help---
+		Size in bytes of each statically pre-allocated iptables
+		replacement buffer for CPU2. Set to 0 to use heap allocation
+		only on this CPU. Requests that cannot be served by the static
+		pool fall back to the heap.
+
+config NET_IPTABLES_REPL_SECTION_CPU2
+	string "Section name of iptables replace buffers for CPU2"
+
+endif # NCPUS > 2
+
+if NCPUS > 3
+
+config NET_IPTABLES_REPL_SIZE_CPU3
+	int "Iptables replace buffer size for CPU3"
+	default 0
+	range 0 65535
+	---help---
+		Size in bytes of each statically pre-allocated iptables
+		replacement buffer for CPU3. Set to 0 to use heap allocation
+		only on this CPU. Requests that cannot be served by the static
+		pool fall back to the heap.
+
+config NET_IPTABLES_REPL_SECTION_CPU3
+	string "Section name of iptables replace buffers for CPU3"
+
+endif # NCPUS > 3
+
+if NCPUS > 4
+
+config NET_IPTABLES_REPL_SIZE_CPU4
+	int "Iptables replace buffer size for CPU4"
+	default 0
+	range 0 65535
+	---help---
+		Size in bytes of each statically pre-allocated iptables
+		replacement buffer for CPU4. Set to 0 to use heap allocation
+		only on this CPU. Requests that cannot be served by the static
+		pool fall back to the heap.
+
+config NET_IPTABLES_REPL_SECTION_CPU4
+	string "Section name of iptables replace buffers for CPU4"
+
+endif # NCPUS > 4
+
+if NCPUS > 5
+
+config NET_IPTABLES_REPL_SIZE_CPU5
+	int "Iptables replace buffer size for CPU5"
+	default 0
+	range 0 65535
+	---help---
+		Size in bytes of each statically pre-allocated iptables
+		replacement buffer for CPU5. Set to 0 to use heap allocation
+		only on this CPU. Requests that cannot be served by the static
+		pool fall back to the heap.
+
+config NET_IPTABLES_REPL_SECTION_CPU5
+	string "Section name of iptables replace buffers for CPU5"
+
+endif # NCPUS > 5
+
+endif # BMP
+
+if !BMP
+
+config NET_IPTABLES_REPL_SIZE
+	int "Iptables replace buffer size"
+	default 0
+	range 0 65535
+	---help---
+		Size in bytes of each statically pre-allocated iptables
+		replacement buffer. Set to 0 to use heap allocation only.
+		Requests that cannot be served by the static pool fall back
+		to the heap.
+
+config NET_IPTABLES_REPL_SECTION
+	string "Section name of iptables replace buffers"
+
+endif # !BMP
+
+endif # NET_IPTABLES

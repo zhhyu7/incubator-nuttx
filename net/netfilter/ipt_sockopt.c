@@ -33,15 +33,8 @@
 #include <debug.h>
 #include <sys/param.h>
 
-#include <nuttx/kmalloc.h>
-
 #include "netfilter/iptables.h"
-
-/****************************************************************************
- * Pre-processor Definitions
- ****************************************************************************/
-
-#define SWAP_PTR(a,b) do { FAR void *t = (a); (a) = (b); (b) = t; } while (0)
+#include "xt_repl_pool.h"
 
 /****************************************************************************
  * Private Types
@@ -290,9 +283,11 @@ static int check_replace(FAR const struct ipt_replace *repl)
 
 static int replace_entries(FAR const struct ipt_replace *repl, socklen_t len)
 {
-  int ret;
-  FAR struct ipt_replace *new_repl;
   FAR struct ipt_table_s *table = ipt_table(repl->name);
+  FAR struct ipt_replace *new_repl = NULL;
+  FAR struct ipt_replace *old_repl;
+  size_t capacity;
+  int ret;
 
   if (table == NULL || table->repl == NULL)
     {
@@ -317,29 +312,47 @@ static int replace_entries(FAR const struct ipt_replace *repl, socklen_t len)
       return ret;
     }
 
-  new_repl = kmm_malloc(sizeof(*new_repl) + repl->size);
-  if (new_repl == NULL)
+  capacity = xt_repl_pool_capacity(table->repl);
+  if (len > capacity)
     {
-      nerr("ERROR: Failed to allocate ipt replace for table '%s'\n",
-           repl->name);
-      return -ENOMEM;
+      new_repl = xt_repl_pool_alloc(len);
+      if (new_repl == NULL)
+        {
+          nerr("ERROR: Failed to expand ipt table '%s' to %u bytes\n",
+               repl->name, len);
+          return -ENOMEM;
+        }
+
+      memcpy(new_repl, repl, len);
     }
 
   /* Try to apply the config in replace data. */
 
   ret = table->apply_func(repl);
-
-  /* If successfully applied, save data into kernel space. */
-
-  if (ret == OK)
+  if (ret != OK)
     {
-      ninfo("ipt table '%s' replaced successfully\n", repl->name);
-      memcpy(new_repl, repl, sizeof(*repl) + repl->size);
-      SWAP_PTR(table->repl, new_repl);
+      xt_repl_pool_free(new_repl);
+      return ret;
     }
 
-  kmm_free(new_repl);
-  return ret;
+  ninfo("ipt table '%s' replaced successfully\n", repl->name);
+  if (new_repl != NULL)
+    {
+      old_repl = table->repl;
+      table->repl = new_repl;
+      xt_repl_pool_free(old_repl);
+    }
+  else
+    {
+      memcpy(table->repl, repl, len);
+
+      if (len < capacity)
+        {
+          memset((FAR uint8_t *)table->repl + len, 0, capacity - len);
+        }
+    }
+
+  return OK;
 }
 
 /****************************************************************************
@@ -373,7 +386,8 @@ FAR struct ipt_replace *ipt_alloc_table(FAR const char *table,
   unsigned int hook;
   unsigned int num_hooks;
 
-  if (valid_hooks == 0 || valid_hooks > (1 << NF_INET_NUMHOOKS))
+  if (table == NULL || valid_hooks == 0 ||
+      valid_hooks > (1 << NF_INET_NUMHOOKS))
     {
       return NULL;
     }
@@ -388,10 +402,11 @@ FAR struct ipt_replace *ipt_alloc_table(FAR const char *table,
 
   entry_size += sizeof(struct ipt_error_entry_s);
 
-  repl = kmm_zalloc(sizeof(*repl) + entry_size);
+  repl = xt_repl_pool_alloc(sizeof(*repl) + entry_size);
   if (repl == NULL)
     {
-      nerr("ERROR: Failed to allocate ipt table '%s'\n", table);
+      nerr("ERROR: Failed to allocate ipt table '%s' from repl pool\n",
+           table);
       return NULL;
     }
 

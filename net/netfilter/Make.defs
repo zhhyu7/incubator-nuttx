@@ -24,6 +24,27 @@
 
 ifeq ($(CONFIG_NET_IPTABLES),y)
 
+NET_CSRCS += xt_repl_pool.c
+
+ifeq ($(CONFIG_BMP),y)
+define IPTABLES_DEFINE_REPL_SECTION
+  ifdef CONFIG_NET_IPTABLES_REPL_SECTION_CPU$(1)
+    ifneq ($$(CONFIG_NET_IPTABLES_REPL_SECTION_CPU$(1)),"")
+      CFLAGS += $${DEFINE_PREFIX}XT_REPL_SECTION_CPU$(1)=CONFIG_NET_IPTABLES_REPL_SECTION_CPU$(1)
+    endif
+  endif
+endef
+
+$(foreach cpu,0 1 2 3 4 5, \
+  $(eval $(call IPTABLES_DEFINE_REPL_SECTION,$(cpu))))
+else
+ifdef CONFIG_NET_IPTABLES_REPL_SECTION
+ifneq ($(CONFIG_NET_IPTABLES_REPL_SECTION),"")
+CFLAGS += ${DEFINE_PREFIX}XT_REPL_SECTION=CONFIG_NET_IPTABLES_REPL_SECTION
+endif
+endif
+endif
+
 ifeq ($(CONFIG_NET_IPv4),y)
 NET_CSRCS += ipt_sockopt.c
 endif
