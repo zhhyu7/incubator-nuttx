@@ -28,7 +28,6 @@
 
 #include <debug.h>
 
-#include <nuttx/kmalloc.h>
 #include <nuttx/net/icmpv6.h>
 #include <nuttx/net/netdev.h>
 #include <nuttx/net/udp.h>
@@ -37,6 +36,7 @@
 #include "icmp/icmp.h"
 #include "icmpv6/icmpv6.h"
 #include "ipfilter/ipfilter.h"
+#include "ipfilter_pool.h"
 #include "utils/utils.h"
 
 #ifdef CONFIG_NET_IPFILTER
@@ -377,23 +377,7 @@ static int ipv6_filter_match(FAR const struct net_driver_s *indev,
 
 FAR struct ipfilter_entry_s *ipfilter_cfg_alloc(sa_family_t family)
 {
-  /* We may optimize alloc / free later if we really have lots of configs. */
-
-#ifdef CONFIG_NET_IPv4
-  if (family == PF_INET)
-    {
-      return kmm_zalloc(sizeof(struct ipv4_filter_entry_s));
-    }
-#endif
-
-#ifdef CONFIG_NET_IPv6
-  if (family == PF_INET6)
-    {
-      return kmm_zalloc(sizeof(struct ipv6_filter_entry_s));
-    }
-#endif
-
-  return NULL;
+  return ipfilter_pool_alloc(family);
 }
 
 /****************************************************************************
@@ -455,7 +439,8 @@ void ipfilter_cfg_clear(sa_family_t family, enum ipfilter_chain_e chain)
       FAR sq_queue_t *queue = &g_ipv4_filters[chain];
       while (!sq_empty(queue))
         {
-          kmm_free(sq_remfirst(queue));
+          ipfilter_pool_free((FAR struct ipfilter_entry_s *)
+                             sq_remfirst(queue));
         }
     }
 #endif
@@ -466,7 +451,8 @@ void ipfilter_cfg_clear(sa_family_t family, enum ipfilter_chain_e chain)
       FAR sq_queue_t *queue = &g_ipv6_filters[chain];
       while (!sq_empty(queue))
         {
-          kmm_free(sq_remfirst(queue));
+          ipfilter_pool_free((FAR struct ipfilter_entry_s *)
+                             sq_remfirst(queue));
         }
     }
 #endif

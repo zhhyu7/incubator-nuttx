@@ -14,3 +14,140 @@ config NET_IPFILTER
 		packet filter that can be used to filter packets based on
 		source and destination IP addresses, source and destination
 		ports, protocol, and interface.
+
+if NET_IPFILTER
+
+config NET_IPFILTER_POOL_ALLOC
+	int "Dynamic IP filter entry allocation"
+	default 1
+	range 0 65535
+	---help---
+		Number of IP filter entries allocated from the heap each time
+		the static pool is exhausted. Set to 0 to disable dynamic
+		allocation. A value of 1 allocates and frees entries individually;
+		larger values allocate entries in batches that remain in the pool.
+
+config NET_IPFILTER_POOL_MAX
+	int "Maximum IP filter entries"
+	depends on NET_IPFILTER_POOL_ALLOC > 0
+	default 0
+	range 0 65535
+	---help---
+		Maximum number of IP filter entries in each pool, including both
+		statically pre-allocated and dynamically allocated entries. Set to
+		0 for no limit. If set below a pool's static count, the static count
+		is used as the effective maximum.
+
+if BMP
+
+config NET_IPFILTER_POOL_PREALLOC_CPU0
+	int "Pre-allocated IP filter entries for CPU0"
+	default 0
+	range 0 65535
+	---help---
+		Number of statically pre-allocated IP filter entries for CPU0.
+		IPv4 and IPv6 rules share this pool. Set to 0 to disable IP
+		filter rule allocation on this CPU.
+
+config NET_IPFILTER_POOL_SECTION_CPU0
+	string "Section name of IP filter entry pool for CPU0"
+
+if NCPUS > 1
+
+config NET_IPFILTER_POOL_PREALLOC_CPU1
+	int "Pre-allocated IP filter entries for CPU1"
+	default 0
+	range 0 65535
+	---help---
+		Number of statically pre-allocated IP filter entries for CPU1.
+		IPv4 and IPv6 rules share this pool. Set to 0 to disable IP
+		filter rule allocation on this CPU.
+
+config NET_IPFILTER_POOL_SECTION_CPU1
+	string "Section name of IP filter entry pool for CPU1"
+
+endif # NCPUS > 1
+
+if NCPUS > 2
+
+config NET_IPFILTER_POOL_PREALLOC_CPU2
+	int "Pre-allocated IP filter entries for CPU2"
+	default 0
+	range 0 65535
+	---help---
+		Number of statically pre-allocated IP filter entries for CPU2.
+		IPv4 and IPv6 rules share this pool. Set to 0 to disable IP
+		filter rule allocation on this CPU.
+
+config NET_IPFILTER_POOL_SECTION_CPU2
+	string "Section name of IP filter entry pool for CPU2"
+
+endif # NCPUS > 2
+
+if NCPUS > 3
+
+config NET_IPFILTER_POOL_PREALLOC_CPU3
+	int "Pre-allocated IP filter entries for CPU3"
+	default 0
+	range 0 65535
+	---help---
+		Number of statically pre-allocated IP filter entries for CPU3.
+		IPv4 and IPv6 rules share this pool. Set to 0 to disable IP
+		filter rule allocation on this CPU.
+
+config NET_IPFILTER_POOL_SECTION_CPU3
+	string "Section name of IP filter entry pool for CPU3"
+
+endif # NCPUS > 3
+
+if NCPUS > 4
+
+config NET_IPFILTER_POOL_PREALLOC_CPU4
+	int "Pre-allocated IP filter entries for CPU4"
+	default 0
+	range 0 65535
+	---help---
+		Number of statically pre-allocated IP filter entries for CPU4.
+		IPv4 and IPv6 rules share this pool. Set to 0 to disable IP
+		filter rule allocation on this CPU.
+
+config NET_IPFILTER_POOL_SECTION_CPU4
+	string "Section name of IP filter entry pool for CPU4"
+
+endif # NCPUS > 4
+
+if NCPUS > 5
+
+config NET_IPFILTER_POOL_PREALLOC_CPU5
+	int "Pre-allocated IP filter entries for CPU5"
+	default 0
+	range 0 65535
+	---help---
+		Number of statically pre-allocated IP filter entries for CPU5.
+		IPv4 and IPv6 rules share this pool. Set to 0 to disable IP
+		filter rule allocation on this CPU.
+
+config NET_IPFILTER_POOL_SECTION_CPU5
+	string "Section name of IP filter entry pool for CPU5"
+
+endif # NCPUS > 5
+
+endif # BMP
+
+if !BMP
+
+config NET_IPFILTER_POOL_PREALLOC
+	int "Pre-allocated IP filter entries"
+	default 0
+	range 0 65535
+	---help---
+		Number of statically pre-allocated IP filter entries. IPv4 and
+		IPv6 rules share this pool. Set to 0 to disable IP filter rule
+		allocation.
+
+config NET_IPFILTER_POOL_SECTION
+	string "Section name of IP filter entry pool"
+
+endif # !BMP
+
+endif # NET_IPFILTER

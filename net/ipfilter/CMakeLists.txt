@@ -24,6 +24,20 @@
 
 if(CONFIG_NET_IPFILTER)
 
-  target_sources(net PRIVATE ipfilter.c)
+  if(CONFIG_BMP)
+    foreach(cpu RANGE 0 5)
+      set(varname "CONFIG_NET_IPFILTER_POOL_SECTION_CPU${cpu}")
+      if(DEFINED ${varname} AND NOT "${${varname}}" STREQUAL "")
+        target_compile_options(
+          net PRIVATE -DIPFILTER_POOL_SECTION_CPU${cpu}="${${varname}}")
+      endif()
+    endforeach()
+  elseif(DEFINED CONFIG_NET_IPFILTER_POOL_SECTION
+         AND NOT "${CONFIG_NET_IPFILTER_POOL_SECTION}" STREQUAL "")
+    target_compile_options(
+      net PRIVATE -DIPFILTER_POOL_SECTION="${CONFIG_NET_IPFILTER_POOL_SECTION}")
+  endif()
+
+  target_sources(net PRIVATE ipfilter.c ipfilter_pool.c)
 
 endif()

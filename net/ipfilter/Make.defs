@@ -24,7 +24,26 @@
 
 ifeq ($(CONFIG_NET_IPFILTER),y)
 
-NET_CSRCS += ipfilter.c
+NET_CSRCS += ipfilter.c ipfilter_pool.c
+
+ifeq ($(CONFIG_BMP),y)
+define IPFILTER_DEFINE_POOL_SECTION
+  ifdef CONFIG_NET_IPFILTER_POOL_SECTION_CPU$(1)
+    ifneq ($$(CONFIG_NET_IPFILTER_POOL_SECTION_CPU$(1)),"")
+      CFLAGS += $${DEFINE_PREFIX}IPFILTER_POOL_SECTION_CPU$(1)=CONFIG_NET_IPFILTER_POOL_SECTION_CPU$(1)
+    endif
+  endif
+endef
+
+$(foreach cpu,0 1 2 3 4 5, \
+  $(eval $(call IPFILTER_DEFINE_POOL_SECTION,$(cpu))))
+else
+ifdef CONFIG_NET_IPFILTER_POOL_SECTION
+ifneq ($(CONFIG_NET_IPFILTER_POOL_SECTION),"")
+CFLAGS += ${DEFINE_PREFIX}IPFILTER_POOL_SECTION=CONFIG_NET_IPFILTER_POOL_SECTION
+endif
+endif
+endif
 
 # Include IP filter build support
 
