@@ -291,6 +291,43 @@ static bool pathcache_strip(FAR char *path, FAR size_t *len)
 }
 
 /****************************************************************************
+ * Name: pathcache_lookup
+ *
+ * Description:
+ *   Look up a cached object of the kind the caller can use.  Files and
+ *   directories share one keyspace, so a kind mismatch is treated as a
+ *   cache miss while leaving the entry available to the matching caller.
+ *
+ * Input Parameters:
+ *   key   - The cache key
+ *   isdir - True if the caller requires a directory
+ *
+ * Returned Value:
+ *   The cached file structure, which the caller must pathcache_put(), or
+ *   NULL if nothing of the requested kind is cached.
+ *
+ ****************************************************************************/
+
+static FAR struct file *pathcache_lookup(FAR const char *key, bool isdir)
+{
+  FAR struct file *cached_file;
+
+  cached_file = lru_cache_lookup(&g_pathcache, key, strlen(key) + 1);
+  if (cached_file == NULL)
+    {
+      return NULL;
+    }
+
+  if (((cached_file->f_oflags & O_DIRECTORY) != 0) != isdir)
+    {
+      pathcache_put(cached_file);
+      return NULL;
+    }
+
+  return cached_file;
+}
+
+/****************************************************************************
  * Public Functions
  ****************************************************************************/
 
@@ -339,8 +376,7 @@ int pathcache_open(FAR struct file *filep, FAR const char *relpath,
 
   /* Look up for cached entry (internally locked) */
 
-  cached_file = lru_cache_lookup(&g_pathcache, abspath,
-                                 strlen(abspath) + 1);
+  cached_file = pathcache_lookup(abspath, false);
 
   /* Cache miss */
 
@@ -455,7 +491,7 @@ int pathcache_opendir(FAR struct inode *inode, FAR const char *relpath,
 
   /* Look up for cached entry (internally locked) */
 
-  cached_file = lru_cache_lookup(&g_pathcache, path, strlen(path) + 1);
+  cached_file = pathcache_lookup(path, true);
 
   /* Cache miss */
 
