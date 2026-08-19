@@ -58,7 +58,7 @@ int netdev_getmtu(FAR struct net_driver_s *dev)
 {
   DEBUGASSERT(dev != NULL);
 
-  return dev->d_pktsize - dev->d_llhdrlen;
+  return dev->d_pktsize - NET_LL_HDRLEN(dev);
 }
 
 /****************************************************************************
@@ -96,7 +96,7 @@ int netdev_setmtu(FAR struct net_driver_s *dev, int mtu)
   int maxmtu;
 
   DEBUGASSERT(dev != NULL);
-  maxmtu = dev->d_maxpktsize - dev->d_llhdrlen;
+  maxmtu = dev->d_maxpktsize - NET_LL_HDRLEN(dev);
 
   if (mtu <= 0 || mtu > maxmtu)
     {
@@ -105,6 +105,6 @@ int netdev_setmtu(FAR struct net_driver_s *dev, int mtu)
       return -EINVAL;
     }
 
-  dev->d_pktsize = (uint16_t)(mtu + dev->d_llhdrlen);
+  dev->d_pktsize = (uint16_t)(mtu + NET_LL_HDRLEN(dev));
   return OK;
 }

@@ -212,12 +212,6 @@
 #  define CONFIG_NET_6LOWPAN_PKTSIZE  1294
 #endif
 
-/* We are supporting multiple network devices using different link layer
- * protocols.  Get the size of the link layer header from the device
- * structure.
- */
-
-#define NET_LL_HDRLEN(d)       ((d)->d_llhdrlen)
 #define NETDEV_PKTSIZE(d)      ((d)->d_pktsize)
 
 #ifdef CONFIG_NET_ETHERNET

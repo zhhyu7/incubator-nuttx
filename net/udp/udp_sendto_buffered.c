@@ -752,12 +752,12 @@ ssize_t psock_udp_sendto(FAR struct socket *psock, FAR const void *buf,
   if (nonblock)
     {
       wrb = udp_wrbuffer_tryalloc(dev, len + udpip_hdrsize(conn) +
-                                  CONFIG_NET_LL_GUARDSIZE);
+                                  NET_LL_GUARDSIZE(dev));
     }
   else
     {
       wrb = udp_wrbuffer_timedalloc(dev, len + udpip_hdrsize(conn) +
-                                         CONFIG_NET_LL_GUARDSIZE,
+                                         NET_LL_GUARDSIZE(dev),
                                     udp_send_gettimeout(start, timeout));
     }
 
@@ -837,7 +837,7 @@ ssize_t psock_udp_sendto(FAR struct socket *psock, FAR const void *buf,
 
   udpiplen = udpip_hdrsize(conn);
 
-  iob_reserve(wrb->wb_iob, CONFIG_NET_LL_GUARDSIZE);
+  iob_reserve(wrb->wb_iob, NET_LL_GUARDSIZE(dev));
   iob_update_pktlen(wrb->wb_iob, udpiplen, false);
 
   /* Copy the user data into the write buffer.  We cannot wait for

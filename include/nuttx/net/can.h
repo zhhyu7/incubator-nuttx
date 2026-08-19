@@ -45,6 +45,7 @@
 #include <nuttx/config.h>
 #include <nuttx/can.h>
 #include <nuttx/mm/iob.h>
+#include <nuttx/net/ethernet.h>
 #include <stdint.h>
 
 #ifdef CONFIG_NET_CAN
@@ -58,7 +59,24 @@
 #  define NET_CAN_PKTSIZE sizeof(struct can_frame)
 #endif
 
-#define NET_CAN_BUFSIZE (NET_CAN_PKTSIZE + CONFIG_NET_LL_GUARDSIZE)
+/* Upper bound of the L2 headroom kept in front of a CAN frame.  A CAN device
+ * has no link layer header of its own, so a raw CAN buffer needs no headroom
+ * at all.  A CAN frame extracted from an IEEE 1722 ACF stream, however,
+ * keeps the headroom of the Ethernet device the stream arrived on (see
+ * net/devif/ieee1722acf_input.c), hence room for the widest Ethernet header
+ * has to be accounted for in that configuration.
+ *
+ * This is a compile-time upper bound used to size the buffer; the headroom
+ * actually reserved is the per-device NET_LL_GUARDSIZE(dev).
+ */
+
+#ifdef CONFIG_NET_CANFORWARD_IEEE1722ACF
+#  define NET_CAN_LL_GUARDSIZE ETH_8021Q_HDRLEN
+#else
+#  define NET_CAN_LL_GUARDSIZE 0
+#endif
+
+#define NET_CAN_BUFSIZE (NET_CAN_PKTSIZE + NET_CAN_LL_GUARDSIZE)
 
 /****************************************************************************
  * Public Types

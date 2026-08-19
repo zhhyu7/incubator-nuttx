@@ -444,7 +444,7 @@ static void usbhost_bulkin_work(FAR void *arg)
           iob = iob_tryalloc(true);
           if (iob != NULL)
             {
-              iob_reserve(iob, CONFIG_NET_LL_GUARDSIZE);
+              iob_reserve(iob, NET_LL_GUARDSIZE(&priv->netdev));
               int ret = iob_trycopyin(iob, priv->bulkinbuf,
                                       priv->bulkinbytes,
                                       -NET_LL_HDRLEN(&priv->netdev), true);
@@ -1831,8 +1831,7 @@ static void cdcecm_receive(struct usbhost_cdcecm_s *priv)
     }
 
   ethhdr = (struct eth_hdr_s *)
-        &priv->netdev.d_iob->io_data[CONFIG_NET_LL_GUARDSIZE -
-                             NET_LL_HDRLEN(&priv->netdev)];
+        &priv->netdev.d_iob->io_data[priv->netdev.d_llguardsize];
 
   /* Check the Ethertype */
 

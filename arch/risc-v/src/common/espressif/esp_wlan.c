@@ -79,8 +79,7 @@
  *     Total size         :   1514
  */
 
-#define WLAN_BUF_SIZE             (CONFIG_NET_ETH_PKTSIZE + \
-                                   CONFIG_NET_LL_GUARDSIZE + \
+#define WLAN_BUF_SIZE             (ETH_HDRLEN + CONFIG_NET_ETH_PKTSIZE + \
                                    CONFIG_NET_GUARDSIZE)
 
 /****************************************************************************
@@ -343,7 +342,7 @@ static struct iob_s *wlan_recvframe(struct wlan_priv_s *priv)
 static void wlan_transmit(struct wlan_priv_s *priv)
 {
   uint16_t llhdrlen = NET_LL_HDRLEN(&priv->dev);
-  unsigned int offset = CONFIG_NET_LL_GUARDSIZE - llhdrlen;
+  unsigned int offset = priv->dev.d_llguardsize;
   struct iob_s *iob;
   int ret;
 
@@ -449,7 +448,7 @@ static int wlan_rx_done(struct wlan_priv_s *priv, void *buffer,
       goto out;
     }
 
-  iob_reserve(iob, CONFIG_NET_LL_GUARDSIZE - NET_LL_HDRLEN(dev));
+  iob_reserve(iob, dev->d_llguardsize);
 
   ret = iob_trycopyin(iob, buffer, len, 0, false);
   if (ret != len)
@@ -521,7 +520,7 @@ static void wlan_rxpoll(void *arg)
       dev->d_iob = iob;
       dev->d_len = iob->io_pktlen;
 
-      iob_reserve(iob, CONFIG_NET_LL_GUARDSIZE);
+      iob_reserve(iob, NET_LL_GUARDSIZE(dev));
 
 #ifdef CONFIG_NET_PKT
 
@@ -532,9 +531,7 @@ static void wlan_rxpoll(void *arg)
       pkt_input(&priv->dev);
 #endif
 
-      eth_hdr = (struct eth_hdr_s *)
-        &dev->d_iob->io_data[CONFIG_NET_LL_GUARDSIZE -
-                             NET_LL_HDRLEN(dev)];
+      eth_hdr = (struct eth_hdr_s *)&dev->d_iob->io_data[dev->d_llguardsize];
 
       /* We only accept IP packets of the configured type and ARP packets */
 

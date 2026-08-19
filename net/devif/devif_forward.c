@@ -26,6 +26,7 @@
 
 #include <nuttx/config.h>
 
+#include <stdbool.h>
 #include <string.h>
 #include <assert.h>
 #include <debug.h>
@@ -62,17 +63,41 @@ void devif_forward(FAR struct forward_s *fwd)
 {
   FAR struct net_driver_s *dev = fwd->f_dev;
   FAR struct iob_s *iob = fwd->f_iob;
+  bool migrate;
 
+  /* The forwarded chain was allocated against the ingress device, so its
+   * headroom is NET_LL_GUARDSIZE(ingress).  It can be installed on the
+   * egress device as-is only when both of the following hold:
+   *
+   *   1. The egress device accepts a buffer that it did not allocate
+   *      itself, i.e. it provides no d_alloc callback.  A DMA / zero-copy
+   *      device can only transmit from its own memory.
+   *
+   *   2. The headroom already satisfies NET_LL_GUARDSIZE(egress), so that
+   *      the egress driver can build the L2 header and its own private
+   *      header in front of d_buf without underflowing io_data.  The two
+   *      devices may well disagree here: d_llguardsize is a per-driver
+   *      property (zero for a plain Ethernet NIC, non-zero for e.g.
+   *      virtio-net, RNDIS or a VLAN device).
+   *
+   * Otherwise the packet has to be migrated into a buffer obtained for the
+   * egress device.  Growing the headroom in place is not an option:
+   * iob_reserve() makes room by trimming the tail, which would silently eat
+   * the head of the L3 header.
+   */
+
+  migrate = iob->io_offset < NET_LL_GUARDSIZE(dev);
 #if CONFIG_IOB_EXTRA_HEADS > 0
-  if (dev->d_alloc != NULL)
+  migrate = migrate || dev->d_alloc != NULL;
+#endif
+
+  if (migrate)
     {
-      /* The egress device supplies its own (e.g. DMA-capable / zero-copy)
-       * IOBs through d_alloc.  The forwarded chain originates from the
-       * ingress device or the global IOB pool, so it cannot be installed
-       * directly via netdev_iob_replace. Obtain a device-owned chain through
-       * netdev_iob_prepare / netdev_iob_update_pktlen (honoring d_alloc)
-       * and copy the forwarded packet into it, then release the original
-       * chain.
+      /* Obtain a chain for the egress device through netdev_iob_prepare(),
+       * which honors d_alloc and reserves NET_LL_GUARDSIZE(dev) at the
+       * head, copy the forwarded packet into it (iob_clone_partial()
+       * preserves the reserved headroom of the destination) and release the
+       * original chain.
        */
 
       unsigned int len = iob->io_pktlen;
@@ -94,7 +119,6 @@ void devif_forward(FAR struct forward_s *fwd)
       iob_free_chain(iob);
     }
   else
-#endif
     {
       /* Move the IOB chain that contains the L3 header and any data
        * payload

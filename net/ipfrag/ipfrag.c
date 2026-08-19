@@ -901,7 +901,7 @@ int32_t ip_fragout_slice(FAR struct net_driver_s *dev,
            * in the front of this buffer
            */
 
-          UPDATE_IOB(reorg, CONFIG_NET_LL_GUARDSIZE, unfraglen);
+          UPDATE_IOB(reorg, NET_LL_GUARDSIZE(dev), unfraglen);
         }
       else
         {
@@ -933,7 +933,7 @@ int32_t ip_fragout_slice(FAR struct net_driver_s *dev,
                * in the front of this buffer
                */
 
-              UPDATE_IOB(reorg, CONFIG_NET_LL_GUARDSIZE, unfraglen);
+              UPDATE_IOB(reorg, NET_LL_GUARDSIZE(dev), unfraglen);
 
               /* Then copy L4 data */
 
@@ -975,7 +975,7 @@ int32_t ip_fragout_slice(FAR struct net_driver_s *dev,
 
       /* Reserve L3 header space */
 
-      UPDATE_IOB(reorg, CONFIG_NET_LL_GUARDSIZE, unfraglen);
+      UPDATE_IOB(reorg, NET_LL_GUARDSIZE(dev), unfraglen);
 
       /* Copy L3 header(include unfragmentable extention header if present)
        * from original I/O buffer
@@ -1046,7 +1046,7 @@ int32_t ip_fragout_slice(FAR struct net_driver_s *dev,
                * in the front of this buffer
                */
 
-              UPDATE_IOB(reorg, CONFIG_NET_LL_GUARDSIZE, unfraglen);
+              UPDATE_IOB(reorg, NET_LL_GUARDSIZE(dev), unfraglen);
 
               expand = false;
             }

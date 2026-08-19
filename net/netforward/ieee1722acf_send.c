@@ -345,7 +345,7 @@ ieee1722acf_alloc_packet(FAR struct ieee1722acf_stream_s *stream,
       return NULL;
     }
 
-  iob_reserve(iob, CONFIG_NET_LL_GUARDSIZE);
+  iob_reserve(iob, NET_LL_GUARDSIZE(dev));
   iob_update_pktlen(iob, 0, true);
 
   /* Set AVTP eth type */
@@ -782,7 +782,7 @@ int ieee1722acf_send(FAR struct cangw_rule_s *fwdrule,
 
           if (stream->iob != NULL && stream->iob->io_pktlen + data_len +
               sizeof(struct ieee1722acf_can_hdr_s) +
-              fwdrule->dest_dev->d_llhdrlen > CONFIG_NET_IEEE1722_PKTSIZE)
+              NET_LL_HDRLEN(fwdrule->dest_dev) > CONFIG_NET_IEEE1722_PKTSIZE)
             {
               ieee1722acf_stream_flush(stream, fwdrule->dest_dev);
             }

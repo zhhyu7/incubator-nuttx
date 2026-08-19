@@ -47,10 +47,6 @@
  * Pre-processor Definitions
  ****************************************************************************/
 
-/* Virtio net header size and packet buffer size */
-
-#define VIRTIO_NET_LLHDRSIZE  (sizeof(struct virtio_net_llhdr_s))
-
 /* Virtio net virtqueue index and number */
 
 #define VIRTIO_NET_RX         0
@@ -85,17 +81,21 @@ struct virtio_net_priv_s
 
 /* Virtio Link Layer Header, follow shows the iob buffer layout:
  *
- * |<-- CONFIG_NET_LL_GUARDSIZE -->|
+ * |<--- NET_LL_GUARDSIZE(dev) --->|
+ * |<-- d_llguardsize -->|<- L2 -->|
  * +---------------+---------------+------------+------+     +-------------+
  * | Virtio Header |  ETH Header   |    data    | free | --> | next netpkt |
  * +---------------+---------------+------------+------+     +-------------+
  * |               |<--------- datalen -------->|
  * ^base           ^data
  *
- * CONFIG_NET_LL_GUARDSIZE >= VIRTIO_NET_LLHDRSIZE + VIRTIO_NET_ETH_HDRSIZE
- *                          = sizeof(uintptr) + 10 + 14 or (18 for VLAN)
- *                          = 32 or (36 for VLAN) (64-Bit)
- *                          = 28 or (32 for VLAN) (32-Bit)
+ * The driver announces d_llguardsize = VIRTIO_NET_LLHDRSIZE before
+ * registering, so the guard size of the device becomes
+ *
+ *   NET_LL_GUARDSIZE(dev) = VIRTIO_NET_LLHDRSIZE + VIRTIO_NET_ETH_HDRSIZE
+ *                         = sizeof(uintptr) + 10 + 14 or (18 for VLAN)
+ *                         = 32 or (36 for VLAN) (64-Bit)
+ *                         = 28 or (32 for VLAN) (32-Bit)
  */
 
 begin_packed_struct struct virtio_net_llhdr_s
@@ -104,10 +104,9 @@ begin_packed_struct struct virtio_net_llhdr_s
   struct virtio_net_hdr_s vhdr;        /* Virtio net header */
 } end_packed_struct;
 
-static_assert(CONFIG_NET_LL_GUARDSIZE >= VIRTIO_NET_LLHDRSIZE +
-              VIRTIO_NET_ETH_HDRSIZE,
-              "CONFIG_NET_LL_GUARDSIZE cannot be less than"
-              " VIRTIO_NET_ETH_HDRSIZE + VIRTIO_NET_LLHDRSIZE");
+static_assert(sizeof(struct virtio_net_llhdr_s) == VIRTIO_NET_LLHDRSIZE,
+              "VIRTIO_NET_LLHDRSIZE is out of sync with"
+              " struct virtio_net_llhdr_s");
 
 /****************************************************************************
  * Private Function Prototypes
@@ -214,13 +213,20 @@ static int virtio_net_addbuffer(FAR struct netdev_lowerhalf_s *dev,
       vb[0].buf = &hdr->vhdr;
       vb[0].len = iov[0].iov_len + VIRTIO_NET_HDRSIZE;
 
-#if VIRTIO_NET_MAX_NIOB > 1
-      for (i = 1; i < iov_cnt; i++)
+      /* The condition is a compile time constant, so the loop disappears
+       * when a packet always fits into a single buffer.  It is spelled as C
+       * rather than #if because VIRTIO_NET_MAX_NIOB derives from sizeof()
+       * expressions and cannot be evaluated by the preprocessor.
+       */
+
+      if (VIRTIO_NET_MAX_NIOB > 1)
         {
-          vb[i].buf = iov[i].iov_base;
-          vb[i].len = iov[i].iov_len;
+          for (i = 1; i < iov_cnt; i++)
+            {
+              vb[i].buf = iov[i].iov_base;
+              vb[i].len = iov[i].iov_len;
+            }
         }
-#endif
     }
   else
     {
@@ -772,6 +778,12 @@ static int virtio_net_probe(FAR struct virtio_device *vdev)
 
   netdev = (FAR struct netdev_lowerhalf_s *)priv;
   netdev->ops = &g_virtio_net_ops;
+
+  /* Reserve room for the virtio link layer header in front of the L2 header
+   * of every packet, see struct virtio_net_llhdr_s above.
+   */
+
+  netdev->netdev.d_llguardsize = VIRTIO_NET_LLHDRSIZE;
 
 #ifdef CONFIG_DRIVERS_WIFI_SIM
   /* If the WiFi interfaces has reached the setting value,

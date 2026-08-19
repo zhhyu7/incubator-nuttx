@@ -61,6 +61,20 @@
 
 #define VIRTIO_CAN_DOFF   offsetof(struct canfd_frame, data)
 
+/* Wire message offset placing the sdu on the SocketCAN data. */
+
+#define VIRTIO_CAN_HDRLEN offsetof(struct virtio_can_rx_s, sdu)
+
+/* Headroom this driver announces through d_llguardsize.  A CAN link has no
+ * L2 header, so it is the whole headroom of a frame buffer: enough for the
+ * wire header to reach back from the sdu without covering the TX result
+ * byte at the head, rounded up so that the SocketCAN frame behind it stays
+ * aligned for its leading canid_t.
+ */
+
+#define VIRTIO_CAN_LLGUARDSIZE \
+  ALIGN_UP(VIRTIO_CAN_HDRLEN - VIRTIO_CAN_DOFF + 1, sizeof(canid_t))
+
 /* Frame buffer: L2 guard followed by the largest SocketCAN frame.  The
  * stack reads and writes it in place; the wire header lives at the tail of
  * the guard and the guard's first byte, never covered by the header, holds
@@ -68,21 +82,20 @@
  */
 
 #define VIRTIO_CAN_FRAMESZ \
-  (CONFIG_NET_LL_GUARDSIZE + sizeof(struct canfd_frame))
+  (VIRTIO_CAN_LLGUARDSIZE + sizeof(struct canfd_frame))
 
-/* Wire message offset placing the sdu on the SocketCAN data. */
-
-#define VIRTIO_CAN_HDRLEN  offsetof(struct virtio_can_rx_s, sdu)
 #define VIRTIO_CAN_WOFF \
-  (CONFIG_NET_LL_GUARDSIZE + VIRTIO_CAN_DOFF - VIRTIO_CAN_HDRLEN)
+  (VIRTIO_CAN_LLGUARDSIZE + VIRTIO_CAN_DOFF - VIRTIO_CAN_HDRLEN)
 
 static_assert(offsetof(struct virtio_can_tx_out_s, sdu) ==
               offsetof(struct virtio_can_rx_s, sdu),
               "tx and rx wire headers must match");
-static_assert(CONFIG_NET_LL_GUARDSIZE + VIRTIO_CAN_DOFF >
+static_assert(VIRTIO_CAN_LLGUARDSIZE + VIRTIO_CAN_DOFF >
               VIRTIO_CAN_HDRLEN,
               "the wire header and the TX result byte must fit in front "
               "of the sdu");
+static_assert(VIRTIO_CAN_LLGUARDSIZE % sizeof(canid_t) == 0,
+              "the guard must keep the SocketCAN frame aligned");
 
 /****************************************************************************
  * Private Types
@@ -468,7 +481,7 @@ static void virtio_can_tx_reap(FAR struct virtio_can_priv_s *priv)
     {
       /* The device reports a rejected frame in the result byte. */
 
-      fb = netpkt_getdata(&priv->dev, buf->pkt) - CONFIG_NET_LL_GUARDSIZE;
+      fb = netpkt_getdata(&priv->dev, buf->pkt) - VIRTIO_CAN_LLGUARDSIZE;
       if (fb[0] != VIRTIO_CAN_RESULT_OK)
         {
           NETDEV_TXERRORS(&priv->dev.netdev);
@@ -659,7 +672,7 @@ retry:
       goto err;
     }
 
-  fb = netpkt_getdata(dev, pkt) - CONFIG_NET_LL_GUARDSIZE;
+  fb = netpkt_getdata(dev, pkt) - VIRTIO_CAN_LLGUARDSIZE;
   wire = fb + VIRTIO_CAN_WOFF;
   ret = virtio_map_buf(priv->vdev, wire, wirelen, VIRTIO_DMA_TO_DEVICE,
                        &buf->paymap);
@@ -747,7 +760,7 @@ static FAR netpkt_t *virtio_can_receive(FAR struct netdev_lowerhalf_s *dev)
         }
 
       framelen = virtio_can_wire2frame(hdr, (FAR struct canfd_frame *)
-                                       (fb + CONFIG_NET_LL_GUARDSIZE));
+                                       (fb + VIRTIO_CAN_LLGUARDSIZE));
 
       iob = iob_alloc_with_data(fb, VIRTIO_CAN_FRAMESZ, NULL,
                                 virtio_can_rx_free, priv);
@@ -758,7 +771,7 @@ static FAR netpkt_t *virtio_can_receive(FAR struct netdev_lowerhalf_s *dev)
           continue;
         }
 
-      iob_reserve(iob, CONFIG_NET_LL_GUARDSIZE);
+      iob_reserve(iob, VIRTIO_CAN_LLGUARDSIZE);
       iob->io_len    = framelen;
       iob->io_pktlen = framelen;
       return (FAR netpkt_t *)iob;
@@ -889,6 +902,7 @@ static int virtio_can_probe(FAR struct virtio_device *vdev)
   priv->dev.ops = &g_virtio_can_ops;
   priv->dev.rxtype = NETDEV_RX_THREAD;
   priv->dev.priority = CONFIG_DRIVERS_VIRTIO_CAN_RXTHREAD_PRIORITY;
+  priv->dev.netdev.d_llguardsize = VIRTIO_CAN_LLGUARDSIZE;
 
   if (virtio_has_feature(vdev, VIRTIO_CAN_F_IFNAME))
     {

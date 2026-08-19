@@ -58,6 +58,9 @@
 #include <nuttx/net/netconfig.h>
 #include <nuttx/net/net.h>
 #include <nuttx/net/ip.h>
+#ifdef CONFIG_NET_BLUETOOTH
+#  include <nuttx/net/bluetooth.h>
+#endif
 #include <nuttx/nuttx.h>
 
 #ifdef CONFIG_NET_CANFORWARD
@@ -359,8 +362,31 @@ struct net_driver_s
    * supported
    */
 
+  /* The link layer type.  This alone determines the size of the L2 header
+   * of the device, which is obtained through NET_LL_HDRLEN(dev); there is
+   * deliberately no per-device field holding that length, so that it can
+   * never get out of sync with the link type.
+   */
+
   uint8_t d_lltype;             /* See enum net_lltype_e */
-  uint8_t d_llhdrlen;           /* Link layer header size */
+
+  /* Extra headroom, in bytes, that the driver needs in front of the L2
+   * header of every packet.  A driver that has to prepend its own private
+   * header (RNDIS, virtio-net, ...) or to grow the L2 header in place (VLAN
+   * tag insertion) must set this field BEFORE calling netdev_register();
+   * it defaults to zero, i.e. no extra headroom.
+   *
+   * The total headroom reserved at the head of every network buffer of this
+   * device is NET_LL_GUARDSIZE(dev), i.e. d_llguardsize plus the L2 header
+   * of the link type:
+   *
+   *  ---------------------------------------------------------------------
+   *  |<-- d_llguardsize -->|<-- L2 header -->|<-- io_len/io_pktlen -->|
+   *  ---------------------------------------------------------------------
+   *  ^io_data              ^d_buf (NETLLBUF) ^IOB_DATA
+   */
+
+  uint8_t d_llguardsize;        /* Extra L2 headroom required by the driver */
 #ifdef CONFIG_NETDEV_IFINDEX
   uint8_t d_ifindex;            /* Device index */
 #endif
@@ -613,7 +639,7 @@ struct net_driver_s
   /* Optional: driver-supplied IOB allocator. When set, the network stack
    * obtains the device IOB from this callback instead of the global IOB
    * pool. The returned IOB is owned by the device and reserved for
-   * CONFIG_NET_LL_GUARDSIZE at its head.
+   * NET_LL_GUARDSIZE(dev) at its head.
    *
    *   dev       - The device requesting the buffer.
    *   size      - Requested total buffer capacity in bytes, including the
@@ -650,6 +676,69 @@ typedef CODE int (*devif_poll_callback_t)(FAR struct net_driver_s *dev);
 typedef CODE int (*devif_ipv6_callback_t)(FAR struct net_driver_s *dev,
                                           FAR struct netdev_ifaddr6_s *addr,
                                           FAR void *arg);
+
+/****************************************************************************
+ * Name: netdev_lltype_hdrlen
+ *
+ * Description:
+ *   Return the size of the link layer (L2) header used by a link layer
+ *   protocol.  This is the single source of truth for that mapping: the
+ *   length is a property of the link type alone and is never stored per
+ *   device, so it cannot get out of sync with the link type.
+ *
+ *   Only Ethernet-like and Bluetooth links prepend a header that the
+ *   network layer has to account for; every other link type either has no
+ *   header at all (loopback, SLIP, TUN, CAN, MBIM, cellular) or handles its
+ *   framing entirely inside the driver / adaptation layer (IEEE 802.15.4 and
+ *   packet radio, whose 6LoWPAN headers vary per frame and are built by the
+ *   6LoWPAN code itself).
+ *
+ * Input Parameters:
+ *   lltype - The link layer type, see enum net_lltype_e
+ *
+ * Returned Value:
+ *   The size of the L2 header in bytes, zero if the link type has none.
+ *
+ ****************************************************************************/
+
+static inline_function uint8_t netdev_lltype_hdrlen(uint8_t lltype)
+{
+  switch (lltype)
+    {
+#ifdef CONFIG_NET_ETHERNET
+      case NET_LL_ETHERNET:
+        return ETH_HDRLEN;
+#endif
+#ifdef CONFIG_DRIVERS_IEEE80211
+      case NET_LL_IEEE80211:
+        return ETH_HDRLEN;
+#endif
+#ifdef CONFIG_NET_BLUETOOTH
+      case NET_LL_BLUETOOTH:
+        return BLUETOOTH_MAX_HDRLEN;
+#endif
+      default:
+        return 0;
+    }
+}
+
+/* Size of the link layer (L2) header of a device, derived from its link
+ * type.
+ */
+
+#define NET_LL_HDRLEN(d)     netdev_lltype_hdrlen((d)->d_lltype)
+
+/* Headroom reserved at the head of every network buffer (IOB) of a device,
+ * to isolate the L2/L3 (MAC/IP) data on the network layer, which is
+ * beneficial to L3 network layer protocol transparent transmission and
+ * forwarding.
+ *
+ * It is the sum of the extra headroom announced by the driver
+ * (d_llguardsize, e.g. the RNDIS or virtio-net private header, or the room
+ * needed to insert a VLAN tag) and the L2 header of the link type.
+ */
+
+#define NET_LL_GUARDSIZE(d)  ((d)->d_llguardsize + NET_LL_HDRLEN(d))
 
 /****************************************************************************
  * Public Function Prototypes
@@ -1092,7 +1181,7 @@ void net_incr32(FAR uint8_t *op32, uint16_t op16);
  ****************************************************************************/
 
 #ifdef CONFIG_NET_IPv4
-#  define netdev_ipv4_hdrlen(dev) (dev->d_llhdrlen)
+#  define netdev_ipv4_hdrlen(dev) NET_LL_HDRLEN(dev)
 #endif /* CONFIG_NET_IPv4 */
 
 /****************************************************************************
@@ -1107,7 +1196,7 @@ void net_incr32(FAR uint8_t *op32, uint16_t op16);
  ****************************************************************************/
 
 #ifdef CONFIG_NET_IPv6
-#  define netdev_ipv6_hdrlen(dev) dev->d_llhdrlen
+#  define netdev_ipv6_hdrlen(dev) NET_LL_HDRLEN(dev)
 #endif /* CONFIG_NET_IPv6 */
 
 /****************************************************************************
@@ -1135,7 +1224,7 @@ int netdev_lladdrsize(FAR struct net_driver_s *dev);
  *  ----------------------------------------------------------------
  *  |                     iob entry                                |
  *  ---------------------------------------------------------------|
- *  |<--- CONFIG_NET_LL_GUARDSIZE -->|<--- io_len/io_pktlen(0) --->|
+ *  |<-- NET_LL_GUARDSIZE(dev) ----->|<--- io_len/io_pktlen(0) --->|
  *  ---------------------------------------------------------------|
  *
  * Assumptions:
@@ -1173,7 +1262,7 @@ void netdev_iob_prepare_with_size(FAR struct net_driver_s *dev,
  *   callback when present (CONFIG_IOB_EXTRA_HEADS > 0), otherwise to the
  *   global IOB pool, but it returns the prepared IOB to the caller WITHOUT
  *   assigning dev->d_iob or dev->d_buf.  The returned IOB has
- *   CONFIG_NET_LL_GUARDSIZE reserved at its head and is owned by the device.
+ *   NET_LL_GUARDSIZE(dev) reserved at its head and is owned by the device.
  *
  * Input Parameters:
  *   dev       - The device requesting the buffer.

@@ -38,7 +38,6 @@
 #include <nuttx/net/netconfig.h>
 #include <nuttx/net/netdev.h>
 #include <nuttx/net/ethernet.h>
-#include <nuttx/net/bluetooth.h>
 #include <nuttx/net/can.h>
 #include <nuttx/mutex.h>
 
@@ -291,7 +290,6 @@ int netdev_register(FAR struct net_driver_s *dev, enum net_lltype_e lltype)
   FAR const char *devfmt;
   uint32_t flags   = 0;
   uint16_t pktsize = 0;
-  uint8_t llhdrlen = 0;
   int devnum;
 #ifdef CONFIG_NETDEV_IFINDEX
   int ifindex;
@@ -307,7 +305,6 @@ int netdev_register(FAR struct net_driver_s *dev, enum net_lltype_e lltype)
         {
 #ifdef CONFIG_NET_LOOPBACK
           case NET_LL_LOOPBACK:   /* Local loopback */
-            llhdrlen = 0;
             pktsize  = NET_LO_PKTSIZE;
             devfmt   = NETDEV_LO_FORMAT;
             flags    = IFF_LOOPBACK;
@@ -316,7 +313,6 @@ int netdev_register(FAR struct net_driver_s *dev, enum net_lltype_e lltype)
 
 #ifdef CONFIG_NET_ETHERNET
           case NET_LL_ETHERNET:   /* Ethernet */
-            llhdrlen = ETH_HDRLEN;
             pktsize  = CONFIG_NET_ETH_PKTSIZE;
             devfmt   = NETDEV_ETH_FORMAT;
             flags    = IFF_BROADCAST | IFF_MULTICAST;
@@ -325,7 +321,6 @@ int netdev_register(FAR struct net_driver_s *dev, enum net_lltype_e lltype)
 
 #ifdef CONFIG_DRIVERS_IEEE80211
           case NET_LL_IEEE80211:  /* IEEE 802.11 */
-            llhdrlen = ETH_HDRLEN;
             pktsize  = CONFIG_NET_ETH_PKTSIZE;
             devfmt   = NETDEV_WLAN_FORMAT;
             flags    = IFF_BROADCAST | IFF_MULTICAST;
@@ -334,7 +329,6 @@ int netdev_register(FAR struct net_driver_s *dev, enum net_lltype_e lltype)
 
 #ifdef CONFIG_NET_CAN
           case NET_LL_CAN:  /* CAN bus */
-            dev->d_llhdrlen = 0;
             dev->d_pktsize  = NET_CAN_PKTSIZE;
             devfmt          = NETDEV_CAN_FORMAT;
             flags           = IFF_NOARP;
@@ -343,7 +337,6 @@ int netdev_register(FAR struct net_driver_s *dev, enum net_lltype_e lltype)
 
 #ifdef CONFIG_NET_BLUETOOTH
           case NET_LL_BLUETOOTH:              /* Bluetooth */
-            llhdrlen = BLUETOOTH_MAX_HDRLEN;  /* Determined at runtime */
 #ifdef CONFIG_NET_6LOWPAN
             pktsize  = CONFIG_NET_6LOWPAN_PKTSIZE;
 #endif
@@ -355,7 +348,6 @@ int netdev_register(FAR struct net_driver_s *dev, enum net_lltype_e lltype)
 #if defined(CONFIG_NET_6LOWPAN) || defined(CONFIG_NET_IEEE802154)
           case NET_LL_IEEE802154: /* IEEE 802.15.4 MAC */
           case NET_LL_PKTRADIO:   /* Non-IEEE 802.15.4 packet radio */
-            llhdrlen = 0;         /* Determined at runtime */
 #ifdef CONFIG_NET_6LOWPAN
             pktsize  = CONFIG_NET_6LOWPAN_PKTSIZE;
 #endif
@@ -366,7 +358,6 @@ int netdev_register(FAR struct net_driver_s *dev, enum net_lltype_e lltype)
 
 #ifdef CONFIG_NET_SLIP
           case NET_LL_SLIP:       /* Serial Line Internet Protocol (SLIP) */
-            llhdrlen = 0;
             pktsize  = CONFIG_NET_SLIP_PKTSIZE;
             devfmt   = NETDEV_SLIP_FORMAT;
             flags    = IFF_POINTOPOINT | IFF_NOARP | IFF_MULTICAST;
@@ -375,8 +366,6 @@ int netdev_register(FAR struct net_driver_s *dev, enum net_lltype_e lltype)
 
 #ifdef CONFIG_NET_TUN
           case NET_LL_TUN:        /* Virtual Network Device (TUN) */
-            llhdrlen = 0;         /* This will be overwritten by tun_ioctl
-                                   * if used as a TAP (layer 2) device */
             pktsize  = CONFIG_NET_TUN_PKTSIZE;
             devfmt   = NETDEV_TUN_FORMAT;
             flags    = IFF_POINTOPOINT | IFF_NOARP | IFF_MULTICAST;
@@ -385,7 +374,6 @@ int netdev_register(FAR struct net_driver_s *dev, enum net_lltype_e lltype)
 
 #ifdef CONFIG_NET_MBIM
           case NET_LL_MBIM:
-            llhdrlen = 0;
             pktsize  = 1200;
             devfmt   = NETDEV_WWAN_FORMAT;
             flags    = IFF_BROADCAST | IFF_NOARP | IFF_MULTICAST;
@@ -394,7 +382,6 @@ int netdev_register(FAR struct net_driver_s *dev, enum net_lltype_e lltype)
 
 #ifdef CONFIG_NET_CELLULAR
           case NET_LL_CELL:
-            llhdrlen = 0;
             pktsize  = CONFIG_NET_ETH_PKTSIZE;
             devfmt   = NETDEV_CELL_FORMAT;
             flags    = IFF_NOARP;
@@ -406,16 +393,11 @@ int netdev_register(FAR struct net_driver_s *dev, enum net_lltype_e lltype)
             return -EINVAL;
         }
 
-      /* Update the package length.  A network driver may provide custom
-       * values for MAC header length and for the maximum packet size.  Some
-       * driver implementations (for example, the simulator) will require
-       * dynamic MTU calculations to support tunneling (as an example).
+      /* Update the package length.  A network driver may provide a custom
+       * value for the maximum packet size.  Some driver implementations (for
+       * example, the simulator) will require dynamic MTU calculations to
+       * support tunneling (as an example).
        */
-
-      if (dev->d_llhdrlen == 0)
-        {
-          dev->d_llhdrlen = llhdrlen;
-        }
 
       if (dev->d_pktsize == 0)
         {

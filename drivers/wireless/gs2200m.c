@@ -3529,9 +3529,16 @@ FAR void *gs2200m_register(FAR const char *devpath,
    * records it as the maximum packet size of this device.  Assigning it
    * afterwards would leave d_pktsize larger than d_maxpktsize and prevent
    * the MTU from ever being set to the size this device really supports.
+   *
+   * d_pktsize counts the L2 header as well, while MAX_PKT_LEN is the payload
+   * this module can carry, so the Ethernet header of the link type has to be
+   * added here to make netdev_getmtu() (d_pktsize - NET_LL_HDRLEN) report
+   * MAX_PKT_LEN.  This module exchanges bare L3 payloads over SPI and never
+   * takes part in the packet path (it registers no d_ifup/d_txavail and
+   * allocates no IOB), so the reserved L2 room is never actually used.
    */
 
-  dev->net_dev.d_pktsize  = MAX_PKT_LEN;
+  dev->net_dev.d_pktsize  = ETH_HDRLEN + MAX_PKT_LEN;
 
   ret = netdev_register(&dev->net_dev, NET_LL_IEEE80211);
   if (ret < 0)
@@ -3539,13 +3546,6 @@ FAR void *gs2200m_register(FAR const char *devpath,
       unregister_driver(devpath);
       goto errout;
     }
-
-  /* This device has no link layer header.  It can only be cleared after
-   * netdev_register(), which replaces a zero d_llhdrlen with the default
-   * header length of the link type.
-   */
-
-  dev->net_dev.d_llhdrlen = 0;
 
   return dev;
 

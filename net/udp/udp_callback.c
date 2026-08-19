@@ -60,25 +60,11 @@ static uint16_t udp_datahandler(FAR struct net_driver_s *dev,
                                 FAR struct udp_conn_s *conn,
                                 FAR uint8_t *buffer, uint16_t buflen)
 {
+  struct udp_srcaddr_s src_addr;
   FAR struct iob_s *iob;
-  int ret;
-#ifdef CONFIG_NET_IPv6
-  struct sockaddr_in6 src_addr6 =
-  {
-    0
-  };
-#endif
-
-#ifdef CONFIG_NET_IPv4
-  struct sockaddr_in src_addr4 =
-  {
-    0
-  };
-#endif
-
   uint8_t src_addr_size;
-  FAR void *src_addr;
   int offset;
+  int ret;
 
   conn_lock(&conn->sconn);
 #if CONFIG_NET_RECV_BUFSIZE > 0
@@ -103,13 +89,12 @@ static uint16_t udp_datahandler(FAR struct net_driver_s *dev,
       FAR struct udp_hdr_s *udp   = UDPIPv6BUF;
       FAR struct ipv6_hdr_s *ipv6 = IPv6BUF;
 
-      src_addr6.sin6_family = AF_INET6;
-      src_addr6.sin6_port   = udp->srcport;
+      src_addr.sa_family = AF_INET6;
+      src_addr.sa_port   = udp->srcport;
 
-      net_ipv6addr_copy(src_addr6.sin6_addr.s6_addr, ipv6->srcipaddr);
+      net_ipv6addr_copy(src_addr.sa_addr.in6, ipv6->srcipaddr);
 
-      src_addr_size = sizeof(src_addr6);
-      src_addr = &src_addr6;
+      src_addr_size = UDP_SRCADDR_LEN(in6);
     }
 #endif /* CONFIG_NET_IPv6 */
 
@@ -131,14 +116,13 @@ static uint16_t udp_datahandler(FAR struct net_driver_s *dev,
 
           /* Encode the IPv4 address as an IPv4-mapped IPv6 address */
 
-          src_addr6.sin6_family = AF_INET6;
-          src_addr6.sin6_port = udp->srcport;
+          src_addr.sa_family = AF_INET6;
+          src_addr.sa_port   = udp->srcport;
 
           ipv4addr = net_ip4addr_conv32(ipv4->srcipaddr);
-          ip6_map_ipv4addr(ipv4addr, src_addr6.sin6_addr.s6_addr16);
+          ip6_map_ipv4addr(ipv4addr, src_addr.sa_addr.in6);
 
-          src_addr_size = sizeof(src_addr6);
-          src_addr = &src_addr6;
+          src_addr_size = UDP_SRCADDR_LEN(in6);
         }
       else
 #endif
@@ -146,15 +130,13 @@ static uint16_t udp_datahandler(FAR struct net_driver_s *dev,
           FAR struct udp_hdr_s *udp   = UDPIPv4BUF;
           FAR struct ipv4_hdr_s *ipv4 = IPv4BUF;
 
-          src_addr4.sin_family = AF_INET;
-          src_addr4.sin_port   = udp->srcport;
+          src_addr.sa_family = AF_INET;
+          src_addr.sa_port   = udp->srcport;
 
-          net_ipv4addr_copy(src_addr4.sin_addr.s_addr,
+          net_ipv4addr_copy(src_addr.sa_addr.in4,
                             net_ip4addr_conv32(ipv4->srcipaddr));
-          memset(src_addr4.sin_zero, 0, sizeof(src_addr4.sin_zero));
 
-          src_addr_size = sizeof(src_addr4);
-          src_addr = &src_addr4;
+          src_addr_size = UDP_SRCADDR_LEN(in4);
         }
     }
 #endif /* CONFIG_NET_IPv4 */
@@ -165,7 +147,8 @@ static uint16_t udp_datahandler(FAR struct net_driver_s *dev,
 
   offset = (dev->d_appdata - iob->io_data) - iob->io_offset;
   offset -= src_addr_size;
-  ret = iob_trycopyin(iob, src_addr, src_addr_size, offset, true);
+  ret = iob_trycopyin(iob, (FAR const uint8_t *)&src_addr, src_addr_size,
+                      offset, true);
   if (ret < 0)
     {
       goto errout;

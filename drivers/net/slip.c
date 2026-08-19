@@ -594,7 +594,7 @@ static void slip_receive(FAR struct slip_driver_s *self)
   remaining = pend - p;
   copied = 0;
   iob = iob_alloc(false);
-  iob_reserve(iob, CONFIG_NET_LL_GUARDSIZE);
+  iob_reserve(iob, NET_LL_GUARDSIZE(&self->dev));
 
   while (remaining)
     {

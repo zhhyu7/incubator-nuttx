@@ -84,7 +84,8 @@ MEMPOOL_DEFINE(g_udp_state_infos, sizeof(struct udp_recvfrom_s),
 
 #ifdef CONFIG_NET_SOCKOPTS
 static void udp_recvpktinfo(FAR struct udp_recvfrom_s *pstate,
-                            FAR void *srcaddr, uint8_t ifindex)
+                            FAR const struct udp_srcaddr_s *srcaddr,
+                            uint8_t ifindex)
 {
   FAR struct msghdr     *msg  = pstate->ir_msg;
   FAR struct udp_conn_s *conn = pstate->ir_conn;
@@ -93,11 +94,10 @@ static void udp_recvpktinfo(FAR struct udp_recvfrom_s *pstate,
   if (conn->domain == PF_INET &&
       _SO_GETOPT(conn->sconn.s_options, IP_PKTINFO))
     {
-      FAR struct sockaddr_in *infrom = srcaddr;
-      struct in_pktinfo       pktinfo;
+      struct in_pktinfo pktinfo;
 
       pktinfo.ipi_ifindex         = ifindex;
-      pktinfo.ipi_addr.s_addr     = infrom->sin_addr.s_addr;
+      pktinfo.ipi_addr.s_addr     = srcaddr->sa_addr.in4;
       pktinfo.ipi_spec_dst.s_addr = conn->u.ipv4.laddr;
 
       cmsg_append(msg, IPPROTO_IP, IP_PKTINFO, &pktinfo, sizeof(pktinfo));
@@ -108,11 +108,10 @@ static void udp_recvpktinfo(FAR struct udp_recvfrom_s *pstate,
   if (conn->domain == PF_INET6 &&
       _SO_GETOPT(conn->sconn.s_options, IPV6_RECVPKTINFO))
     {
-      FAR struct sockaddr_in6 *infrom = srcaddr;
-      struct in6_pktinfo       pktinfo;
+      struct in6_pktinfo pktinfo;
 
       pktinfo.ipi6_ifindex = ifindex;
-      net_ipv6addr_copy(&pktinfo.ipi6_addr, infrom->sin6_addr.s6_addr);
+      net_ipv6addr_copy(&pktinfo.ipi6_addr, srcaddr->sa_addr.in6);
 
       cmsg_append(msg, IPPROTO_IPV6, IPV6_PKTINFO, &pktinfo,
                   sizeof(pktinfo));
@@ -122,6 +121,73 @@ static void udp_recvpktinfo(FAR struct udp_recvfrom_s *pstate,
 #else
 #define udp_recvpktinfo(p, s, i) {(void)(p); (void)(s); (void)(i);}
 #endif
+
+/****************************************************************************
+ * Name: udp_recvaddr
+ *
+ * Description:
+ *   Report the source of a received datagram to the caller: rebuild the
+ *   socket address from the compact form, store it in msghdr.msg_name and
+ *   append the ancillary packet info.  The fields that the compact form does
+ *   not carry (sin6_flowinfo, sin6_scope_id, sin_zero[]) are reported as
+ *   zero.
+ *
+ ****************************************************************************/
+
+static void udp_recvaddr(FAR struct udp_recvfrom_s *pstate,
+                         FAR const struct udp_srcaddr_s *srcaddr,
+                         uint8_t ifindex)
+{
+  FAR struct msghdr *msg = pstate->ir_msg;
+
+  /* Only recvfrom()/recvmsg() with a msg_name buffer needs a socket address,
+   * so keep the whole conversion out of the recv() path.
+   */
+
+  if (msg->msg_name != NULL)
+    {
+      union
+      {
+#ifdef CONFIG_NET_IPv4
+        struct sockaddr_in  in4;
+#endif
+#ifdef CONFIG_NET_IPv6
+        struct sockaddr_in6 in6;
+#endif
+      } from;
+
+      socklen_t fromlen = 0;
+
+      memset(&from, 0, sizeof(from));
+
+#ifdef CONFIG_NET_IPv6
+      if (srcaddr->sa_family == AF_INET6)
+        {
+          from.in6.sin6_family = AF_INET6;
+          from.in6.sin6_port   = srcaddr->sa_port;
+          net_ipv6addr_copy(from.in6.sin6_addr.s6_addr,
+                            srcaddr->sa_addr.in6);
+          fromlen = sizeof(struct sockaddr_in6);
+        }
+#endif
+
+#ifdef CONFIG_NET_IPv4
+      if (srcaddr->sa_family == AF_INET)
+        {
+          from.in4.sin_family = AF_INET;
+          from.in4.sin_port   = srcaddr->sa_port;
+          net_ipv4addr_copy(from.in4.sin_addr.s_addr, srcaddr->sa_addr.in4);
+          fromlen = sizeof(struct sockaddr_in);
+        }
+#endif
+
+      msg->msg_namelen = fromlen > msg->msg_namelen ?
+                         msg->msg_namelen : fromlen;
+      memcpy(msg->msg_name, &from, msg->msg_namelen);
+    }
+
+  udp_recvpktinfo(pstate, srcaddr, ifindex);
+}
 
 /****************************************************************************
  * Name: udp_recvfrom_newdata
@@ -188,13 +254,9 @@ static inline void udp_readahead(struct udp_recvfrom_s *pstate)
       uint16_t datalen = 0;
       uint8_t src_addr_size = 0;
       uint8_t ifindex;
-#ifdef CONFIG_NET_IPv6
-      uint8_t srcaddr[sizeof(struct sockaddr_in6)];
-#else
-      uint8_t srcaddr[sizeof(struct sockaddr_in)];
-#endif
+      struct udp_srcaddr_s srcaddr;
 
-      memset(srcaddr, 0, sizeof(srcaddr));
+      memset(&srcaddr, 0, sizeof(srcaddr));
 
       /* Unflatten saved connection information
        * Layout: |datalen|ifindex|src_addr_size|src_addr|[timestamp]|data|
@@ -217,7 +279,8 @@ static inline void udp_readahead(struct udp_recvfrom_s *pstate)
       offset += sizeof(src_addr_size);
       DEBUGASSERT(recvlen == sizeof(src_addr_size));
 
-      recvlen = iob_copyout(srcaddr, iob, src_addr_size, offset);
+      recvlen = iob_copyout((FAR uint8_t *)&srcaddr, iob, src_addr_size,
+                            offset);
       offset += src_addr_size;
       DEBUGASSERT(recvlen == src_addr_size);
 
@@ -239,17 +302,7 @@ static inline void udp_readahead(struct udp_recvfrom_s *pstate)
       ninfo("Received %d bytes (of %d, total %d)\n",
             recvlen, datalen, iob->io_pktlen);
 
-      if (pstate->ir_msg->msg_name)
-        {
-          pstate->ir_msg->msg_namelen =
-                src_addr_size > pstate->ir_msg->msg_namelen ?
-                pstate->ir_msg->msg_namelen : src_addr_size;
-
-          memcpy(pstate->ir_msg->msg_name, srcaddr,
-                 pstate->ir_msg->msg_namelen);
-        }
-
-      udp_recvpktinfo(pstate, srcaddr, ifindex);
+      udp_recvaddr(pstate, &srcaddr, ifindex);
 
       /* Remove the packet from the head of the I/O buffer chain. */
 
@@ -289,12 +342,7 @@ static inline void udp_readahead(struct udp_recvfrom_s *pstate)
 static inline void udp_sender(FAR struct net_driver_s *dev,
                               FAR struct udp_recvfrom_s *pstate)
 {
-#ifdef CONFIG_NET_IPv6
-  uint8_t srcaddr[sizeof(struct sockaddr_in6)];
-#else
-  uint8_t srcaddr[sizeof(struct sockaddr_in)];
-#endif
-  socklen_t fromlen = 0;
+  struct udp_srcaddr_s srcaddr;
 
   /* Get the family from the packet type, IP address from the IP header, and
    * the port number from the UDP header.
@@ -305,15 +353,13 @@ static inline void udp_sender(FAR struct net_driver_s *dev,
   if (IFF_IS_IPv6(dev->d_flags))
 #endif
     {
-      FAR struct sockaddr_in6 *infrom = (FAR struct sockaddr_in6 *)srcaddr;
       FAR struct udp_hdr_s *udp   = UDPIPv6BUF;
       FAR struct ipv6_hdr_s *ipv6 = IPv6BUF;
 
-      infrom->sin6_family = AF_INET6;
-      infrom->sin6_port   = udp->srcport;
-      fromlen = sizeof(struct sockaddr_in6);
+      srcaddr.sa_family = AF_INET6;
+      srcaddr.sa_port   = udp->srcport;
 
-      net_ipv6addr_copy(infrom->sin6_addr.s6_addr, ipv6->srcipaddr);
+      net_ipv6addr_copy(srcaddr.sa_addr.in6, ipv6->srcipaddr);
     }
 #endif /* CONFIG_NET_IPv6 */
 
@@ -331,49 +377,37 @@ static inline void udp_sender(FAR struct net_driver_s *dev,
            * class of addresses, the IPv4-mapped IPv6 addresses.
            */
 
-          FAR struct sockaddr_in6 *infrom6 =
-            (FAR struct sockaddr_in6 *)srcaddr;
           FAR struct udp_hdr_s *udp   = UDPIPv4BUF;
           FAR struct ipv4_hdr_s *ipv4 = IPv4BUF;
           in_addr_t ipv4addr;
 
           /* Encode the IPv4 address as an IPv4-mapped IPv6 address */
 
-          infrom6->sin6_family = AF_INET6;
-          infrom6->sin6_port = udp->srcport;
-          fromlen  = sizeof(struct sockaddr_in6);
+          srcaddr.sa_family = AF_INET6;
+          srcaddr.sa_port   = udp->srcport;
+
           ipv4addr = net_ip4addr_conv32(ipv4->srcipaddr);
-          ip6_map_ipv4addr(ipv4addr, infrom6->sin6_addr.s6_addr16);
+          ip6_map_ipv4addr(ipv4addr, srcaddr.sa_addr.in6);
         }
       else
 #endif
         {
-          FAR struct sockaddr_in *infrom = (FAR struct sockaddr_in *)srcaddr;
           FAR struct udp_hdr_s *udp   = UDPIPv4BUF;
           FAR struct ipv4_hdr_s *ipv4 = IPv4BUF;
 
-          infrom->sin_family = AF_INET;
-          infrom->sin_port   = udp->srcport;
-          fromlen = sizeof(struct sockaddr_in);
+          srcaddr.sa_family = AF_INET;
+          srcaddr.sa_port   = udp->srcport;
 
-          net_ipv4addr_copy(infrom->sin_addr.s_addr,
+          net_ipv4addr_copy(srcaddr.sa_addr.in4,
                             net_ip4addr_conv32(ipv4->srcipaddr));
-          memset(infrom->sin_zero, 0, sizeof(infrom->sin_zero));
         }
     }
 #endif /* CONFIG_NET_IPv4 */
 
-  if (pstate->ir_msg->msg_name)
-    {
-      pstate->ir_msg->msg_namelen = fromlen > pstate->ir_msg->msg_namelen ?
-                                    pstate->ir_msg->msg_namelen : fromlen;
-      memcpy(pstate->ir_msg->msg_name, srcaddr, pstate->ir_msg->msg_namelen);
-    }
-
 #ifdef CONFIG_NETDEV_IFINDEX
-  udp_recvpktinfo(pstate, srcaddr, dev->d_ifindex);
+  udp_recvaddr(pstate, &srcaddr, dev->d_ifindex);
 #else
-  udp_recvpktinfo(pstate, srcaddr, 1);
+  udp_recvaddr(pstate, &srcaddr, 1);
 #endif
 }
 

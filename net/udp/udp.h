@@ -92,6 +92,26 @@ struct socket;        /* Forward reference */
 struct net_driver_s;  /* Forward reference */
 struct pollfd;        /* Forward reference */
 
+/* Compact source address stored in the UDP read-ahead buffer */
+
+struct udp_srcaddr_s
+{
+  sa_family_t sa_family;
+  in_port_t   sa_port;
+  union
+  {
+#ifdef CONFIG_NET_IPv4
+    in_addr_t      in4;
+#endif
+#ifdef CONFIG_NET_IPv6
+    net_ipv6addr_t in6;
+#endif
+  } sa_addr;
+};
+
+#define UDP_SRCADDR_LEN(m) (offsetof(struct udp_srcaddr_s, sa_addr) + \
+                            sizeof(((FAR struct udp_srcaddr_s *)0)->sa_addr.m))
+
 /* Representation of a UDP connection */
 
 struct devif_callback_s;  /* Forward reference */

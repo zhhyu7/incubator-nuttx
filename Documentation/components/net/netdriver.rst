@@ -131,6 +131,15 @@ Here is a guide to do so:
       dev->quota[NETPKT_TX] = 1;
       dev->quota[NETPKT_RX] = 1;
 
+      /* Room the stack has to keep in front of the L2 header for the driver
+       * header below.  Only needed by a driver that has one, and it has to
+       * be set before registering, because the headroom of a buffer is
+       * decided when the buffer is allocated.
+       */
+
+      dev->netdev.d_llguardsize = MAX(sizeof(struct <chip>_txhead_s),
+                                      sizeof(struct <chip>_rxhead_s));
+
       return netdev_lower_register(dev, NET_LL_ETHERNET);
   }
 
@@ -153,9 +162,11 @@ Here is a guide to do so:
         FAR uint8_t *devbuf  = databuf - sizeof(struct <chip>_txhead_s);
 
         /* Do Transmit.  Note: `databuf` points to the L2 data, and there is
-         * a reserved memory with size of `CONFIG_NET_LL_GUARDSIZE` before
-         * databuf to be used for driver header, drivers can just fill data
-         * there (`devbuf`) and start the transmission.
+         * a reserved memory with size of `d_llguardsize` before databuf to
+         * be used for driver header, drivers can just fill data there
+         * (`devbuf`) and start the transmission.  A driver that needs such
+         * a header must announce its size by assigning `d_llguardsize`,
+         * see `<chip>_netdev_init()` above.
          */
 
         ...

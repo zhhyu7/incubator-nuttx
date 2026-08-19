@@ -43,6 +43,10 @@
 
 #define VLAN_DEV_NAME_FMT "%.*s.%u"
 
+/* Size of the 802.1Q tag that vlan_transmit() inserts into the headroom */
+
+#define VLAN_TAG_LEN      (ETH_8021Q_HDRLEN - ETH_HDRLEN)
+
 /****************************************************************************
  * Private Types
  ****************************************************************************/
@@ -157,23 +161,24 @@ static int vlan_transmit(FAR struct netdev_lowerhalf_s *dev,
   unsigned int                   reserved = data - base;
   int                            ret;
 
-  /* Check space for the VLAN tag, normally we want user to set bigger
-   * CONFIG_NET_LL_GUARDSIZE to allow inserting VLAN tag in the headroom.
+  /* Check space for the VLAN tag.  The headroom is normally guaranteed by
+   * d_llguardsize, which this driver sets to VLAN_TAG_LEN plus the headroom
+   * of the real device when the VLAN device is created.  A packet that was
+   * allocated against another device may still be short.
    */
 
-  if (reserved < 4)
+  if (reserved < VLAN_TAG_LEN)
     {
-      /* TODO: Support backup path for too small CONFIG_NET_LL_GUARDSIZE */
-
-      nerr("ERROR: No headroom for VLAN tag, please enlarge "
-           "CONFIG_NET_LL_GUARDSIZE\n");
+      nerr("ERROR: No headroom for VLAN tag on %s, have %u, need %u\n",
+           dev->netdev.d_ifname, reserved, VLAN_TAG_LEN);
       return -ENOMEM;
     }
 
   /* Move the data to make space for the VLAN tag */
 
-  netpkt_copyin(dev, pkt, data, offsetof(struct eth_hdr_s, type), -4);
-  netpkt_reset_reserved(dev, pkt, reserved - 4);
+  netpkt_copyin(dev, pkt, data, offsetof(struct eth_hdr_s, type),
+                -VLAN_TAG_LEN);
+  netpkt_reset_reserved(dev, pkt, reserved - VLAN_TAG_LEN);
 
   /* Set value of the VLAN tag */
 
@@ -404,6 +409,15 @@ int vlan_register(FAR struct netdev_lowerhalf_s *real, uint16_t vid,
   /* Copy MTU from the real device */
 
   vlan->dev.netdev.d_pktsize = real->netdev.d_pktsize;
+
+  /* Reserve headroom for the 802.1Q tag that vlan_transmit() inserts, on top
+   * of whatever the real device needs for its own private header: the packet
+   * is allocated against this VLAN device but is finally handed over to the
+   * real device for transmission, so it has to satisfy both.
+   */
+
+  vlan->dev.netdev.d_llguardsize = VLAN_TAG_LEN +
+                                   real->netdev.d_llguardsize;
 
   /* Set the VLAN device name */
 

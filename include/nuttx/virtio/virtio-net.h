@@ -49,12 +49,20 @@
 #define VIRTIO_NET_HDRSIZE        (sizeof(struct virtio_net_hdr_s))
 #define VIRTIO_NET_BUFSIZE        (CONFIG_NET_ETH_PKTSIZE + CONFIG_NET_GUARDSIZE)
 
+/* Extra headroom this driver needs in front of the L2 header, announced
+ * through d_llguardsize: a back pointer to the netpkt followed by the virtio
+ * net header.  This must match sizeof(struct virtio_net_llhdr_s), which is
+ * checked by a static assertion in virtio-net.c.  The structure itself
+ * cannot be declared here because netpkt_t is not visible at this level.
+ */
+
+#define VIRTIO_NET_LLHDRSIZE      (sizeof(uintptr_t) + VIRTIO_NET_HDRSIZE)
+
 /* Virtio net feature bits */
 
 #define VIRTIO_NET_F_MAC          5
 
-#define VIRTIO_NET_MAX_PKT_SIZE   \
-  ((CONFIG_NET_LL_GUARDSIZE - VIRTIO_NET_ETH_HDRSIZE) + VIRTIO_NET_BUFSIZE)
+#define VIRTIO_NET_MAX_PKT_SIZE   (VIRTIO_NET_LLHDRSIZE + VIRTIO_NET_BUFSIZE)
 #define VIRTIO_NET_MAX_NIOB       \
   ((VIRTIO_NET_MAX_PKT_SIZE + CONFIG_IOB_BUFSIZE_MAX - 1) / \
    CONFIG_IOB_BUFSIZE_MAX)

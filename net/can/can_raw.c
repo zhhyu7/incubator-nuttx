@@ -793,7 +793,6 @@ static ssize_t can_raw_sendmsg(FAR struct socket *psock,
       return nonblock ? -EAGAIN : -ENOMEM;
     }
 
-  iob_reserve(iob, CONFIG_NET_LL_GUARDSIZE);
   iob_update_pktlen(iob, 0, false);
 
   if (nonblock)

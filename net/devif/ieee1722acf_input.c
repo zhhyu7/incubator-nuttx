@@ -400,11 +400,11 @@ int ieee1722acf_input(FAR struct net_driver_s *dev, uint8_t subtype)
         }
 
       /* Reserve headroom equal to the source device's L2 header length so
-       * that IOB_DATA points to the CAN frame start, and d_llhdrlen on
-       * the device does not need to be modified.
+       * that IOB_DATA points to the CAN frame start, without having to
+       * pretend the source device has no L2 header.
        */
 
-      can_iob->io_offset = dev->d_llhdrlen;
+      can_iob->io_offset = NET_LL_HDRLEN(dev);
 
       IOB_SET_OWNER(can_iob, "ieee1722acf forward");
 

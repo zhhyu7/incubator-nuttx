@@ -55,7 +55,7 @@
  *     - Otherwise the IOB is drawn from the global pool, retrying against
  *       the throttled reserve when requested.
  *
- *   The returned IOB has CONFIG_NET_LL_GUARDSIZE reserved at its head and is
+ *   The returned IOB has NET_LL_GUARDSIZE(dev) reserved at its head and is
  *   owned by the device.
  *
  * Input Parameters:
@@ -114,7 +114,7 @@ FAR struct iob_s *netdev_iob_timedalloc(FAR struct net_driver_s *dev,
 
   /* Update l2 guard size and assign ownership to the device */
 
-  iob_reserve(iob, CONFIG_NET_LL_GUARDSIZE);
+  iob_reserve(iob, NET_LL_GUARDSIZE(dev));
   IOB_SET_OWNER(iob, "%s", dev->d_ifname);
 
   return iob;
@@ -133,12 +133,12 @@ FAR struct iob_s *netdev_iob_timedalloc(FAR struct net_driver_s *dev,
  *   callback but the current head did not originate from it (so the head
  *   always ends up coming from the driver).  When the current head already
  *   originates from d_alloc it is reused as-is.  The installed IOB has
- *   CONFIG_NET_LL_GUARDSIZE reserved at its head and dev->d_buf is set to
+ *   NET_LL_GUARDSIZE(dev) reserved at its head and dev->d_buf is set to
  *   the L2 start:
  *  ----------------------------------------------------------------
  *  |                     iob entry                                |
  *  ---------------------------------------------------------------|
- *  |<--- CONFIG_NET_LL_GUARDSIZE -->|<--- io_len/io_pktlen(0) --->|
+ *  |<-- NET_LL_GUARDSIZE(dev) ----->|<--- io_len/io_pktlen(0) --->|
  *  ---------------------------------------------------------------|
  *
  * Assumptions:
@@ -197,14 +197,14 @@ int netdev_iob_prepare(FAR struct net_driver_s *dev, bool throttled,
        * A reused head may have lost its headroom (io_offset == 0) after an
        * in-place consume such as iob_trimhead() on the RX/recv path (which
        * resets io_offset to 0 when the whole chain is trimmed away).  A
-       * freshly allocated buffer already carries CONFIG_NET_LL_GUARDSIZE of
+       * freshly allocated buffer already carries NET_LL_GUARDSIZE(dev) of
        * headroom, so this only matters on the reuse path.  Without restoring
        * it, prepending the L2 header (NETLLBUF = IOB_DATA - NET_LL_HDRLEN)
        * would underflow past io_data into the iob struct header and corrupt
        * io_flink, later crashing iob_add_queue() while walking the chain.
        */
 
-      iob_reserve(dev->d_iob, CONFIG_NET_LL_GUARDSIZE);
+      iob_reserve(dev->d_iob, NET_LL_GUARDSIZE(dev));
     }
 
   /* Set the device buffer to l2 */
@@ -229,7 +229,7 @@ void netdev_iob_prepare_with_size(FAR struct net_driver_s *dev,
                                   uint16_t size)
 {
   FAR struct iob_s *iob;
-  size += CONFIG_NET_LL_GUARDSIZE;
+  size += NET_LL_GUARDSIZE(dev);
 
   if (dev->d_iob && size <= IOB_BUFSIZE(dev->d_iob))
     {
@@ -371,7 +371,7 @@ FAR struct iob_s *netdev_iob_clone(FAR struct net_driver_s *dev,
       return NULL;
     }
 
-  iob_reserve(iob, CONFIG_NET_LL_GUARDSIZE);
+  iob_reserve(iob, NET_LL_GUARDSIZE(dev));
   ret = iob_clone_partial(dev->d_iob, dev->d_iob->io_pktlen, 0,
                           iob, 0, throttled, false);
   if (ret < 0)

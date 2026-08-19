@@ -79,11 +79,23 @@
                             CONFIG_NET_GUARDSIZE)
 #define SIM_NETDEV_PERIOD  MSEC2TICK(CONFIG_SIM_NETDEV_LOOP_INTERVAL)
 
+/* Upper bound of the L2 headroom reserved in the buffers of this device.
+ * This is an Ethernet device and it needs no private header of its own
+ * (d_llguardsize stays zero), but a VLAN child device stacked on top of it
+ * also reserves room for the 802.1Q tag.
+ */
+
+#ifdef CONFIG_NET_VLAN
+#  define SIM_NETDEV_LL_GUARDSIZE ETH_8021Q_HDRLEN
+#else
+#  define SIM_NETDEV_LL_GUARDSIZE ETH_HDRLEN
+#endif
+
 /* We don't know packet length before receiving, so we can only offload it
  * when netpkt's buffer is long enough.
  */
 
-#if NETPKT_BUFLEN - CONFIG_NET_LL_GUARDSIZE >= SIM_NETDEV_BUFSIZE - ETH_HDRLEN
+#if NETPKT_BUFLEN - SIM_NETDEV_LL_GUARDSIZE >= SIM_NETDEV_BUFSIZE - ETH_HDRLEN
 #  define SIM_NETDEV_RECV_OFFLOAD
 #endif
 

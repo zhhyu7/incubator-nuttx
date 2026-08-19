@@ -298,7 +298,7 @@ ssize_t pkt_sendmsg(FAR struct socket *psock, FAR const struct msghdr *msg,
       goto errout_with_lock;
     }
 
-  iob_reserve(iob, CONFIG_NET_LL_GUARDSIZE);
+  iob_reserve(iob, NET_LL_GUARDSIZE(dev));
   iob_update_pktlen(iob, 0, true);
 
 #ifdef CONFIG_NET_TIMESTAMP

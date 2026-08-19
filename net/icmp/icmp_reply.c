@@ -132,8 +132,7 @@ void icmp_reply(FAR struct net_driver_s *dev, int type, int code)
 
   /* Save the original datagram */
 
-  if (CONFIG_IOB_BUFSIZE >= datalen + ipicmplen +
-                           CONFIG_NET_LL_GUARDSIZE)
+  if (CONFIG_IOB_BUFSIZE >= datalen + ipicmplen + NET_LL_GUARDSIZE(dev))
     {
       /* Reuse current iob */
 

@@ -87,13 +87,8 @@
   (CONFIG_NET_ETH_PKTSIZE + CONFIG_NET_GUARDSIZE + RNDIS_PACKET_HDR_SIZE)
 #define CONFIG_RNDIS_BULKOUT_REQLEN CONFIG_RNDIS_BULKIN_REQLEN
 
-static_assert(CONFIG_NET_LL_GUARDSIZE >= RNDIS_PACKET_HDR_SIZE + ETH_HDRLEN,
-             "CONFIG_NET_LL_GUARDSIZE cannot be less than ETH_HDRLEN"
-             " + RNDIS_PACKET_HDR_SIZE");
-
-static_assert((CONFIG_NET_LL_GUARDSIZE % 4) == 2,
-             "CONFIG_NET_LL_GUARDSIZE - ETH_HDRLEN "
-             "should be aligned to 4 bytes");
+static_assert((RNDIS_PACKET_HDR_SIZE % 4) == 0,
+             "RNDIS_PACKET_HDR_SIZE should be aligned to 4 bytes");
 
 #define RNDIS_NCONFIGS          (1)
 #define RNDIS_CONFIGID          (1)
@@ -844,21 +839,24 @@ static void rndis_iob2buf(FAR struct rndis_dev_s *priv,
                           FAR struct rndis_req_s *req)
 {
   uint16_t llhdrlen = NET_LL_HDRLEN(&priv->netdev);
-  uint32_t offset   = CONFIG_NET_LL_GUARDSIZE - llhdrlen -
-                      RNDIS_PACKET_HDR_SIZE;
 
-  /*  ----------------------------------------------------------------
-   *  |<--- CONFIG_NET_LL_GUARDSIZE ---->|<-- io_len/io_pktlen(0) -->|
-   *  ---------------------------------------------------------------|
-   *  |unused | rndis hdr size |llhdrlen |<-- io_len/io_pktlen(0) -->|
-   *  ---------------------------------------------------------------|
-   *  |unused | req->buf(0)                                          |
-   *  ---------------------------------------------------------------|
+  /*  -------------------------------------------------------------
+   *  |<--- NET_LL_GUARDSIZE(dev) --->|<-- io_len/io_pktlen(0) -->|
+   *  ------------------------------------------------------------|
+   *  | rndis hdr size |   llhdrlen   |<-- io_len/io_pktlen(0) -->|
+   *  ------------------------------------------------------------|
+   *  | req->buf(0)                                               |
+   *  ------------------------------------------------------------|
+   *
+   *  This driver sets d_llguardsize to RNDIS_PACKET_HDR_SIZE, so the
+   *  headroom NET_LL_GUARDSIZE(dev) is exactly the RNDIS header plus the
+   *  L2 header.  The RNDIS header therefore always starts at io_data and
+   *  the buffer can be handed to the USB controller without copying.
    */
 
   if (req->iob->io_flink == NULL)
     {
-      req->req->buf = &req->iob->io_data[offset];
+      req->req->buf = req->iob->io_data;
       req->req->len = CONFIG_RNDIS_BULKIN_REQLEN;
     }
   else
@@ -905,7 +903,7 @@ static bool rndis_allocrxreq(FAR struct rndis_dev_s *priv)
       return false;
     }
 
-  iob_reserve(iob, CONFIG_NET_LL_GUARDSIZE);
+  iob_reserve(iob, NET_LL_GUARDSIZE(&priv->netdev));
 
   if ((priv->rx_req = rndis_allocwrreq(priv)) == NULL)
     {
@@ -1023,8 +1021,7 @@ static void rndis_rxdispatch(FAR void *arg)
   nxmutex_unlock(&priv->lock);
 
   hdr = (FAR struct eth_hdr_s *)
-    &priv->netdev.d_iob->io_data[CONFIG_NET_LL_GUARDSIZE -
-                                 NET_LL_HDRLEN(&priv->netdev)];
+    &priv->netdev.d_iob->io_data[priv->netdev.d_llguardsize];
 
   /* We only accept IP packets of the configured type and ARP packets */
 
@@ -2921,6 +2918,14 @@ static int usbclass_classobject(int minor,
 
   drvr->drvr.ops           = &g_driverops;
   drvr->dev                = priv;
+
+  /* Reserve room for the RNDIS packet message header in front of the
+   * Ethernet header of every packet, so that a frame handed over by the
+   * network stack can be sent to the host without copying it: see
+   * rndis_iob2buf().
+   */
+
+  priv->netdev.d_llguardsize = RNDIS_PACKET_HDR_SIZE;
 
   ret = netdev_register(&priv->netdev, NET_LL_ETHERNET);
   if (ret)

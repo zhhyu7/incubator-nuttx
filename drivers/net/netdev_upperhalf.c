@@ -2066,7 +2066,7 @@ FAR netpkt_t *netpkt_alloc(FAR struct netdev_lowerhalf_s *dev,
 
   IOB_SET_OWNER(pkt, "%s", dev->netdev.d_ifname);
 
-  iob_reserve(pkt, CONFIG_NET_LL_GUARDSIZE);
+  iob_reserve(pkt, NET_LL_GUARDSIZE(&dev->netdev));
   return pkt;
 }
 
