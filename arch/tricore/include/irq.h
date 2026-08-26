@@ -372,14 +372,14 @@ noinstrument_function static inline_function uintptr_t up_getsp(void)
 
 noinstrument_function static inline_function irqstate_t up_irq_save(void)
 {
-  irqstate_t state;
+  irqstate_t flags;
 
 #ifdef CONFIG_ARCH_HIPRI_INTERRUPT
   uint32_t icr = tricore_mfcr(CPU_ICR);
 
-  state = icr & ICR_CCPN_MASK;
+  flags = icr & ICR_CCPN_MASK;
 
-  if (TRICORE_IRQ_DISABLE_PRIORITY > state)
+  if (TRICORE_IRQ_DISABLE_PRIORITY > flags)
     {
       icr = (icr & ~ICR_CCPN_MASK) |
             (TRICORE_IRQ_DISABLE_PRIORITY << ICR_CCPN_SHIFT);
@@ -387,10 +387,10 @@ noinstrument_function static inline_function irqstate_t up_irq_save(void)
       UP_ISB();
     }
 #else
-  __asm__ volatile ("disable %0" : "=d"(state) :: "memory");
+  __asm__ volatile ("disable %0" : "=d"(flags) :: "memory");
 #endif
 
-  return state;
+  return flags;
 }
 
 /****************************************************************************

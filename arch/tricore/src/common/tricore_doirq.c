@@ -109,6 +109,26 @@ static DEFINE_PER_CPU_BSS_BMP(struct csa_info, g_switchcsa);
 #define g_switchcsa this_cpu_var_bmp(g_switchcsa)
 
 /****************************************************************************
+ * Private Functions
+ ****************************************************************************/
+
+/****************************************************************************
+ * Name: tricore_irq_from_lasr
+ *
+ * Description:
+ *   Get irq number from ICU's LASR register
+ *
+ ****************************************************************************/
+
+static inline_function int tricore_irq_from_lasr(void)
+{
+  uintptr_t addr = TRICORE_INT_LASR0_ADDR +
+                   up_cpu_index() * TRICORE_INT_LASR_SPACING;
+
+  return (getreg32(addr) >> 16) & 0x7ff;
+}
+
+/****************************************************************************
  * Public Functions
  ****************************************************************************/
 
@@ -127,11 +147,10 @@ static DEFINE_PER_CPU_BSS_BMP(struct csa_info, g_switchcsa);
 
 TRICORE_INTERRUPT_DEFINE(tricore_irq_direct)
 {
-  int irq;
+  int irq = tricore_irq_from_lasr();
 
   up_irq_enable();
 
-  irq = tricore_srpn_to_irq(tricore_mfcr(CPU_ICR) & ICR_CCPN_MASK);
   tricore_ack_irq(irq);
   irq_dispatch(irq, NULL);
 
@@ -168,7 +187,7 @@ TRICORE_INTERRUPT_DEFINE(tricore_irq_sched)
   struct tcb_s *tcb;
   uintptr_t *regs;
 #ifndef CONFIG_ARCH_IRQPRIO
-  int irq;
+  int irq = tricore_irq_from_lasr();
 #endif
 
 #ifdef CONFIG_ARCH_IRQPRIO
@@ -184,7 +203,6 @@ TRICORE_INTERRUPT_DEFINE(tricore_irq_sched)
   board_autoled_on(LED_INIRQ);
 
 #ifndef CONFIG_ARCH_IRQPRIO
-  irq = tricore_srpn_to_irq(tricore_mfcr(CPU_ICR) & ICR_CCPN_MASK);
   tricore_ack_irq(irq);
   irq_dispatch(irq, regs);
 #endif
