@@ -105,16 +105,14 @@
 #define TCB_FLAG_JOIN_COMPLETED    (1U << 12)                     /* Bit 12: Pthread join completed */
 #define TCB_FLAG_FREE_TCB          (1U << 13)                     /* Bit 13: Free tcb after exit */
 #define TCB_FLAG_KILL_PROCESSING   (1U << 15)                     /* Bit 15: tcb is killed */
-#define TCB_FLAG_FREE_GROUP        (1U << 16)                     /* Bit 16: Free group before tcb free */
 
 /* Values for struct task_group tg_flags */
 
 #define GROUP_FLAG_NOCLDWAIT       (1U << 0)                      /* Bit 0: Do not retain child exit status */
 #define GROUP_FLAG_PRIVILEGED      (1U << 1)                      /* Bit 1: Group is privileged */
-#define GROUP_FLAG_DELETED         (1U << 2)                      /* Bit 2: Group has been deleted but not yet freed */
 #define GROUP_FLAG_EXITING         (1U << 3)                      /* Bit 3: Group exit is in progress */
 #define GROUP_FLAG_KERNEL          (1U << 4)                      /* Bit 4: Kernel task group (not user) */
-                                                                  /* Bits 5-7: Available */
+                                                                  /* Bit 2, Bits 5-7: Available */
 
 /* Values for struct child_status_s ch_flags */
 
@@ -574,6 +572,7 @@ struct task_group_s
   pid_t tg_pid;                     /* The ID of the task within the group      */
   pid_t tg_ppid;                    /* This is the ID of the parent thread      */
   atomic_t tg_flags;                /* See GROUP_FLAG_* definitions             */
+  atomic_t tg_refs;                 /* Group lifetime reference count           */
 
   /* User identity **********************************************************/
 

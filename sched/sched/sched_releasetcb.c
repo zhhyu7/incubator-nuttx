@@ -48,6 +48,7 @@
 static void release_tcb_cb(FAR void *arg)
 {
   FAR struct tcb_s *tcb = arg;
+  FAR struct task_group_s *group = tcb->group;
   int ttype = tcb->flags & TCB_FLAG_TTYPE_MASK;
 
   /* Delete the thread's stack if one has been allocated */
@@ -85,10 +86,13 @@ static void release_tcb_cb(FAR void *arg)
   addrenv_leave(tcb);
 #endif
 
-  if (atomic_read(&tcb->flags) & TCB_FLAG_FREE_GROUP)
-    {
-      group_drop(tcb->group);
-    }
+  /* All accesses to tcb->group are done; null it out before dropping the
+   * group reference so any subsequent stray access faults visibly rather
+   * than silently reading stale data.
+   */
+
+  tcb->group = NULL;
+  group_drop(group);
 
   nxsem_destroy(&tcb->exit_sem);
 }

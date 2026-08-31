@@ -121,10 +121,6 @@ static inline void group_release(FAR struct task_group_s *group)
 #endif
 
   task_uninit_info(group);
-
-  /* Mark the group as deleted now */
-
-  atomic_or(&group->tg_flags, GROUP_FLAG_DELETED);
 }
 
 /****************************************************************************
@@ -184,7 +180,6 @@ void group_leave(FAR struct tcb_s *tcb)
           /* Yes.. Release all of the resource held by the task group */
 
           group_release(group);
-          atomic_or(&tcb->flags, TCB_FLAG_FREE_GROUP);
         }
     }
 }
@@ -212,25 +207,35 @@ void group_leave(FAR struct tcb_s *tcb)
 
 void group_drop(FAR struct task_group_s *group)
 {
-#if defined(CONFIG_SCHED_WAITPID) && !defined(CONFIG_SCHED_HAVE_PARENT)
-  /* If there are threads waiting for this group to be freed, then we cannot
-   * yet free the memory resources.  Instead just mark the group deleted
-   * and wait for those threads complete their waits.
+  /* Kernel-thread groups use a static global (g_kthread_group) and are
+   * never ref-counted via group_join.  Skip the ref-count entirely to
+   * avoid underflowing tg_refs; the static object must never be freed.
    */
 
-  if (group->tg_nwaiters > 0)
+  if (atomic_read(&group->tg_flags) & GROUP_FLAG_KERNEL)
     {
-      /* Hold the group still */
-
-      sinfo("Keep group %p (waiters > 0)\n", group);
+      return;
     }
-  else
+
+  /* Free the group when tg_refs reaches zero.  Every group member holds one
+   * reference (the main task's is taken in group_create, each pthread's in
+   * group_join) and drops it here, so the count reaching zero means the last
+   * member is gone and group_release() has already run.  atomic_sub()
+   * returns the pre-decrement value, so == 1 means it just dropped to zero.
+   */
+
+  if (atomic_sub(&group->tg_refs, 1) == 1)
+    {
+#if defined(CONFIG_SCHED_WAITPID) && !defined(CONFIG_SCHED_HAVE_PARENT)
+      /* Keep the group until pending waitpid() waiters have drained. */
+
+      if (group->tg_nwaiters > 0)
+        {
+          sinfo("Keep group %p (waiters > 0)\n", group);
+          return;
+        }
 #endif
 
-  /* Finally, if no one needs the group and it has been deleted, remove it */
-
-  if ((atomic_read(&group->tg_flags) & GROUP_FLAG_DELETED))
-    {
 #if !defined(CONFIG_BUILD_KERNEL) && !defined(CONFIG_ARCH_ADDRENV)
 
       /* Kernel build not use group_heap_initialize.

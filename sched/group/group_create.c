@@ -158,6 +158,8 @@ int group_allocate(FAR struct tcb_s *tcb, int ttype, size_t heapsize)
           return -ENOMEM;
         }
 
+      atomic_set(&group->tg_refs, 1);
+
 #if defined(CONFIG_BUILD_KERNEL)
       /* The task heap base is read from the address environment here because
        * it is consumed later in this same function (task_init_info).  A user

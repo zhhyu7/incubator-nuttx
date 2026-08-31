@@ -157,11 +157,12 @@ static inline_function void group_join(FAR struct tcb_s *tcb)
 
   group = tcb->group;
 
-  /* Add the member to the group */
+  /* Add the member to the group and take a reference on its behalf */
 
   flags = spin_lock_irqsave(&group->tg_lock);
   sq_addfirst(&tcb->member, &group->tg_members);
   spin_unlock_irqrestore(&group->tg_lock, flags);
+  atomic_add(&group->tg_refs, 1);
 }
 #endif
 void group_leave(FAR struct tcb_s *tcb);
