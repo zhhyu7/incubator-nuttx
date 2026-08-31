@@ -32,6 +32,7 @@
 #include <nuttx/irq.h>
 
 #include "tricore_internal.h"
+#include "tricore_vectors.h"
 
 /****************************************************************************
  * Private Functions

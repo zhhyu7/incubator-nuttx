@@ -33,6 +33,13 @@
  * Pre-processor Definitions
  ****************************************************************************/
 
+#define CPU_DCON0        0x9040  /* Data Memory Configuration 0 */
+#define CPU_DCON1        0x9008  /* Data Memory Configuration 1 */
+#define CPU_DCON2        0x9000  /* Data Memory Configuration 2 */
+#define CPU_PCON0        0x920C  /* Program Memory Configuration 0 */
+#define CPU_PCON1        0x9204  /* Program Memory Configuration 1 */
+#define CPU_PCON2        0x9208  /* Program Memory Configuration 2 */
+
 /* I/D-cache line size in bits. */
 
 #define ICACHE_LINE_SIZE 256

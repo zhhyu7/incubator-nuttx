@@ -35,9 +35,6 @@
 
 #include "tricore_internal.h"
 
-#include "IfxSrc.h"
-#include "IfxCpu.h"
-
 /****************************************************************************
  * Private Data
  ****************************************************************************/
@@ -393,8 +390,9 @@ void tricore_ack_irq(int irq)
 
 void up_trigger_irq(int irq, cpu_set_t cpuset)
 {
-  volatile Ifx_INT_SRB *srb = &INT_SRB0 + up_cpu_index();
-  srb->U = cpuset;
+  volatile uint32_t *srb = up_cpu_index() * TRICORE_SRC_SPACING +
+                           TRICORE_INT_SRB0_ADDR;
+  *srb = cpuset;
 }
 #endif
 

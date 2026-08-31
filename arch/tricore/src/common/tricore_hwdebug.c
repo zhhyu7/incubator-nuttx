@@ -35,6 +35,32 @@
  * Pre-processor Definitions
  ****************************************************************************/
 
+#define CPU_DBGSR                     0xFD00  /* Status Register */
+#define CPU_DBGACT                    0xFD14  /* Action Register */
+#define CPU_DMS                       0xFD40  /* Monitor Start Address */
+#define CPU_DCX                       0xFD44  /* Context Save Area Pointer */
+#define CPU_DBGTCR                    0xFD48  /* Trap Control Register */
+#define CPU_DBGCFG                    0xFD4C  /* Configuration Register */
+
+/* Trigger event configuration (EVT) and address (ADR) registers */
+
+#define CPU_TR0_EVT                   0xF000
+#define CPU_TR0_ADR                   0xF004
+#define CPU_TR1_EVT                   0xF008
+#define CPU_TR1_ADR                   0xF00C
+#define CPU_TR2_EVT                   0xF010
+#define CPU_TR2_ADR                   0xF014
+#define CPU_TR3_EVT                   0xF018
+#define CPU_TR3_ADR                   0xF01C
+#define CPU_TR4_EVT                   0xF020
+#define CPU_TR4_ADR                   0xF024
+#define CPU_TR5_EVT                   0xF028
+#define CPU_TR5_ADR                   0xF02C
+#define CPU_TR6_EVT                   0xF030
+#define CPU_TR6_ADR                   0xF034
+#define CPU_TR7_EVT                   0xF038
+#define CPU_TR7_ADR                   0xF03C
+
 /* Trigger event register (TREVT) bit field offsets/masks and the CBS_OEC
  * register address.  These were previously pulled in from the iLLD SFR
  * headers (IfxCpu_bf.h, IfxCbs_reg.h); define them locally with a TC_

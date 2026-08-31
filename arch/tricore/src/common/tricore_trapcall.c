@@ -62,12 +62,12 @@
 
 #define TRICORE_TRAP_MSG_LEN  24
 
-#define TRICORE_TRAP_RETURN() \
-  do                          \
-    {                         \
-      __jumpBackToLink();     \
-      code_unreachable();     \
-    }                         \
+#define TRICORE_TRAP_RETURN()     \
+  do                              \
+    {                             \
+      tricore_jump_backto_link(); \
+      code_unreachable();         \
+    }                             \
   while (0)
 
 /****************************************************************************

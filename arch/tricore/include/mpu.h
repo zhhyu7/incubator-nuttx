@@ -30,8 +30,7 @@
 #include <nuttx/percpu.h>
 #include <arch/barriers.h>
 #include <sys/types.h>
-
-#include <IfxCpu.h>
+#include <stdbool.h>
 
 /****************************************************************************
  * Pre-processor Definitions
@@ -57,10 +56,6 @@
 #define MPU_USET            1   /* user set */
 #define MPU_APP_SET         2   /* app set */
 #define MPU_BUILTIN_SETS    3   /* first allocatable set for mpu_alloc_set() */
-
-#ifndef CPU_SYSCON
-#  define CPU_SYSCON CPU_CORECON
-#endif
 
 /****************************************************************************
  * Public Types

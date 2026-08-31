@@ -45,8 +45,6 @@
 
 #include <arch/chip/irq.h>
 
-#include <IfxCpu.h>
-
 /****************************************************************************
  * Pre-processor Prototypes
  ****************************************************************************/
@@ -171,13 +169,15 @@
 
 #define TRICORE_SRCNUM_PER_GPSR 8
 #define TRICORE_SRC_SPACING     4
-#define TRICORE_SRC_BASEADDR    (&MODULE_SRC)
+
 #define TRICORE_SRC2IRQ(src) \
-  (((uintptr_t)(src) - (uintptr_t)TRICORE_SRC_BASEADDR) / TRICORE_SRC_SPACING)
+  (((uintptr_t)(src) - TRICORE_SRC_BASEADDR) / TRICORE_SRC_SPACING)
 #define TRICORE_IRQ2SRC(irq) \
-  ((volatile Ifx_SRC_SRCR *)((uintptr_t)TRICORE_SRC_BASEADDR + (irq) * TRICORE_SRC_SPACING))
+  ((volatile uint32_t *)(TRICORE_SRC_BASEADDR + (irq) * TRICORE_SRC_SPACING))
 #define TRICORE_GPSR2IRQ(src_cpu, dest_cpu) \
-  TRICORE_SRC2IRQ(&SRC_GPSR0_SR0 + src_cpu * TRICORE_SRCNUM_PER_GPSR + dest_cpu)
+  TRICORE_SRC2IRQ(TRICORE_SRC_GPSR0_SR0 + \
+                  (src_cpu) * TRICORE_SRCNUM_PER_GPSR * TRICORE_SRC_SPACING + \
+                  (dest_cpu) * TRICORE_SRC_SPACING)
 
 #ifdef CONFIG_ARCH_IRQPRIO
 #  define TRICORE_SCHEDIRQ TRICORE_GPSR2IRQ(up_this_cpu(), up_this_cpu())
@@ -188,7 +188,9 @@
  */
 
 #define TRICORE_CPUCALL_SRC(cpu) \
-  (&SRC_GPSR0_SR0 + (cpu) * TRICORE_SRCNUM_PER_GPSR + 7)
+  ((volatile uint32_t *)(TRICORE_SRC_GPSR0_SR0 + (cpu) * \
+                         TRICORE_SRCNUM_PER_GPSR * TRICORE_SRC_SPACING + \
+                         7 * TRICORE_SRC_SPACING))
 #define TRICORE_CPUCALL_IRQNUM(cpu) \
   TRICORE_SRC2IRQ(TRICORE_CPUCALL_SRC(cpu))
 
@@ -209,12 +211,12 @@
 
 /* FPU registers */
 
-#ifdef COINFIG_ARCH_TC1V6
-#  define FPU_SYNC_TRAP_REG  CPU_FPU_TRAP_CON
-#  define FPU_ASYNC_TRAP_REG CPU_FPU_TRAP_CON
+#ifdef CONFIG_ARCH_TC1V6
+#  define FPU_SYNC_TRAP_REG  0xA000
+#  define FPU_ASYNC_TRAP_REG 0xA000
 #else
-#  define FPU_SYNC_TRAP_REG  CPU_FPU_SYNC_TRAP_CON
-#  define FPU_ASYNC_TRAP_REG CPU_FPU_TRAP_CON
+#  define FPU_SYNC_TRAP_REG  0xA030
+#  define FPU_ASYNC_TRAP_REG 0xA000
 #endif
 #define FPU_TRAP_FZE_SHIFT   20
 #define FPU_TRAP_TCL_SHIFT   1

@@ -138,7 +138,7 @@ static bool dispatch_ppccall(struct tcb_s *rtcb, uintptr_t *puregs,
   /* Args passed to ppccall_handler */
 
   puregs[REG_UPCXI] = tricore_addr2csa(plregs);
-  puregs[REG_UA11] = (uintptr_t)__getA11();
+  puregs[REG_UA11] = tricore_get_a11();
   nplregs[REG_D4] = info->func;
   nplregs[REG_A4] = (uintptr_t)param;
   return true;
@@ -490,7 +490,7 @@ void tricore_svcall(volatile void *trap)
               /* Args passed to dispatch_syscall */
 
               puregs[REG_UPCXI] = tricore_addr2csa(regs);
-              puregs[REG_UA11] = (uintptr_t)__getA11();
+              puregs[REG_UA11] = tricore_get_a11();
               regs = tricore_csa2addr(regs[REG_LPCXI]);
               puregs[REG_D8] = regs[REG_D12];
               puregs[REG_D9] = regs[REG_D13];
@@ -531,5 +531,5 @@ void tricore_svcall(volatile void *trap)
   (*running_task)->xcp.regs = NULL;
   tricore_change_pprs(*running_task, UINT32_MAX);
 
-  __jumpBackToLink();
+  tricore_jump_backto_link();
 }

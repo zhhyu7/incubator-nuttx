@@ -87,7 +87,7 @@
         tricore_mtcr(CPU_LCX, saved_lcx);                                \
         UP_ISB();                                                        \
       }                                                                  \
-    __jumpBackToLink();                                                  \
+    tricore_jump_backto_link();                                          \
   }                                                                      \
   static inline_function void isr##_internal(void)
 
