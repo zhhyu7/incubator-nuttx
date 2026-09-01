@@ -47,6 +47,12 @@
  * Private Types
  ****************************************************************************/
 
+struct pathcache_match_s
+{
+  FAR const char *path;
+  size_t len;
+};
+
 /****************************************************************************
  * Private Functions Prototypes
  ****************************************************************************/
@@ -229,6 +235,62 @@ pathcache_is_match(FAR struct lru_cache_s *cache,
 }
 
 /****************************************************************************
+ * Name: pathcache_is_child
+ *
+ * Description:
+ *   Match everything below a path, excluding the path itself.
+ *
+ ****************************************************************************/
+
+static int
+pathcache_is_child(FAR struct lru_cache_s *cache,
+                   FAR const void *key, size_t keylen,
+                   FAR void *value, FAR void *arg)
+{
+  FAR struct pathcache_match_s *match = arg;
+  FAR const char *path = key;
+
+  if (keylen <= match->len ||
+      memcmp(path, match->path, match->len) != 0)
+    {
+      return 0;
+    }
+
+  return path[match->len] == '/';
+}
+
+/****************************************************************************
+ * Name: pathcache_strip
+ *
+ * Description:
+ *   Turn a canonical path into its parent directory, in place.
+ *
+ ****************************************************************************/
+
+static bool pathcache_strip(FAR char *path, FAR size_t *len)
+{
+  FAR char *slash = memrchr(path, '/', *len);
+
+  if (slash == NULL)
+    {
+      return false;
+    }
+
+  if (slash == path)
+    {
+      path[1] = '\0';
+      *len = 1;
+    }
+  else
+    {
+      *slash = '\0';
+      *len = slash - path;
+    }
+
+  return true;
+}
+
+/****************************************************************************
  * Public Functions
  ****************************************************************************/
 
@@ -284,22 +346,21 @@ int pathcache_open(FAR struct file *filep, FAR const char *relpath,
 
   if (cached_file == NULL)
     {
+      /* A create changes the parent directory's contents.  Drop its cached
+       * listing before entering the file system.
+       */
+
+      if (oflags & O_CREAT)
+        {
+          pathcache_remove(abspath, PATHCACHE_PARENT);
+        }
+
       /* Open the file by inode */
 
       ret = inode->u.i_mops->open(filep, relpath, oflags, mode);
       if (ret < 0)
         {
           goto errout_with_pathbuffer;
-        }
-
-      /* If the file was opened with O_CREAT, a new entry may have been
-       * added to the parent directory.  Invalidate the parent's cached
-       * listing so a later opendir re-fetches the real (updated) state.
-       */
-
-      if (oflags & O_CREAT)
-        {
-          pathcache_remove_parent(abspath, false);
         }
 
       /* File opened successfully. Now try to create a cache entry.
@@ -489,94 +550,56 @@ errout_with_file:
 }
 
 /****************************************************************************
- * Name: pathcache_remove_parent
+ * Name: pathcache_remove
  *
  * Description:
- *   Invalidate the cached directory listing of the PARENT directory of
- *   'path', resolving the absolute path only once.  Any operation that
- *   changes the contents of a directory (create/unlink/mkdir/rmdir/rename)
- *   must call this: a cached opendir snapshot freezes the directory's entry
- *   count, so a later opendir that hits the cache would dup a stale snapshot
- *   and readdir() would miss the newly added (or still report the removed)
- *   entries.
- *
- *   When 'drop_self' is true the entry's own cache entry is dropped as well.
- *   Deletion operations (unlink/rmdir, rename source and the overwritten
- *   rename target) pass true; addition operations (create/mkdir, rename
- *   destination) pass false so a freshly cached entry is left untouched.
- *
- * Input Parameters:
- *   path      - Path of the entry that was added to / removed from its
- *               parent directory
- *   drop_self - Whether to also drop the entry's own cache entry
- *
- * Returned Value:
- *   OK on success; a negated errno value on failure
+ *   Remove the selected entries before an operation changes the file system
+ *   namespace.
  *
  ****************************************************************************/
 
-int pathcache_remove_parent(FAR const char *path, bool drop_self)
+void pathcache_remove(FAR const char *path, int flags)
 {
+  struct pathcache_match_s match;
   FAR char *pathbuffer;
   FAR char *abspath;
-  FAR char *slash;
-  int ret = OK;
+  size_t len;
 
   DEBUGASSERT(path != NULL);
-
-  /* Get the canonical absolute path for locating the cache entry */
 
   pathbuffer = lib_get_tempbuffer(PATH_MAX);
   if (pathbuffer == NULL)
     {
-      return -ENOMEM;
+      return;
     }
 
   abspath = lib_realpath(path, pathbuffer, true);
   if (abspath == NULL)
     {
-      ret = -EINVAL;
-      goto errout_with_pathbuffer;
+      goto out;
     }
 
-  /* Drop the entry's own cache entry when it is being removed */
+  len = strlen(abspath);
 
-  if (drop_self)
+  if ((flags & PATHCACHE_SUBTREE) != 0)
     {
-      lru_cache_remove(&g_pathcache, abspath, strlen(abspath) + 1);
+      match.path = abspath;
+      match.len = len;
+      lru_cache_remove_if(&g_pathcache, pathcache_is_child, &match);
     }
 
-  /* Strip the last path component to obtain the parent directory.
-   * e.g. "/misc/dt/newfile.txt" -> "/misc/dt".  Keep the leading "/"
-   * when the parent is the root directory.
-   */
-
-  slash = strrchr(abspath, '/');
-  if (slash == NULL)
+  if ((flags & PATHCACHE_SELF) != 0)
     {
-      /* No slash: not an absolute path we can reason about; nothing to do */
-
-      goto errout_with_pathbuffer;
+      lru_cache_remove(&g_pathcache, abspath, len + 1);
     }
 
-  if (slash == abspath)
+  if ((flags & PATHCACHE_PARENT) != 0 && pathcache_strip(abspath, &len))
     {
-      /* Parent is the root directory itself */
-
-      abspath[1] = '\0';
-    }
-  else
-    {
-      *slash = '\0';
+      lru_cache_remove(&g_pathcache, abspath, len + 1);
     }
 
-  /* Invalidate the parent directory's cached listing */
-
-  lru_cache_remove(&g_pathcache, abspath, strlen(abspath) + 1);
-
-errout_with_pathbuffer:
+out:
   lib_put_tempbuffer(pathbuffer);
-  return ret;
 }
 
 /****************************************************************************

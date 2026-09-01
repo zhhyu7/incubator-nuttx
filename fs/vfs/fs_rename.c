@@ -497,26 +497,20 @@ static int mountptrename(FAR const char *oldpath, FAR struct inode *oldinode,
 
               if (oldinode->u.i_mops->rmdir)
                 {
+#ifdef CONFIG_FS_PATHCACHE
+                  if (INODE_IS_PATHCACHE(oldinode))
+                    {
+                      pathcache_remove(newpath, PATHCACHE_SUBTREE |
+                                                PATHCACHE_SELF |
+                                                PATHCACHE_PARENT);
+                    }
+#endif
+
                   ret = oldinode->u.i_mops->rmdir(oldinode, newrelpath);
                   if (ret < 0)
                     {
                       goto errout_with_newinode;
                     }
-
-#ifdef CONFIG_FS_PATHCACHE
-                  if (INODE_IS_PATHCACHE(oldinode))
-                    {
-                      /* The pre-existing target directory was just removed:
-                       * drop its own cache entry and invalidate its parent
-                       * directory's cached listing (an entry was removed).
-                       * This must happen here, not only after a successful
-                       * rename, because the removal already changed the
-                       * parent even if the rename below fails.
-                       */
-
-                      pathcache_remove_parent(newpath, true);
-                    }
-#endif
                 }
             }
           else
@@ -541,21 +535,14 @@ static int mountptrename(FAR const char *oldpath, FAR struct inode *oldinode,
                    */
 
 #ifdef CONFIG_FS_PATHCACHE
-                  ret = oldinode->u.i_mops->unlink(oldinode, newrelpath);
-                  if (ret >= 0 && INODE_IS_PATHCACHE(oldinode))
+                  if (INODE_IS_PATHCACHE(oldinode))
                     {
-                      /* The pre-existing target file was just removed: drop
-                       * its own cache entry and invalidate its parent
-                       * directory's cached listing (an entry was removed).
-                       * Done here rather than only after a successful rename
-                       * because the removal already changed the parent.
-                       */
-
-                      pathcache_remove_parent(newpath, true);
+                      pathcache_remove(newpath, PATHCACHE_SELF |
+                                                PATHCACHE_PARENT);
                     }
-#else
-                  oldinode->u.i_mops->unlink(oldinode, newrelpath);
 #endif
+
+                  oldinode->u.i_mops->unlink(oldinode, newrelpath);
 
 #ifdef CONFIG_FS_NOTIFY
                    notify_unlink(newrelpath);
@@ -569,26 +556,22 @@ static int mountptrename(FAR const char *oldpath, FAR struct inode *oldinode,
    * mountpoint.
    */
 
+#ifdef CONFIG_FS_PATHCACHE
+  if (INODE_IS_PATHCACHE(oldinode))
+    {
+      pathcache_remove(oldpath, PATHCACHE_SUBTREE | PATHCACHE_SELF |
+                                PATHCACHE_PARENT);
+      pathcache_remove(newpath, PATHCACHE_SUBTREE | PATHCACHE_SELF |
+                                PATHCACHE_PARENT);
+    }
+#endif
+
   ret = oldinode->u.i_mops->rename(oldinode, oldrelpath, newrelpath);
 
 #ifdef CONFIG_FS_NOTIFY
   if (ret >= 0)
     {
       notify_rename(oldpath, oldisdir, newpath, newisdir);
-    }
-#endif
-
-#ifdef CONFIG_FS_PATHCACHE
-  if (ret >= 0 && INODE_IS_PATHCACHE(oldinode))
-    {
-      /* Rename changes the cache key of the moved entry, and changes the
-       * contents of both the source and destination parent directories
-       * (an entry leaves the old parent and appears in the new parent).
-       * Invalidate the entry itself plus both parent directory listings.
-       */
-
-      pathcache_remove_parent(oldpath, true);
-      pathcache_remove_parent(newpath, false);
     }
 #endif
 

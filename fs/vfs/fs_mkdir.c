@@ -108,23 +108,19 @@ int mkdir(const char *pathname, mode_t mode)
 
       else if (INODE_IS_MOUNTPT(inode) && inode->u.i_mops->mkdir)
         {
+#ifdef CONFIG_FS_PATHCACHE
+          if (INODE_IS_PATHCACHE(inode))
+            {
+              pathcache_remove(pathname, PATHCACHE_PARENT);
+            }
+#endif
+
           ret = inode->u.i_mops->mkdir(inode, desc.relpath, mode);
           if (ret < 0)
             {
               errcode = -ret;
               goto errout_with_inode;
             }
-
-#ifdef CONFIG_FS_PATHCACHE
-          if (INODE_IS_PATHCACHE(inode))
-            {
-              /* A new sub-directory was added; invalidate the parent
-               * directory's cached listing.
-               */
-
-              pathcache_remove_parent(pathname, false);
-            }
-#endif
         }
       else
         {

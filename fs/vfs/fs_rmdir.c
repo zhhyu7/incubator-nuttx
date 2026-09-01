@@ -106,24 +106,21 @@ int rmdir(FAR const char *pathname)
 
       if (inode->u.i_mops->rmdir)
         {
+#ifdef CONFIG_FS_PATHCACHE
+          if (INODE_IS_PATHCACHE(inode))
+            {
+              pathcache_remove(pathname, PATHCACHE_SUBTREE |
+                                         PATHCACHE_SELF |
+                                         PATHCACHE_PARENT);
+            }
+#endif
+
           ret = inode->u.i_mops->rmdir(inode, desc.relpath);
           if (ret < 0)
             {
               errcode = -ret;
               goto errout_with_inode;
             }
-
-#ifdef CONFIG_FS_PATHCACHE
-          if (INODE_IS_PATHCACHE(inode))
-            {
-              /* Remove the directory's own cache entry and invalidate its
-               * parent directory's cached listing (an entry was removed
-               * from the parent).
-               */
-
-              pathcache_remove_parent(pathname, true);
-            }
-#endif
         }
       else
         {
