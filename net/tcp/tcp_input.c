@@ -52,6 +52,7 @@
 #include <stdbool.h>
 #include <stdint.h>
 #include <string.h>
+#include <sys/param.h>
 #include <assert.h>
 #include <debug.h>
 
@@ -1451,7 +1452,15 @@ found:
 
       if (conn->nrtx == 0)
         {
-          signed char m;
+          /* All of rto/timer/sa/sv are in deciseconds.  'm' must be wide
+           * enough to hold the full signed range of those values (up to
+           * +/-TCP_RTO_MAX), so it cannot be a "signed char" as it was
+           * when the unit was half-seconds.
+           */
+
+          int m;
+          int rto;
+
           m = conn->rto - conn->timer;
 
           /* This is taken directly from VJs original code in his paper */
@@ -1465,14 +1474,23 @@ found:
 
           m = m - (conn->sv >> 2);
           conn->sv += m;
-          conn->rto = (conn->sa >> 3) + conn->sv;
+
+          /* Clamp the result.  sa/sv are unsigned accumulators that may
+           * transiently wrap, and with the finer decisecond unit the raw
+           * sum spans a much wider range than before.  An rto of 0 would
+           * be interpreted as "no timer" and stall retransmission, while
+           * an excessive rto would overflow the uint16_t field.
+           */
+
+          rto = (conn->sa >> 3) + conn->sv;
+          conn->rto = CLAMP(rto, TCP_RTO_MIN, TCP_RTO_MAX);
 
           /* Report high TCP latency via DFX.
-           * rto unit is half-second, convert to ms.
+           * rto unit is decisecond, convert to ms.
            * Use ratelimit to avoid flooding: aggregate suppressed events.
            */
 
-          if (conn->rto > CONFIG_NET_TCP_RTO * 4)
+          if (conn->rto > TCP_RTO * 4)
             {
               if (!ratelimit_islimited(&g_tcp_latency_rl))
                 {
@@ -1481,10 +1499,10 @@ found:
 
                   inet_ntop(domain, laddr, ipstr, sizeof(ipstr));
                   net_trace_diag(LOG_ERR, DIAG_NET_TCP_LATENCY_HIGH,
-                                 "Latency:%u,InterfaceInfo:%s/"
+                                 "Latency:%ld,InterfaceInfo:%s/"
                                  "%04" PRIx32 "/%u/%s"
                                  ",Suppressed:%u",
-                                 conn->rto * 500,
+                                 conn->rto * MSEC_PER_DSEC,
                                  dev->d_ifname, dev->d_flags,
                                  dev->d_lltype, ipstr,
                                  ratelimit_missed(&g_tcp_latency_rl));
@@ -1567,10 +1585,10 @@ skip_rtt:
           tcp_reset(dev, conn);
 
           /* Retransmit the SYN as soon as possible in order to establish
-           * the tcp connection.
+           * the tcp connection, i.e. after the minimum RTO.
            */
 
-          tcp_update_retrantimer(conn, 1);
+          tcp_update_retrantimer(conn, TCP_RTO_MIN);
 
           return;
         }
@@ -1603,7 +1621,7 @@ skip_rtt:
                       TCP_TIME_WAIT)
                     {
                       tcp_start_timewait(conn, TCP_TIME_WAIT_TIMEOUT *
-                                         HSEC_PER_SEC);
+                                         DSEC_PER_SEC);
                     }
 
                   tcp_send(dev, conn, TCP_ACK, tcpiplen);
@@ -1992,7 +2010,8 @@ skip_rtt:
                     conn->rx_unackseg == 0)
                   {
                     conn->rx_unackseg = 1;
-                    tcp_update_delaytimer(conn, 1);
+                    tcp_update_delaytimer(conn,
+                                  CONFIG_NET_TCP_DELAYED_ACK_DSEC);
                     return;
                   }
 #endif
@@ -2041,7 +2060,7 @@ skip_rtt:
               {
                 conn->tcpstateflags = TCP_TIME_WAIT;
                 tcp_start_timewait(conn,
-                                   TCP_TIME_WAIT_TIMEOUT * HSEC_PER_SEC);
+                                   TCP_TIME_WAIT_TIMEOUT * DSEC_PER_SEC);
                 ninfo("TCP state: TCP_TIME_WAIT\n");
               }
             else
@@ -2079,7 +2098,7 @@ skip_rtt:
             if ((conn->shutdown & SHUT_DEAD) != 0)
               {
                 tcp_update_retrantimer(conn,
-                        CONFIG_NET_TCP_FIN_WAIT2_TIMEOUT * HSEC_PER_SEC);
+                        CONFIG_NET_TCP_FIN_WAIT2_TIMEOUT * DSEC_PER_SEC);
               }
           }
 
@@ -2115,7 +2134,7 @@ skip_rtt:
           {
             conn->tcpstateflags = TCP_TIME_WAIT;
             tcp_start_timewait(conn,
-                               TCP_TIME_WAIT_TIMEOUT * HSEC_PER_SEC);
+                               TCP_TIME_WAIT_TIMEOUT * DSEC_PER_SEC);
             ninfo("TCP state: TCP_TIME_WAIT\n");
 
             net_incr32(conn->rcvseq, 1); /* ack FIN */
@@ -2151,7 +2170,7 @@ skip_rtt:
 
         if ((tcp->flags & TCP_FIN) != 0)
           {
-            tcp_start_timewait(conn, TCP_TIME_WAIT_TIMEOUT * HSEC_PER_SEC);
+            tcp_start_timewait(conn, TCP_TIME_WAIT_TIMEOUT * DSEC_PER_SEC);
             tcp_send(dev, conn, TCP_ACK, tcpiplen);
             return;
           }
@@ -2169,7 +2188,7 @@ skip_rtt:
           {
             conn->tcpstateflags = TCP_TIME_WAIT;
             tcp_start_timewait(conn,
-                               TCP_TIME_WAIT_TIMEOUT * HSEC_PER_SEC);
+                               TCP_TIME_WAIT_TIMEOUT * DSEC_PER_SEC);
             ninfo("TCP state: TCP_TIME_WAIT\n");
           }
 

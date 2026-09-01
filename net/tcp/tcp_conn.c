@@ -1163,7 +1163,7 @@ FAR struct tcp_conn_s *tcp_alloc_accept(FAR struct net_driver_s *dev,
 
       conn->rto              = TCP_RTO;
       conn->sa               = 0;
-      conn->sv               = 4;
+      conn->sv               = 4 * DSEC_PER_HSEC; /* Unchanged: 2 s */
       conn->nrtx             = 0;
       conn->lport            = tcp->destport;
       conn->rport            = tcp->srcport;
@@ -1479,7 +1479,12 @@ int tcp_connect(FAR struct tcp_conn_s *conn, FAR const struct sockaddr *addr)
   conn->timeout    = true; /* Send the SYN immediately. */
   conn->rto        = TCP_RTO;
   conn->sa         = 0;
-  conn->sv         = 16;   /* Initial value of the RTT variance. */
+
+  /* Initial value of the RTT variance.  Unchanged at 8 s; the literal is
+   * scaled because sa/sv/rto are now expressed in deciseconds.
+   */
+
+  conn->sv         = 16 * DSEC_PER_HSEC;
   conn->lport      = (uint16_t)port;
 
   /* Set initial sndseq when we have both local/remote addr and port */

@@ -449,7 +449,12 @@
 #  define CONFIG_NET_MAX_LISTENPORTS 20
 #endif
 
-/* The initial retransmission timeout counted in timer pulses.
+/* The initial retransmission timeout, in deciseconds (100 ms).
+ *
+ * This is the common unit shared by every TCP timer -- see the "TCP timer
+ * unit convention" comment in net/tcp/tcp.h.  The default of 15 is
+ * 1.5 seconds.
+ *
  * REVISIT:  TCP RTO really should be calculated dynamically for each TCP
  * connection.
  */
@@ -457,7 +462,7 @@
 #ifdef CONFIG_NET_TCP_RTO
 #  define TCP_RTO CONFIG_NET_TCP_RTO
 #else
-#  define TCP_RTO 3
+#  define TCP_RTO 15
 #endif
 
 /* The maximum number of times a segment should be retransmitted

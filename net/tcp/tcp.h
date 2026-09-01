@@ -126,9 +126,62 @@
 
 #define TCP_FAST_RETRANSMISSION_THRESH 3
 
-#define TCP_RTO_MAX        240 /* 120s,The unit is half a second */
-#define TCP_RTO_MIN        1   /* 0.5s */
-#define TCP_ZERO_PROBE_MIN 2   /* 1s, The unit is half a second */
+/* TCP timer unit convention
+ * ==========================
+ *
+ * All TCP timers share a single common unit: the decisecond (100 ms).
+ * This includes:
+ *
+ *   conn->timer       - retransmission / TIME_WAIT / FIN_WAIT_2 / zero
+ *                       window probe timer
+ *   conn->rto         - current retransmission timeout
+ *   conn->sa/conn->sv - RTT estimator state (8*SRTT and 4*RTTVAR)
+ *   conn->keeptimer   - keep-alive timer (already deciseconds)
+ *   conn->rx_acktimer - delayed ACK timer
+ *
+ * A single shared unit is required because tcp_timer() decrements every
+ * pending timer by the same amount (the value that tcp_get_timeout()
+ * armed the work queue with).  Mixing units there would either stall a
+ * timer (truncation to zero) or fire it early, the latter breaking TCP
+ * timings and causing spurious retransmissions.
+ *
+ * Configuration units.  Everything that names a timer interval directly
+ * is in deciseconds too, so that no scaling is needed at the point of
+ * use.  The two _TIMEOUT options are the exception: they express a
+ * protocol constant in its conventional unit (seconds) and are scaled by
+ * DSEC_PER_SEC where they are consumed.
+ *
+ *   CONFIG_NET_TCP_RTO                - deciseconds (default 15 = 1.5 s)
+ *   CONFIG_NET_TCP_DELAYED_ACK_DSEC   - deciseconds (default 1 = 100 ms)
+ *   TCP_KEEPIDLE / TCP_KEEPINTVL      - deciseconds (socket option)
+ *   CONFIG_NET_TCP_WAIT_TIMEOUT       - seconds (2*MSL, RFC 793)
+ *   CONFIG_NET_TCP_FIN_WAIT2_TIMEOUT  - seconds
+ *
+ * The conversion to deciseconds happens at the point of use, so apart
+ * from the delayed ACK the effective default timings are identical to the
+ * previous half-second based implementation.
+ */
+
+/* Bounds of the retransmission timeout, in deciseconds.
+ *
+ * These are the single source of truth for the RTO range: they bound the
+ * dynamically estimated RTO, they form the base and the cap of the zero
+ * window probe backoff, and they must match the "range" of
+ * CONFIG_NET_TCP_RTO in net/tcp/Kconfig (checked below).
+ *
+ * TCP_RTO_MIN is 200 ms, the same value Linux uses (TCP_RTO_MIN = HZ/5).
+ * Note that before the timers were converted to deciseconds this was
+ * spelled "1", meaning one timer tick of the then 500 ms resolution
+ * rather than a deliberate 500 ms policy.
+ */
+
+#define TCP_RTO_MAX        (120 * DSEC_PER_SEC) /* 120s */
+#define TCP_RTO_MIN        (DSEC_PER_SEC / 5)   /* 200ms */
+#define TCP_ZERO_PROBE_MIN (1 * DSEC_PER_SEC)   /* 1s */
+
+#if TCP_RTO < TCP_RTO_MIN || TCP_RTO > TCP_RTO_MAX
+#  error "CONFIG_NET_TCP_RTO must stay within [TCP_RTO_MIN, TCP_RTO_MAX]"
+#endif
 
 /****************************************************************************
  * Public Type Definitions
@@ -222,20 +275,21 @@ struct tcp_conn_s
 #endif
   uint8_t  shutdown;      /* Whether the connection is shutdown, SHUT_RD and
                            * SHUT_WR */
-  uint8_t  sa;            /* Retransmission time-out calculation state
-                           * variable */
-  uint8_t  sv;            /* Retransmission time-out calculation state
-                           * variable */
-  uint8_t  rto;           /* Retransmission time-out */
   uint8_t  tcpstateflags; /* TCP state and flags */
+  uint16_t sa;            /* Retransmission time-out calculation state
+                           * variable, 8*SRTT (units: deciseconds) */
+  uint16_t sv;            /* Retransmission time-out calculation state
+                           * variable, 4*RTTVAR (units: deciseconds) */
+  uint16_t rto;           /* Retransmission time-out
+                           * (units: deciseconds) */
   struct   work_s work;   /* TCP timer handle */
   bool     timeout;       /* Trigger from timer expiry */
-  uint8_t  timer;         /* The retransmission timer (units: half-seconds) */
+  uint16_t timer;         /* The retransmission timer (units: deciseconds) */
   int8_t   nrtx;          /* Number of retransmissions or zero-window
                            * probes */
 #ifdef CONFIG_NET_TCP_DELAYED_ACK
   uint8_t  rx_unackseg;   /* Number of un-ACKed received segments */
-  uint8_t  rx_acktimer;   /* The delayed ACK timer (units: half-seconds) */
+  uint8_t  rx_acktimer;   /* The delayed ACK timer (units: deciseconds) */
 #endif
   uint16_t lport;         /* The local TCP port, in network byte order */
   uint16_t rport;         /* The remoteTCP port, in network byte order */
@@ -367,7 +421,10 @@ struct tcp_conn_s
 #if defined(CONFIG_NET_SENDFILE) && defined(CONFIG_NET_TCP_WRITE_BUFFERS)
   bool       sendfile;    /* True if sendfile operation is in progress */
 #endif
-  uint8_t    zero_probe;  /* Zero-window probe interval (half-seconds) */
+  uint16_t   zero_probe;  /* Zero-window probe interval (deciseconds).
+                           * Backs off up to TCP_RTO_MAX, so it needs the
+                           * same width as conn->timer and conn->rto.
+                           */
 
   /* connevents is a list of callbacks for each socket the uses this
    * connection (there can be more that one in the event that the the socket
@@ -1106,7 +1163,7 @@ void tcp_update_retrantimer(FAR struct tcp_conn_s *conn, int timeout);
  *
  * Input Parameters:
  *   conn    - The TCP "connection" entering TIME_WAIT state
- *   timeout - Timeout value in half-second units
+ *   timeout - Timeout value in decisecond units
  *
  * Returned Value:
  *   None

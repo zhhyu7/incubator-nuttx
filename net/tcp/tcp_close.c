@@ -292,7 +292,7 @@ static inline int tcp_close_disconnect(FAR struct socket *psock)
       if (conn->tcpstateflags == TCP_FIN_WAIT_2 && conn->timer == 0)
         {
           tcp_update_retrantimer(conn,
-                      CONFIG_NET_TCP_FIN_WAIT2_TIMEOUT * HSEC_PER_SEC);
+                      CONFIG_NET_TCP_FIN_WAIT2_TIMEOUT * DSEC_PER_SEC);
         }
 
       /* Notify the device driver of the availability of TX data */
@@ -309,7 +309,7 @@ static inline int tcp_close_disconnect(FAR struct socket *psock)
       conn->flags |= TCP_CLOSE_ARRANGED;
       conn->tcpstateflags = TCP_CLOSED;
       work_queue(LPWORK, &conn->clswork, tcp_close_work, conn,
-                 HSEC2TICK(conn->timer));
+                 DSEC2TICK(conn->timer));
       conn_dev_unlock(&conn->sconn, conn->dev);
     }
   else

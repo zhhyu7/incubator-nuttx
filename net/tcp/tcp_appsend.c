@@ -133,7 +133,7 @@ void tcp_appsend(FAR struct net_driver_s *dev, FAR struct tcp_conn_s *conn,
            */
 
           conn->rx_unackseg = 1;
-          tcp_update_delaytimer(conn, 1);
+          tcp_update_delaytimer(conn, CONFIG_NET_TCP_DELAYED_ACK_DSEC);
           return;
         }
     }

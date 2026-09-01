@@ -69,16 +69,6 @@
  * Pre-processor Definitions
  ****************************************************************************/
 
-/* Per RFC 1122:  "... an ACK should not be excessively delayed; in
- * particular, the delay MUST be less than 0.5 seconds ..."
- *
- * NOTE:  We only have 0.5 timing resolution here so the delay will be
- * between 0.5 and 1.0 seconds, and may be delayed further, depending on the
- * polling rate of the the driver (often 1 second).
- */
-
-#define ACK_DELAY (1)
-
 /****************************************************************************
  * Private Functions
  ****************************************************************************/
@@ -93,7 +83,7 @@
  *   conn - The TCP "connection" to poll for TX data
  *
  * Returned Value:
- *   int - The time required for the next expiry (units: half-seconds)
+ *   int - The time required for the next expiry (units: deciseconds)
  *
  * Assumptions:
  *   conn is not NULL.
@@ -113,17 +103,16 @@ static int tcp_get_timeout(FAR struct tcp_conn_s *conn)
 #endif
 
 #ifdef CONFIG_NET_TCP_KEEPALIVE
-  if (timeout == 0)
-    {
-      /* The conn->keeptimer units is decisecond and the timeout
-       * units is half-seconds, therefore they need to be unified.
-       */
+  /* conn->keeptimer shares the decisecond unit with conn->timer, so no
+   * conversion is required.  The previous half-second based code divided
+   * by DSEC_PER_HSEC here, which truncated any keep-alive interval below
+   * 500 ms to zero and caused tcp_update_timer() to cancel the timer
+   * altogether.
+   */
 
-      timeout = conn->keeptimer / DSEC_PER_HSEC;
-    }
-  else if (conn->keeptimer > 0 && timeout > conn->keeptimer / DSEC_PER_HSEC)
+  if (timeout == 0 || (conn->keeptimer > 0 && timeout > conn->keeptimer))
     {
-      timeout = conn->keeptimer / DSEC_PER_HSEC;
+      timeout = conn->keeptimer;
     }
 #endif
 
@@ -256,18 +245,18 @@ void tcp_update_timer(FAR struct tcp_conn_s *conn)
             {
               timeout = 0;
             }
-          else if (timeout > TICK2HSEC(ticks))
+          else if (timeout > TICK2DSEC(ticks))
             {
-              timeout = TICK2HSEC(ticks);
+              timeout = TICK2DSEC(ticks);
             }
         }
 #endif
 
       if (work_available(&conn->work) ||
-          TICK2HSEC(work_timeleft(&conn->work)) != timeout)
+          TICK2DSEC(work_timeleft(&conn->work)) != timeout)
         {
           work_queue(LPWORK, &conn->work, tcp_timer_expiry,
-                     conn, HSEC2TICK(timeout));
+                     conn, DSEC2TICK(timeout));
         }
     }
   else
@@ -311,7 +300,7 @@ void tcp_update_retrantimer(FAR struct tcp_conn_s *conn, int timeout)
  *
  * Input Parameters:
  *   conn    - The TCP "connection" entering TIME_WAIT state
- *   timeout - Timeout value in half-second units
+ *   timeout - Timeout value in decisecond units
  *
  * Returned Value:
  *   None
@@ -326,7 +315,7 @@ void tcp_start_timewait(FAR struct tcp_conn_s *conn, int timeout)
 {
   conn->timer = timeout;
   work_queue(LPWORK, &conn->work, tcp_timer_expiry,
-             conn, HSEC2TICK(timeout));
+             conn, DSEC2TICK(timeout));
 }
 
 /****************************************************************************
@@ -455,14 +444,18 @@ void tcp_set_zero_probe(FAR struct tcp_conn_s *conn, uint32_t flags)
 
 void tcp_timer(FAR struct net_driver_s *dev, FAR struct tcp_conn_s *conn)
 {
-  int hsec = tcp_get_timeout(conn);
+  int dsec = tcp_get_timeout(conn);
   uint32_t result;
   uint8_t hdrlen;
 
-  /* NOTE: It is important to decrease conn->timer at "hsec" pace,
+  /* NOTE: It is important to decrease conn->timer at "dsec" pace,
    * not faster. Excessive (false) decrements of conn->timer are not allowed
    * here. Otherwise, it breaks TCP timings and leads to TCP spurious
    * retransmissions and other issues due to premature timeouts.
+   *
+   * "dsec" is the exact amount of time (in deciseconds) that the work
+   * queue was armed with by tcp_update_timer(), so every timer that
+   * shares that unit can be decremented by it directly.
    */
 
   DEBUGASSERT(dev != NULL && conn != NULL && dev == conn->dev);
@@ -538,7 +531,7 @@ void tcp_timer(FAR struct net_driver_s *dev, FAR struct tcp_conn_s *conn)
     {
 #ifdef CONFIG_NET_TCP_DELAYED_ACK
       /* Flush pending delayed ACKs before checking the connection timer.
-       * The timer expiry (hsec) may have been driven by rx_acktimer
+       * The timer expiry (dsec) may have been driven by rx_acktimer
        * rather than conn->timer, so we must handle delayed ACKs first.
        * Only FIN_WAIT_2 can have one pending here: rx_unackseg is set
        * solely in ESTABLISHED, FIN_WAIT_1 and FIN_WAIT_2, and every path
@@ -563,7 +556,7 @@ void tcp_timer(FAR struct net_driver_s *dev, FAR struct tcp_conn_s *conn)
 
       /* Check if the timer exceeds the timeout value */
 
-      if (conn->timer <= hsec)
+      if (conn->timer <= dsec)
         {
           if (conn->tcpstateflags == TCP_FIN_WAIT_2)
             {
@@ -588,7 +581,7 @@ void tcp_timer(FAR struct net_driver_s *dev, FAR struct tcp_conn_s *conn)
         {
           /* No timeout. Just update the decremented timer */
 
-          conn->timer -= hsec;
+          conn->timer -= dsec;
         }
     }
   else if (conn->tcpstateflags != TCP_CLOSED)
@@ -602,11 +595,11 @@ void tcp_timer(FAR struct net_driver_s *dev, FAR struct tcp_conn_s *conn)
         {
           /* The connection has outstanding data */
 
-          if (conn->timer > hsec)
+          if (conn->timer > dsec)
             {
               /* Will not yet decrement to zero */
 
-              conn->timer -= hsec;
+              conn->timer -= dsec;
             }
           else
             {
@@ -687,11 +680,18 @@ void tcp_timer(FAR struct net_driver_s *dev, FAR struct tcp_conn_s *conn)
                   goto done;
                 }
 
-              /* Exponential backoff. */
+              /* Exponential backoff, capped at TCP_RTO_MAX so that the
+               * decisecond-scaled value cannot overflow conn->rto for
+               * large CONFIG_NET_TCP_RTO settings (RFC 6298 Section 5.5
+               * permits such a cap).  nrtx is -1 until the initial SYN has
+               * been sent, so the shift count is clamped to a non-negative
+               * value.
+               */
 
 #ifndef CONFIG_NET_TCP_FIXED_RTO
-              conn->rto = TCP_RTO << (conn->nrtx > 4 ? 4:
-                                      conn->nrtx == -1 ? 0 : conn->nrtx);
+              conn->rto = MIN(TCP_RTO << (conn->nrtx > 4 ? 4:
+                                          conn->nrtx < 0 ? 0 : conn->nrtx),
+                              TCP_RTO_MAX);
 #endif
               tcp_update_retrantimer(conn, conn->rto);
               conn->nrtx++;
@@ -786,11 +786,11 @@ void tcp_timer(FAR struct net_driver_s *dev, FAR struct tcp_conn_s *conn)
                * received from the remote peer?
                */
 
-              if (conn->keeptimer > hsec * DSEC_PER_HSEC)
+              if (conn->keeptimer > dsec)
                 {
                   /* Will not yet decrement to zero */
 
-                  conn->keeptimer -= hsec * DSEC_PER_HSEC;
+                  conn->keeptimer -= dsec;
                 }
               else
                 {
@@ -835,11 +835,11 @@ void tcp_timer(FAR struct net_driver_s *dev, FAR struct tcp_conn_s *conn)
 
           if (conn->zero_probe != 0)
             {
-              if (conn->timer > hsec)
+              if (conn->timer > dsec)
                 {
                   /* Will not yet decrement to zero */
 
-                  conn->timer -= hsec;
+                  conn->timer -= dsec;
                 }
               else
                 {

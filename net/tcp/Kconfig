@@ -40,6 +40,28 @@ config NET_TCP_DELAYED_ACK
 		0.5 seconds, and in a stream of full-sized segments there should
 		be an ACK for at least every second segments.
 
+config NET_TCP_DELAYED_ACK_DSEC
+	int "Delayed ACK timeout"
+	default 1
+	range 1 4
+	depends on NET_TCP_DELAYED_ACK
+	---help---
+		How long a standalone ACK may be withheld waiting for either a
+		second segment or for outgoing data to piggyback on, in units of
+		deciseconds (100 ms).  This is the same unit used by NET_TCP_RTO
+		and by every TCP timer internally.
+
+		The default of 1 means 100 ms.  The maximum of 4 (400 ms) keeps
+		the delay below the 500 ms limit mandated by RFC 1122.  For
+		reference, Linux uses 40 ms (TCP_DELACK_MIN) up to 200 ms
+		(TCP_DELACK_MAX).
+
+		The accuracy that can actually be achieved is bounded by the
+		system tick (CONFIG_USEC_PER_TICK, 10 ms by default) plus the
+		scheduling latency of the low-priority work queue.  On a board
+		with a coarse tick (USEC_PER_TICK >= 50000) do not rely on the
+		100 ms setting.
+
 config NET_TCP_KEEPALIVE
 	bool "TCP/IP Keep-alive support"
 	default n
@@ -108,9 +130,20 @@ config NET_TCP_NPOLLWAITERS
 
 config NET_TCP_RTO
 	int "RTO of TCP/IP connections"
-	default 3
+	default 15
+	range 2 1200
 	---help---
-		RTO of TCP/IP connections (all tasks)
+		Initial retransmission timeout of TCP/IP connections (all tasks),
+		in units of deciseconds (100 ms).  This is the same unit used
+		internally by every TCP timer.
+
+		The default of 15 means 1.5 seconds.
+
+		The range mirrors TCP_RTO_MIN and TCP_RTO_MAX in net/tcp/tcp.h:
+		a minimum of 2 (200 ms, the same value Linux uses) and a maximum
+		of 1200 (120 s).  Kconfig cannot reference those macros, so the
+		bounds are duplicated here and a build-time check in tcp.h fails
+		if the two ever drift apart.
 
 config NET_TCP_FIXED_RTO
 	bool "Use fixed RTO"
