@@ -37,6 +37,7 @@
 #include <nuttx/mtd/mtd.h>
 #include <nuttx/net/net.h>
 #include "inode/inode.h"
+#include "vfs.h"
 
 /****************************************************************************
  * Private Functions
@@ -222,6 +223,13 @@ int file_fstat(FAR struct file *filep, FAR struct stat *buf)
           ret = inode_stat(inode, buf, 0);
         }
     }
+
+#ifdef CONFIG_FS_PATHCACHE
+  if (ret < 0)
+    {
+      pathcache_error(filep, ret);
+    }
+#endif
 
   return ret;
 }

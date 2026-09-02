@@ -214,6 +214,13 @@ ssize_t file_readv(FAR struct file *filep,
     }
 #endif
 
+#ifdef CONFIG_FS_PATHCACHE
+  if (ret < 0)
+    {
+      pathcache_error(filep, ret);
+    }
+#endif
+
   return ret;
 }
 

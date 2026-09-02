@@ -244,15 +244,19 @@ errout_with_hashtable:
  * Name: lru_cache_lookup
  *
  * Description:
- *   Lookup a cache entry by key. This function also updates its position
- *   in the LRU list and increments its reference count.
+ *   Look up a cache entry by key. This function also updates its position
+ *   in the LRU list and takes a reference on the value.  When the cache has
+ *   a try_get_cb, the reference is taken through it under the cache lock,
+ *   and a refused hit is reported as a miss with the LRU order untouched.
  *
  * Input Parameters:
  *   cache  - Pointer to cache structure
- *   key    - The key
+ *   key    - Pointer to the key
+ *   keylen - Length of the key
  *
  * Returned Value:
- *   Pointer to the cache entry value if found; NULL if not found.
+ *   Pointer to the cache entry value if found and referenced; NULL
+ *   otherwise.
  *
  ****************************************************************************/
 
@@ -268,14 +272,59 @@ FAR void *lru_cache_lookup(FAR struct lru_cache_s *cache,
   entry = lru_cache_lookup_entry(cache, key, keylen);
   if (entry != NULL)
     {
+      if (cache->ops->try_get_cb == NULL)
+        {
+          cache->ops->get_cb(entry->value);
+        }
+      else if (!cache->ops->try_get_cb(entry->value))
+        {
+          entry = NULL;
+        }
+    }
+
+  if (entry != NULL)
+    {
       value = entry->value;
       list_delete(&entry->lru_node);
       list_add_head(&cache->lru_list, &entry->lru_node);
-      cache->ops->get_cb(entry->value);
     }
 
   nxmutex_unlock(&cache->lock);
   return value;
+}
+
+/****************************************************************************
+ * Name: lru_cache_contains
+ *
+ * Description:
+ *   Check whether key currently maps to value.  No reference is taken and
+ *   the LRU order is not changed, so the answer is only stable while the
+ *   caller holds its own reference on value.
+ *
+ * Input Parameters:
+ *   cache  - Pointer to cache structure
+ *   key    - Pointer to the key
+ *   keylen - Length of the key
+ *   value  - The value expected under key
+ *
+ * Returned Value:
+ *   true if key maps to value; false otherwise.
+ *
+ ****************************************************************************/
+
+bool lru_cache_contains(FAR struct lru_cache_s *cache, FAR const void *key,
+                        size_t keylen, FAR const void *value)
+{
+  FAR struct lru_cache_entry_s *entry;
+  bool found;
+
+  DEBUGASSERT(cache != NULL && key != NULL);
+
+  nxmutex_lock(&cache->lock);
+  entry = lru_cache_lookup_entry(cache, key, keylen);
+  found = entry != NULL && entry->value == value;
+  nxmutex_unlock(&cache->lock);
+  return found;
 }
 
 /****************************************************************************

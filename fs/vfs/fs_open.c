@@ -241,6 +241,30 @@ static int file_vopen(FAR struct file *filep, FAR const char *path,
 
   /* Associate the inode with a file structure */
 
+#ifdef CONFIG_FS_PATHCACHE
+  if (INODE_IS_PATHCACHE(inode))
+    {
+      /* Drop the cached object before a writable open or O_TRUNC changes
+       * the state it describes.  O_TRUNC is independent of access mode.
+       */
+
+      if ((oflags & O_ACCMODE) != O_RDONLY ||
+          (oflags & O_TRUNC) != 0)
+        {
+          pathcache_remove(path, PATHCACHE_SELF);
+        }
+
+      /* A create changes the parent directory's contents.  Drop its
+       * cached listing before entering the file system.
+       */
+
+      if ((oflags & O_CREAT) != 0)
+        {
+          pathcache_remove(path, PATHCACHE_PARENT);
+        }
+    }
+#endif
+
   filep->f_oflags = oflags;
   filep->f_inode  = inode;
 
@@ -258,20 +282,7 @@ static int file_vopen(FAR struct file *filep, FAR const char *path,
     {
       if (inode->u.i_mops->open != NULL)
         {
-#ifdef CONFIG_FS_PATHCACHE
-          if (INODE_IS_PATHCACHE(inode))
-            {
-              /* The inode is using pathcache */
-
-              ret = pathcache_open(filep, desc.relpath, oflags, mode,
-                                   path);
-            }
-          else
-#endif
-            {
-              ret = inode->u.i_mops->open(filep, desc.relpath, oflags,
-                                          mode);
-            }
+          ret = inode->u.i_mops->open(filep, desc.relpath, oflags, mode);
         }
     }
 #endif
@@ -291,6 +302,10 @@ static int file_vopen(FAR struct file *filep, FAR const char *path,
   if (ret == -EISDIR && (oflags & O_ACCMODE) == O_RDONLY)
     {
       ret = dir_allocate(filep, desc.relpath);
+      if (ret >= 0)
+        {
+          filep->f_oflags |= O_DIRECTORY;
+        }
     }
 
   if (ret < 0)
@@ -344,6 +359,48 @@ static int nx_vopen(FAR struct fdlist *list,
   int ret;
   int fd;
 
+#ifdef CONFIG_FS_PATHCACHE
+  /* Look up a reusable cached object. */
+
+  filep = pathcache_find(path, oflags);
+  if (filep != NULL)
+    {
+      bool isdir = (filep->f_oflags & O_DIRECTORY) != 0;
+
+      /* Cache hit.  Rebind per-open status flags and rewind. */
+
+      filep->f_oflags = oflags & ~(O_CLOEXEC | O_CREAT);
+      if (isdir)
+        {
+          filep->f_oflags |= O_DIRECTORY;
+        }
+
+      ret = file_seek(filep, 0, SEEK_SET);
+      if (ret >= 0)
+        {
+          fd = fdlist_dupfile(list, oflags, 0, filep);
+          if (fd >= 0)
+            {
+#ifdef CONFIG_FS_NOTIFY
+              notify_open(path, oflags | (isdir ? O_DIRECTORY : 0));
+#endif
+
+              /* The fd may already be closed by another thread, making
+               * this the last user reference.
+               */
+
+              file_put(filep);
+              return fd;
+            }
+
+          pathcache_unreserve(filep);
+          return fd;
+        }
+
+      pathcache_unreserve(filep);
+    }
+#endif
+
   filep = file_allocate();
   if (filep == NULL)
     {
@@ -357,12 +414,29 @@ static int nx_vopen(FAR struct fdlist *list,
       return ret;
     }
 
+#ifdef CONFIG_FS_PATHCACHE
+  /* Once installed, the fd can be closed by another thread before the file
+   * is cached, so hold it until then.  The put closes it if the fd was not
+   * installed or is already gone.  Cache insertion is optional; a failure
+   * must not change the open result.
+   */
+
+  atomic_add(&filep->f_refs, 1);
+  fd = fdlist_dupfile(list, oflags, 0, filep);
+  if (fd >= 0)
+    {
+      pathcache_insert(path, filep);
+    }
+
+  file_put(filep);
+#else
   fd = fdlist_dupfile(list, oflags, 0, filep);
   if (fd < 0)
     {
       file_close(filep);
       file_deallocate(filep);
     }
+#endif
 
   return fd;
 }

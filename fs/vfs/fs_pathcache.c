@@ -27,21 +27,20 @@
 #include <nuttx/config.h>
 
 #include <assert.h>
+#include <debug.h>
 #include <errno.h>
+#include <fcntl.h>
+#include <limits.h>
 #include <stdbool.h>
 #include <string.h>
 
-#include <nuttx/nuttx.h>
+#include <nuttx/fs/fs.h>
 #include <nuttx/lib/lib.h>
 #include <nuttx/lru_cache.h>
+#include <nuttx/nuttx.h>
 
 #include "inode/inode.h"
-#include "fs_heap.h"
 #include "vfs.h"
-
-/****************************************************************************
- * Pre-processor Definitions
- ****************************************************************************/
 
 /****************************************************************************
  * Private Types
@@ -54,11 +53,12 @@ struct pathcache_match_s
 };
 
 /****************************************************************************
- * Private Functions Prototypes
+ * Private Function Prototypes
  ****************************************************************************/
 
 static void pathcache_get(FAR void *value);
 static void pathcache_put(FAR void *value);
+static bool pathcache_try_get(FAR void *value);
 
 /****************************************************************************
  * Private Data
@@ -67,13 +67,47 @@ static void pathcache_put(FAR void *value);
 static struct lru_cache_s g_pathcache;
 static const struct lru_cache_ops_s g_pathcache_ops =
 {
-  .get_cb = pathcache_get,
-  .put_cb = pathcache_put,
+  .get_cb     = pathcache_get,
+  .put_cb     = pathcache_put,
+  .try_get_cb = pathcache_try_get,
 };
 
 /****************************************************************************
  * Private Functions
  ****************************************************************************/
+
+/****************************************************************************
+ * Name: pathcache_cacheable
+ *
+ * Description:
+ *   Check whether the requested flags can reuse an idle cached file.  Only
+ *   read-only opens are reusable.  O_CLOEXEC is descriptor-local and O_CREAT
+ *   changes cache-miss behavior.  O_APPEND is left to the file system, which
+ *   decides where a read-only append open starts.
+ ****************************************************************************/
+
+static bool pathcache_cacheable(int oflags)
+{
+  const int supported = O_ACCMODE | O_CLOEXEC | O_CREAT | O_DIRECTORY;
+
+  return (oflags & O_ACCMODE) == O_RDONLY &&
+         (oflags & ~supported) == 0;
+}
+
+/****************************************************************************
+ * Name: pathcache_mountpoint
+ ****************************************************************************/
+
+static FAR struct inode *pathcache_mountpoint(FAR struct file *filep)
+{
+  if ((filep->f_oflags & O_DIRECTORY) != 0)
+    {
+      FAR struct fs_dirent_s *dir = filep->f_priv;
+      return dir == NULL ? NULL : dir->fd_root;
+    }
+
+  return filep->f_inode;
+}
 
 /****************************************************************************
  * Name: pathcache_get
@@ -109,101 +143,49 @@ static void pathcache_get(FAR void *value)
 static void pathcache_put(FAR void *value)
 {
   FAR struct file *filep = value;
+  FAR struct inode *inode;
+  int ret = OK;
 
-  if (atomic_sub(&filep->f_refs, 1) == 1)
+  if (atomic_sub(&filep->f_refs, 1) != 1)
     {
-      /* Check if this is a directory or regular file */
-
-      if (filep->f_oflags & O_DIRECTORY)
-        {
-          FAR struct fs_dirent_s *dir = filep->f_priv;
-          FAR struct inode *inode = dir->fd_root;
-
-          inode->u.i_mops->closedir(inode, dir);
-        }
-      else
-        {
-          /* Regular file: call close */
-
-          filep->f_inode->u.i_mops->close(filep);
-        }
-
-      inode_release(filep->f_inode);
-      file_deallocate(filep);
+      return;
     }
+
+  inode = filep->f_inode;
+  if (inode != NULL && inode->u.i_ops != NULL &&
+      inode->u.i_ops->close != NULL)
+    {
+      ret = inode->u.i_ops->close(filep);
+      if (ret < 0)
+        {
+          ferr("ERROR: Failed to close cached file: %d\n", ret);
+        }
+    }
+
+  if (inode != NULL)
+    {
+      inode_release(inode);
+    }
+
+  file_deallocate(filep);
 }
 
 /****************************************************************************
- * Name: pathcache_create
+ * Name: pathcache_try_get
  *
  * Description:
- *   Create a cache entry from an opened file.
- *
- * Input Parameters:
- *   filep      - File structure of the opened file
- *   abspath    - Absolute path used as cache key
- *
- * Returned Value:
- *   OK on success; a negated errno value on failure
- *
+ *   Reserve a cached file only while the cache holds its sole reference.
+ *   An idle file has no descriptor pointing at it, so the cache lock held
+ *   by the caller is the only way to reach it and the reservation cannot
+ *   race with a close.
  ****************************************************************************/
 
-static int pathcache_create(FAR struct file *filep, FAR char *abspath)
+static bool pathcache_try_get(FAR void *value)
 {
-  FAR struct file *cached_file;
-  FAR struct inode *inode;
-  int ret;
+  FAR struct file *filep = value;
+  int32_t idle = 1;
 
-  inode = filep->f_inode;
-
-  /* Check if dup is supported */
-
-  if (inode->u.i_mops->dup == NULL)
-    {
-      return -ENOSYS;
-    }
-
-  /* Allocate a new file structure for caching */
-
-  cached_file = file_allocate();
-  if (cached_file == NULL)
-    {
-      return -ENOMEM;
-    }
-
-  inode_addref(inode);
-
-  /* Initialize cached_file's VFS fields */
-
-  cached_file->f_oflags = O_RDONLY | O_DIRECT;
-  cached_file->f_inode  = inode;
-
-  /* Duplicate the file structure for caching */
-
-  ret = inode->u.i_mops->dup(filep, cached_file);
-  if (ret < 0)
-    {
-      goto errout_with_file;
-    }
-
-  /* Insert the entry into cache (internally locked) */
-
-  ret = lru_cache_insert(&g_pathcache, abspath, strlen(abspath) + 1,
-                         cached_file);
-  if (ret < 0)
-    {
-      goto errout_with_cached_file;
-    }
-
-  return OK;
-
-errout_with_cached_file:
-  inode->u.i_mops->close(cached_file);
-
-errout_with_file:
-  inode_release(inode);
-  file_deallocate(cached_file);
-  return ret;
+  return atomic_cmpxchg(&filep->f_refs, &idle, 2);
 }
 
 /****************************************************************************
@@ -214,24 +196,24 @@ errout_with_file:
  *   mountpoint.
  *
  * Input Parameters:
- *   cache - Pointer to the cache structure (unused)
- *   key   - The cache key
- *   value - Pointer to the cached file structure
- *   arg   - Pointer to the unmounting mountpoint inode
+ *   cache  - Pointer to the cache structure (unused)
+ *   key    - The cache key (unused)
+ *   keylen - Length of the cache key (unused)
+ *   value  - Pointer to the cached file structure
+ *   arg    - Pointer to the unmounting mountpoint inode
  *
  * Returned Value:
  *   1 if entry should be removed; 0 otherwise
  *
  ****************************************************************************/
 
-static int
-pathcache_is_match(FAR struct lru_cache_s *cache,
-                   FAR const void *key, size_t keylen,
-                   FAR void *value, FAR void *arg)
+static int pathcache_is_match(FAR struct lru_cache_s *cache,
+                              FAR const void *key, size_t keylen,
+                              FAR void *value, FAR void *arg)
 {
   /* Check if this file belongs to the unmounting mountpoint */
 
-  return ((FAR struct file *)value)->f_inode == arg;
+  return pathcache_mountpoint(value) == arg;
 }
 
 /****************************************************************************
@@ -242,10 +224,9 @@ pathcache_is_match(FAR struct lru_cache_s *cache,
  *
  ****************************************************************************/
 
-static int
-pathcache_is_child(FAR struct lru_cache_s *cache,
-                   FAR const void *key, size_t keylen,
-                   FAR void *value, FAR void *arg)
+static int pathcache_is_child(FAR struct lru_cache_s *cache,
+                              FAR const void *key, size_t keylen,
+                              FAR void *value, FAR void *arg)
 {
   FAR struct pathcache_match_s *match = arg;
   FAR const char *path = key;
@@ -291,302 +272,236 @@ static bool pathcache_strip(FAR char *path, FAR size_t *len)
 }
 
 /****************************************************************************
- * Name: pathcache_lookup
- *
- * Description:
- *   Look up a cached object of the kind the caller can use.  Files and
- *   directories share one keyspace, so a kind mismatch is treated as a
- *   cache miss while leaving the entry available to the matching caller.
- *
- * Input Parameters:
- *   key   - The cache key
- *   isdir - True if the caller requires a directory
- *
- * Returned Value:
- *   The cached file structure, which the caller must pathcache_put(), or
- *   NULL if nothing of the requested kind is cached.
- *
- ****************************************************************************/
-
-static FAR struct file *pathcache_lookup(FAR const char *key, bool isdir)
-{
-  FAR struct file *cached_file;
-
-  cached_file = lru_cache_lookup(&g_pathcache, key, strlen(key) + 1);
-  if (cached_file == NULL)
-    {
-      return NULL;
-    }
-
-  if (((cached_file->f_oflags & O_DIRECTORY) != 0) != isdir)
-    {
-      pathcache_put(cached_file);
-      return NULL;
-    }
-
-  return cached_file;
-}
-
-/****************************************************************************
  * Public Functions
  ****************************************************************************/
 
 /****************************************************************************
- * Name: pathcache_open
+ * Name: pathcache_find
  *
  * Description:
- *   Open a file with caching support. First open stores a snapshot,
- *   subsequent opens duplicate from the cached snapshot.
- *
- * Input Parameters:
- *   filep   - File structure to populate
- *   relpath - Relative path within the mount point
- *   oflags  - Open flags
- *   mode    - File mode
- *   path    - Path passed to open (used as cache key)
- *
- * Returned Value:
- *   OK on success; a negated errno value on failure
- *
+ *   Reserve an idle cached struct file for an fd-based open.  The cache
+ *   and lookup references make f_refs equal to two until
+ *   pathcache_unreserve() drops the lookup reservation.  Files and
+ *   directories share one keyspace, so a kind mismatch is a miss.
  ****************************************************************************/
 
-int pathcache_open(FAR struct file *filep, FAR const char *relpath,
-                   int oflags, mode_t mode, FAR const char *path)
+FAR struct file *pathcache_find(FAR const char *path, int oflags)
 {
-  FAR struct inode *inode = filep->f_inode;
-  FAR struct file *cached_file = NULL;
+  FAR struct file *filep = NULL;
   FAR char *pathbuffer;
   FAR char *abspath;
-  int ret = OK;
+
+  if (path == NULL || !pathcache_cacheable(oflags))
+    {
+      return NULL;
+    }
 
   /* Get the canonical absolute path. */
 
   pathbuffer = lib_get_tempbuffer(PATH_MAX);
   if (pathbuffer == NULL)
     {
-      return -ENOMEM;
+      return NULL;
+    }
+
+  abspath = lib_realpath(path, pathbuffer, true);
+  if (abspath != NULL)
+    {
+      filep = lru_cache_lookup(&g_pathcache, abspath, strlen(abspath) + 1);
+
+      /* Still unreachable from any descriptor, so dropping it is safe. */
+
+      if (filep != NULL && (oflags & O_DIRECTORY) != 0 &&
+          (filep->f_oflags & O_DIRECTORY) == 0)
+        {
+          pathcache_put(filep);
+          filep = NULL;
+        }
+    }
+
+  lib_put_tempbuffer(pathbuffer);
+  return filep;
+}
+
+/****************************************************************************
+ * Name: pathcache_insert
+ *
+ * Description:
+ *   Add the opened struct file after its fd reference has been installed.
+ ****************************************************************************/
+
+void pathcache_insert(FAR const char *path, FAR struct file *filep)
+{
+  FAR struct inode *inode;
+  FAR char *pathbuffer;
+  FAR char *abspath;
+
+  DEBUGASSERT(filep != NULL);
+
+  inode = pathcache_mountpoint(filep);
+  if (path == NULL || inode == NULL || !INODE_IS_PATHCACHE(inode) ||
+      !pathcache_cacheable(filep->f_oflags))
+    {
+      return;
+    }
+
+  if ((filep->f_oflags & O_DIRECTORY) != 0)
+    {
+      if (inode->u.i_mops == NULL || inode->u.i_mops->rewinddir == NULL)
+        {
+          return;
+        }
+    }
+  else if (inode->u.i_mops == NULL || inode->u.i_mops->seek == NULL)
+    {
+      return;
+    }
+
+  pathbuffer = lib_get_tempbuffer(PATH_MAX);
+  if (pathbuffer == NULL)
+    {
+      return;
+    }
+
+  abspath = lib_realpath(path, pathbuffer, true);
+  if (abspath != NULL)
+    {
+      filep->f_oflags &= ~O_CLOEXEC;
+
+      lru_cache_insert(&g_pathcache, abspath, strlen(abspath) + 1,
+                       filep);
+    }
+
+  lib_put_tempbuffer(pathbuffer);
+}
+
+/****************************************************************************
+ * Name: pathcache_unreserve
+ *
+ * Description:
+ *   Drop the lookup reservation acquired by pathcache_find().
+ ****************************************************************************/
+
+void pathcache_unreserve(FAR struct file *filep)
+{
+  DEBUGASSERT(filep != NULL);
+
+  pathcache_put(filep);
+}
+
+/****************************************************************************
+ * Name: pathcache_release
+ *
+ * Description:
+ *   Drop one reference to a file on a pathcache mount.  Cleanup and close
+ *   notification of the last non-cache reference complete before the
+ *   reference count exposes the object as idle again.  Returns true when
+ *   the reference has been consumed; false leaves it to the caller.
+ ****************************************************************************/
+
+bool pathcache_release(FAR struct file *filep)
+{
+  FAR struct inode *inode;
+  FAR char *pathbuffer;
+  FAR char *abspath;
+  FAR char *path;
+  bool released = false;
+  int32_t refs;
+
+  DEBUGASSERT(filep != NULL);
+
+  /* Only read-only files are cached, and fcntl() cannot change that. */
+
+  inode = pathcache_mountpoint(filep);
+  if (inode == NULL || !INODE_IS_PATHCACHE(inode) ||
+      (filep->f_oflags & O_ACCMODE) != O_RDONLY)
+    {
+      return false;
+    }
+
+  /* Deciding who is last and dropping the reference must be one CAS, or
+   * two concurrent puts can both see a busy count and skip the release.
+   * At two, pin the file instead, so eviction cannot free it under us and
+   * pathcache_find() sees it busy.
+   */
+
+  for (; ; )
+    {
+      refs = atomic_read(&filep->f_refs);
+      if (refs < 2)
+        {
+          return false;
+        }
+
+      if (atomic_cmpxchg(&filep->f_refs, &refs, refs == 2 ? 3 : refs - 1))
+        {
+          break;
+        }
+    }
+
+  if (refs > 2)
+    {
+      return true;
+    }
+
+  path = lib_get_tempbuffer(PATH_MAX);
+  if (path != NULL && file_fcntl(filep, F_GETPATH, path) < 0)
+    {
+      lib_put_tempbuffer(path);
+      path = NULL;
+    }
+
+  if (path == NULL)
+    {
+      goto out_with_pin;
+    }
+
+  pathbuffer = lib_get_tempbuffer(PATH_MAX);
+  if (pathbuffer == NULL)
+    {
+      goto out_with_path;
     }
 
   abspath = lib_realpath(path, pathbuffer, true);
   if (abspath == NULL)
     {
-      ret = -EINVAL;
-      goto errout_with_pathbuffer;
+      goto out_with_pathbuffer;
     }
 
-  /* Look up for cached entry (internally locked) */
+  /* A file shared by two descriptors outside the cache also sits at two. */
 
-  cached_file = pathcache_lookup(abspath, false);
-
-  /* Cache miss */
-
-  if (cached_file == NULL)
+  if (!lru_cache_contains(&g_pathcache, abspath, strlen(abspath) + 1,
+                          filep))
     {
-      /* A create changes the parent directory's contents.  Drop its cached
-       * listing before entering the file system.
-       */
-
-      if (oflags & O_CREAT)
-        {
-          pathcache_remove(abspath, PATHCACHE_PARENT);
-        }
-
-      /* Open the file by inode */
-
-      ret = inode->u.i_mops->open(filep, relpath, oflags, mode);
-      if (ret < 0)
-        {
-          goto errout_with_pathbuffer;
-        }
-
-      /* File opened successfully. Now try to create a cache entry.
-       * Only cache files opened in read-only mode here.
-       * If caching fails for any reason, we still return success because
-       * the file is already opened. Caching is just an optimization.
-       */
-
-      if ((oflags & O_ACCMODE) == O_RDONLY)
-        {
-          pathcache_create(filep, abspath);
-        }
-
-      goto errout_with_pathbuffer;
+      goto out_with_pathbuffer;
     }
-  else
+
+  if (!pathcache_cacheable(filep->f_oflags))
     {
-      /* Cache hit.
-       * Duplicating the cached file into the provided file pointer.
-       */
-
-      inode->u.i_mops->dup(cached_file, filep);
-
-      /* Put the cache entry every time we have finished using it.  Drop the
-       * cached snapshot before a writable open or O_TRUNC changes the state
-       * it describes.  O_TRUNC is independent of the access mode.
-       */
-
-      pathcache_put(cached_file);
-      if ((oflags & O_ACCMODE) != O_RDONLY ||
-          (oflags & O_TRUNC) != 0)
-        {
-          lru_cache_remove(&g_pathcache, abspath, strlen(abspath) + 1);
-        }
-
-      /* If the file is opened with O_TRUNC, truncate it */
-
-      if (oflags & O_TRUNC)
-        {
-          ret = inode->u.i_mops->truncate(filep, 0);
-          if (ret < 0)
-            {
-              goto errout_with_filep;
-            }
-        }
-
-      /* If the file is opened with O_APPEND, seek to the end */
-
-      if (oflags & O_APPEND)
-        {
-          ret = inode->u.i_mops->seek(filep, 0, SEEK_END);
-          if (ret < 0)
-            {
-              goto errout_with_filep;
-            }
-        }
-
-      goto errout_with_pathbuffer;
+      lru_cache_remove(&g_pathcache, abspath, strlen(abspath) + 1);
+      goto out_with_pathbuffer;
     }
 
-errout_with_filep:
-  inode->u.i_mops->close(filep);
+  file_closelk(filep);
+#ifdef CONFIG_FS_NOTIFY
+  notify_close(path, filep->f_oflags);
+#endif
 
-errout_with_pathbuffer:
+  released = true;
+  pathcache_put(filep);
+  pathcache_put(filep);
+
+out_with_pathbuffer:
   lib_put_tempbuffer(pathbuffer);
-  return ret;
-}
-
-/****************************************************************************
- * Name: pathcache_opendir
- *
- * Description:
- *   Open a directory with caching support.
- *
- * Input Parameters:
- *   inode   - Mountpoint inode
- *   relpath - Relative path within the mountpoint
- *   dir     - Pointer to receive the allocated directory structure
- *   path    - Absolute path, which has already been canonicalized
- *
- * Returned Value:
- *   OK on success; a negated errno value on failure
- *
- ****************************************************************************/
-
-int pathcache_opendir(FAR struct inode *inode, FAR const char *relpath,
-                      FAR struct fs_dirent_s **dir, FAR const char *path)
-{
-  FAR struct file *cached_file;
-  struct file tmpfile;
-  int ret;
-
-  /* Look up for cached entry (internally locked) */
-
-  cached_file = pathcache_lookup(path, true);
-
-  /* Cache miss */
-
-  if (cached_file == NULL)
+out_with_path:
+  lib_put_tempbuffer(path);
+out_with_pin:
+  if (!released)
     {
-      FAR struct fs_dirent_s *dirent;
-
-      /* Call the real opendir implementation */
-
-      ret = inode->u.i_mops->opendir(inode, relpath, dir);
-      if (ret < 0)
-        {
-          return ret;
-        }
-
-      /* Allocate the cached file structure */
-
-      cached_file = file_allocate();
-      if (cached_file == NULL)
-        {
-          /* Allocation failed, but dir is already opened successfully.
-           * Return OK - caching is optional.
-           */
-
-          return OK;
-        }
-
-      inode_addref(inode);
-
-      /* Initialize the cached_file's VFS fields */
-
-      cached_file->f_oflags = O_DIRECTORY;
-      cached_file->f_inode  = inode;
-
-      /* Prepare a temporary file structure with the opened directory */
-
-      tmpfile.f_oflags = O_DIRECTORY;
-      tmpfile.f_inode  = inode;
-      tmpfile.f_priv   = *dir;
-
-      /* Duplicate the directory structure into the cached_file */
-
-      if (inode->u.i_mops->dup == NULL ||
-          inode->u.i_mops->dup(&tmpfile, cached_file) < 0)
-        {
-          goto errout_with_file;
-        }
-
-      /* Set fd_root for the cached directory */
-
-      dirent = cached_file->f_priv;
-      dirent->fd_root = inode;
-
-      /* Insert the cached_file into cache (internally locked) */
-
-      if (lru_cache_insert(&g_pathcache, path, strlen(path) + 1,
-                           cached_file) < 0)
-        {
-          goto errout_with_dir;
-        }
-    }
-  else
-    {
-      /* Cache hit */
-
-      tmpfile.f_oflags = O_DIRECTORY;
-      tmpfile.f_inode  = inode;
-      tmpfile.f_priv   = NULL;
-
-      DEBUGASSERT(inode->u.i_mops->dup != NULL);
-      ret = inode->u.i_mops->dup(cached_file, &tmpfile);
-
-      /* Put the cache entry */
-
-      pathcache_put(cached_file);
-
-      if (ret < 0)
-        {
-          return ret;
-        }
-
-      /* Return the duplicated directory structure */
-
-      *dir = tmpfile.f_priv;
+      pathcache_put(filep);
     }
 
-  return OK;
-
-errout_with_dir:
-  inode->u.i_mops->closedir(inode, cached_file->f_priv);
-
-errout_with_file:
-  inode_release(inode);
-  file_deallocate(cached_file);
-  return ret;
+  return released;
 }
 
 /****************************************************************************
@@ -643,86 +558,44 @@ out:
 }
 
 /****************************************************************************
- * Name: pathcache_close
+ * Name: pathcache_error
  *
  * Description:
- *   Close a file with caching support.  For files opened with write
- *   access we drop any cache entry that may have been inserted by a
- *   concurrent reader while the write was in flight.  We deliberately
- *   do NOT insert a fresh cache entry here: the path passed in is
- *   obtained via F_GETPATH and may have been invalidated by a mid-open
- *   rename/unlink, and re-inserting under such a path would resurrect
- *   a dangling reference whose f_priv points to blocks the file system
- *   has already freed.  Rebuilding the cache is left to the next read
- *   open, which goes through the normal miss path.
- *
- * Input Parameters:
- *   filep   - File structure being closed
- *   path    - Absolute path (used as cache key)
- *
- * Returned Value:
- *   OK on success; a negated errno value on failure
+ *   Remove a cached object after an operation reports an error that may make
+ *   the reusable lower file state unreliable.
  *
  ****************************************************************************/
 
-int pathcache_close(FAR struct file *filep, FAR const char *path)
+void pathcache_error(FAR struct file *filep, int errcode)
 {
-  FAR char *pathbuffer;
-  FAR char *abspath;
-  int ret = OK;
+  FAR struct inode *inode;
+  FAR char *path;
 
   DEBUGASSERT(filep != NULL);
 
-  /* The path is obtained by the caller via F_GETPATH and may be NULL.
-   * This is an expected, benign condition rather than a fatal error, e.g.:
-   *   - the file was unlinked before being closed, so its directory entry
-   *     no longer resolves to a path (its cache entry, if any, was already
-   *     invalidated at unlink time);
-   *   - the underlying file system failed to reconstruct the path, or the
-   *     temporary path buffer could not be allocated.
-   * In all cases there is no valid key to look the cache up with, so simply
-   * skip the cache cleanup instead of asserting and crashing the kernel.
-   */
-
-  if (path == NULL)
+  if (errcode == -ENOSYS || errcode == -ENOTTY)
     {
-      return OK;
+      return;
     }
 
-  /* Read-only files never touched the cache during close, and their
-   * entry is still valid, so there is nothing to do.
-   */
-
-  if ((filep->f_oflags & O_ACCMODE) == O_RDONLY)
+  inode = pathcache_mountpoint(filep);
+  if (inode == NULL || !INODE_IS_PATHCACHE(inode))
     {
-      return OK;
+      return;
     }
 
-  /* Get the canonical absolute path for locating the cache entry */
-
-  pathbuffer = lib_get_tempbuffer(PATH_MAX);
-  if (pathbuffer == NULL)
+  path = lib_get_tempbuffer(PATH_MAX);
+  if (path != NULL && file_fcntl(filep, F_GETPATH, path) < 0)
     {
-      return -ENOMEM;
+      lib_put_tempbuffer(path);
+      path = NULL;
     }
 
-  abspath = lib_realpath(path, pathbuffer, true);
-  if (abspath == NULL)
+  if (path != NULL)
     {
-      ret = -EINVAL;
-      goto errout_with_pathbuffer;
+      pathcache_remove(path, PATHCACHE_SELF);
+      lib_put_tempbuffer(path);
     }
-
-  /* Drop any entry a concurrent reader may have inserted while we
-   * were holding the file open for write.  Such an entry would have
-   * captured a mid-write snapshot of the file state.
-   */
-
-  lru_cache_remove(&g_pathcache, abspath, strlen(abspath) + 1);
-
-errout_with_pathbuffer:
-  lib_put_tempbuffer(pathbuffer);
-  return ret;
 }
 
 /****************************************************************************

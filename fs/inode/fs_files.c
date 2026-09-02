@@ -54,6 +54,7 @@
 #include "sched/sched.h"
 #include "inode/inode.h"
 #include "fs_heap.h"
+#include "vfs/vfs.h"
 
 /****************************************************************************
  * Private Functions
@@ -856,6 +857,13 @@ int file_put(FAR struct file *filep)
     {
       return ret;
     }
+
+#ifdef CONFIG_FS_PATHCACHE
+  if (pathcache_release(filep))
+    {
+      return ret;
+    }
+#endif
 
   tcb = this_task();
   list = &tcb->group->tg_fdlist;

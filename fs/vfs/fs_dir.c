@@ -134,7 +134,6 @@ static int dir_dummy_open(FAR struct file *filep)
  *   inode -- the inode of the mountpoint to open
  *   relpath -- the relative path within the mountpoint to open
  *   dir -- the dirent structure to be initialized
- *   abspath -- the absolute path of the directory being opened
  *
  * Returned Value:
  *   On success, 0 is returned; Otherwise, a negative errno is returned.
@@ -143,8 +142,7 @@ static int dir_dummy_open(FAR struct file *filep)
 
 #ifndef CONFIG_DISABLE_MOUNTPOINT
 static int open_mountpoint(FAR struct inode *inode, FAR const char *relpath,
-                           FAR struct fs_dirent_s **dir,
-                           FAR const char *abspath)
+                           FAR struct fs_dirent_s **dir)
 {
   int ret;
 
@@ -160,16 +158,7 @@ static int open_mountpoint(FAR struct inode *inode, FAR const char *relpath,
       return -ENOSYS;
     }
 
-#ifdef CONFIG_FS_PATHCACHE
-  if (INODE_IS_PATHCACHE(inode))
-    {
-      ret = pathcache_opendir(inode, relpath, dir, abspath);
-    }
-  else
-#endif
-    {
-      ret = inode->u.i_mops->opendir(inode, relpath, dir);
-    }
+  ret = inode->u.i_mops->opendir(inode, relpath, dir);
 
   if (ret >= 0)
     {
@@ -354,6 +343,7 @@ static off_t seek_mountptdir(FAR struct file *filep, off_t offset)
   FAR struct inode *inode = dir->fd_root;
   struct dirent entry;
   off_t pos;
+  int ret;
 
   /* Determine a starting point for the seek. If the seek
    * is "forward" from the current position, then we will
@@ -365,7 +355,15 @@ static off_t seek_mountptdir(FAR struct file *filep, off_t offset)
     {
       if (inode->u.i_mops->rewinddir != NULL)
         {
-          inode->u.i_mops->rewinddir(inode, dir);
+          ret = inode->u.i_mops->rewinddir(inode, dir);
+          if (ret < 0)
+            {
+#ifdef CONFIG_FS_PATHCACHE
+              pathcache_error(filep, ret);
+#endif
+              return ret;
+            }
+
           pos = 0;
         }
       else
@@ -384,11 +382,16 @@ static off_t seek_mountptdir(FAR struct file *filep, off_t offset)
 
   while (pos < offset)
     {
-      int ret;
-
       ret = inode->u.i_mops->readdir(inode, dir, &entry);
       if (ret < 0)
         {
+#ifdef CONFIG_FS_PATHCACHE
+          if (ret != -ENOENT)
+            {
+              pathcache_error(filep, ret);
+            }
+#endif
+
           return ret;
         }
 
@@ -618,8 +621,16 @@ static ssize_t dir_read(FAR struct file *filep, FAR char *buffer,
     {
       if (ret == -ENOENT)
         {
+          /* End of the directory, not a failure. */
+
           ret = 0;
         }
+#ifdef CONFIG_FS_PATHCACHE
+      else
+        {
+          pathcache_error(filep, ret);
+        }
+#endif
 
       return ret;
     }
@@ -738,7 +749,7 @@ int dir_allocate(FAR struct file *filep, FAR const char *relpath)
     {
       /* Open the directory at the relative path */
 
-      ret = open_mountpoint(inode, relpath, &dir, tempbuf);
+      ret = open_mountpoint(inode, relpath, &dir);
       if (ret < 0)
         {
           goto errout_with_tempbuf;

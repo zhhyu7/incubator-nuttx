@@ -194,6 +194,13 @@ static int file_vioctl(FAR struct file *filep, int req, va_list ap)
 #endif
     }
 
+#ifdef CONFIG_FS_PATHCACHE
+  if (ret < 0 && req != FIOC_FILEPATH)
+    {
+      pathcache_error(filep, ret);
+    }
+#endif
+
   return ret;
 }
 

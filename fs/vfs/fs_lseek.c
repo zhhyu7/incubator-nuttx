@@ -33,6 +33,7 @@
 #include <assert.h>
 
 #include "inode/inode.h"
+#include "vfs.h"
 
 /****************************************************************************
  * Public Functions
@@ -71,6 +72,9 @@ off_t file_seek(FAR struct file *filep, off_t offset, int whence)
       ret = inode->u.i_ops->seek(filep, offset, whence);
       if (ret < 0)
         {
+#ifdef CONFIG_FS_PATHCACHE
+          pathcache_error(filep, ret);
+#endif
           return ret;
         }
     }

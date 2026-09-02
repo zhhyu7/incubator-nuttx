@@ -76,7 +76,7 @@ CSRCS += fs_signalfd.c
 endif
 
 # Support for pathcache
-ifeq ($(CONFIG_PATHCACHE),y)
+ifeq ($(CONFIG_FS_PATHCACHE),y)
 CSRCS += fs_pathcache.c
 endif
 

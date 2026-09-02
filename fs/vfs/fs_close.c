@@ -102,15 +102,18 @@ int file_close(FAR struct file *filep)
 
   if (inode)
     {
+#ifdef CONFIG_FS_PATHCACHE
+      bool writer = INODE_IS_PATHCACHE(inode) &&
+                    (filep->f_oflags & O_ACCMODE) != O_RDONLY;
+#endif
 #ifdef CONFIG_FS_NOTIFY
       /* We lose the path and inode during close and release, so obtain it
-       * in advance. Then we pass it to notify_close or pathcache_close.
+       * in advance. Then we pass it to notify_close or pathcache_remove.
        */
 
       FAR char *path = file_get_path(filep);
 #elif defined(CONFIG_FS_PATHCACHE)
-      FAR char *path = INODE_IS_PATHCACHE(inode) ? file_get_path(filep) :
-                                                   NULL;
+      FAR char *path = writer ? file_get_path(filep) : NULL;
 #endif
 
       file_closelk(filep);
@@ -119,19 +122,21 @@ int file_close(FAR struct file *filep)
 
       if (inode->u.i_ops && inode->u.i_ops->close)
         {
-#ifdef CONFIG_FS_PATHCACHE
-          if (INODE_IS_PATHCACHE(inode))
-            {
-              /* The inode is using pathcache */
-
-              pathcache_close(filep, path);
-            }
-#endif
-
           /* Perform the close operation */
 
           ret = inode->u.i_ops->close(filep);
         }
+
+#ifdef CONFIG_FS_PATHCACHE
+      /* A writer's close commits what other opens see, even partly on
+       * failure, so a cached reader of the path is now stale.
+       */
+
+      if (writer && path != NULL)
+        {
+          pathcache_remove(path, PATHCACHE_SELF);
+        }
+#endif
 
       /* And release the inode */
 

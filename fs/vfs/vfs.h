@@ -193,12 +193,12 @@ void notify_initialize(void);
 #define PATHCACHE_SUBTREE  (1 << 2)
 
 void pathcache_initialize(void);
-int pathcache_open(FAR struct file *filep, FAR const char *relpath,
-                   int oflags, mode_t mode, FAR const char *path);
-int pathcache_opendir(FAR struct inode *inode, FAR const char *relpath,
-                      FAR struct fs_dirent_s **dir, FAR const char *path);
-int pathcache_close(FAR struct file *filep, FAR const char *path);
+FAR struct file *pathcache_find(FAR const char *path, int oflags);
+void pathcache_insert(FAR const char *path, FAR struct file *filep);
+void pathcache_unreserve(FAR struct file *filep);
+bool pathcache_release(FAR struct file *filep);
 void pathcache_remove(FAR const char *path, int flags);
+void pathcache_error(FAR struct file *filep, int errcode);
 void pathcache_umount(FAR struct inode *mountpt);
 #endif /* CONFIG_FS_PATHCACHE */
 

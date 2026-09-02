@@ -211,6 +211,13 @@ int file_fchstat(FAR struct file *filep, FAR struct stat *buf, int flags)
     }
 #endif
 
+#ifdef CONFIG_FS_PATHCACHE
+  if (ret < 0)
+    {
+      pathcache_error(filep, ret);
+    }
+#endif
+
   return ret;
 }
 

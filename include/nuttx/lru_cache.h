@@ -27,6 +27,7 @@
  * Included Files
  ****************************************************************************/
 
+#include <stdbool.h>
 #include <stddef.h>
 
 #include <nuttx/hashtable.h>
@@ -44,6 +45,7 @@
 struct lru_cache_s;
 
 typedef CODE void (*lru_cache_ops_cb_t)(FAR void *value);
+typedef CODE bool (*lru_cache_try_get_cb_t)(FAR void *value);
 
 /* Callback for LRU cache operations.
  * Return value:
@@ -68,6 +70,12 @@ struct lru_cache_ops_s
                                          * count when entry is removed
                                          * from cache, and release it
                                          * if reference count reaches 0
+                                         */
+  lru_cache_try_get_cb_t try_get_cb;    /* Optional: used by lookup in
+                                         * place of get_cb; returning
+                                         * false turns the hit into a
+                                         * miss without taking a
+                                         * reference
                                          */
 };
 
@@ -118,6 +126,8 @@ void lru_cache_uninit(FAR struct lru_cache_s *cache);
 
 FAR void *lru_cache_lookup(FAR struct lru_cache_s *cache,
                            FAR const void *key, size_t keylen);
+bool lru_cache_contains(FAR struct lru_cache_s *cache, FAR const void *key,
+                        size_t keylen, FAR const void *value);
 int lru_cache_insert(FAR struct lru_cache_s *cache, FAR const void *key,
                      size_t keylen, FAR void *value);
 int lru_cache_remove(FAR struct lru_cache_s *cache, FAR const void *key,

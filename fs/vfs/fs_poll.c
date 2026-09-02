@@ -44,6 +44,7 @@
 #include "inode/inode.h"
 #include "sched/sched.h"
 #include "signal/signal.h"
+#include "vfs.h"
 
 /****************************************************************************
  * Private Types
@@ -379,6 +380,13 @@ int file_poll(FAR struct file *filep, FAR struct pollfd *fds, bool setup)
       poll_notify(&fds, 1, POLLERR | POLLHUP);
       ret = OK;
     }
+
+#ifdef CONFIG_FS_PATHCACHE
+  if (ret < 0)
+    {
+      pathcache_error(filep, ret);
+    }
+#endif
 
   return ret;
 }
