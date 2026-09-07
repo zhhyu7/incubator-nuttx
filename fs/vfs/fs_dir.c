@@ -42,6 +42,15 @@
 #include "vfs.h"
 
 /****************************************************************************
+ * Pre-processor Definitions
+ ****************************************************************************/
+#ifndef CONFIG_DISABLE_DIRECTORY_OPERATIONS
+#define DIR_FILE_OPS {dir_open, dir_close, dir_read, NULL, dir_seek, dir_ioctl}
+#else
+#define DIR_FILE_OPS {dir_dummy_open, NULL, NULL, NULL, NULL, NULL}
+#endif
+
+/****************************************************************************
  * Private Types
  ****************************************************************************/
 
@@ -60,6 +69,9 @@ struct fs_pseudodir_s
  * Private Functions Prototypes
  ****************************************************************************/
 
+#ifdef CONFIG_DISABLE_DIRECTORY_OPERATIONS
+static int     dir_dummy_open(FAR struct file *filep);
+#else
 static int     dir_open(FAR struct file *filep);
 static int     dir_close(FAR struct file *filep);
 static ssize_t dir_read(FAR struct file *filep, FAR char *buffer,
@@ -70,16 +82,6 @@ static int     dir_ioctl(FAR struct file *filep, int cmd, unsigned long arg);
 /****************************************************************************
  * Private Data
  ****************************************************************************/
-
-const struct file_operations g_dir_fileops =
-{
-  dir_open,   /* open */
-  dir_close,  /* close */
-  dir_read,   /* read */
-  NULL,       /* write */
-  dir_seek,   /* seek */
-  dir_ioctl,  /* ioctl */
-};
 
 #ifndef CONFIG_DISABLE_MOUNTPOINT
 static DEFINE_PER_CPU_BMP(struct inode, g_dir_inode) =
@@ -93,11 +95,35 @@ static DEFINE_PER_CPU_BMP(struct inode, g_dir_inode) =
 };
 #define g_dir_inode this_cpu_var_bmp(g_dir_inode)
 #endif
+#endif /* CONFIG_DISABLE_DIRECTORY_OPERATIONS */
+
+/****************************************************************************
+ * Public Data
+ ****************************************************************************/
+
+const struct file_operations g_dir_fileops = DIR_FILE_OPS;
 
 /****************************************************************************
  * Private Functions
  ****************************************************************************/
 
+#ifdef CONFIG_DISABLE_DIRECTORY_OPERATIONS
+/****************************************************************************
+ * Name: dir_dummy_open
+ *
+ * Description:
+ *   The only gate for g_dir_fileops: refusing open with -ENOSYS means no
+ *   handle is ever created, so the remaining methods stay NULL.
+ *
+ ****************************************************************************/
+
+static int dir_dummy_open(FAR struct file *filep)
+{
+  UNUSED(filep);
+  return -ENOSYS;
+}
+
+#else
 /****************************************************************************
  * Name: open_mountpoint
  *
@@ -760,3 +786,4 @@ errout_with_tempbuf:
   lib_put_tempbuffer(tempbuf);
   return ret;
 }
+#endif /* CONFIG_DISABLE_DIRECTORY_OPERATIONS */

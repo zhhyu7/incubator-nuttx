@@ -97,6 +97,13 @@ config DISABLE_PSEUDOFS_OPERATIONS
 		However, in practical embedded system, they are seldom needed and
 		you can save a little FLASH space by disabling the capability.
 
+config DISABLE_DIRECTORY_OPERATIONS
+	bool "Disable directory operations"
+	default DEFAULT_SMALL
+	---help---
+		Disable support for directory operations (opendir/readdir/seekdir
+		and the O_DIRECTORY open path).
+
 config PSEUDOFS_ATTRIBUTES
 	bool "Pseudo-filesystem attributes"
 	default n

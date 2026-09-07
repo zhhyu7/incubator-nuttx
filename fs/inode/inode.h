@@ -493,7 +493,11 @@ int foreach_inode(foreach_inode_t handler, FAR void *arg, bool readonly);
  *
  ****************************************************************************/
 
+#ifndef CONFIG_DISABLE_DIRECTORY_OPERATIONS
 int dir_allocate(FAR struct file *filep, FAR const char *relpath);
+#else
+#  define dir_allocate(filep, relpath) (-ENOSYS)
+#endif
 
 #ifdef CONFIG_PSEUDOFS_FILE
 /****************************************************************************
