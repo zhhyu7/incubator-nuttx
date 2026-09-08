@@ -32,13 +32,33 @@
 #include <stdlib.h>
 #include <debug.h>
 
-#include <nuttx/kmalloc.h>
+#include <nuttx/nuttx.h>
 #include <nuttx/queue.h>
 #include <nuttx/net/net.h>
 
 #include "devif/devif.h"
 #include "utils/utils.h"
 #include "tcp/tcp.h"
+
+/****************************************************************************
+ * Private Functions
+ ****************************************************************************/
+
+/****************************************************************************
+ * Name: tcp_backlog_conn
+ *
+ * Description:
+ *   Recover the backlogged tcp_conn_s from one of its pending-list nodes.
+ *   Each backlogged connection is linked into its parent listener's pending
+ *   list through its own tcp_conn_s::bl_node, so the owning connection is
+ *   obtained with container_of().
+ *
+ ****************************************************************************/
+
+static inline FAR struct tcp_conn_s *tcp_backlog_conn(FAR sq_entry_t *node)
+{
+  return container_of(node, struct tcp_conn_s, bl_node);
+}
 
 /****************************************************************************
  * Public Functions
@@ -58,12 +78,6 @@
 
 int tcp_backlogcreate(FAR struct tcp_conn_s *conn, int nblg)
 {
-  FAR struct tcp_backlog_s     *bls = NULL;
-  FAR struct tcp_blcontainer_s *blc;
-  int size;
-  int offset;
-  int i;
-
   ninfo("conn=%p nblg=%d\n", conn, nblg);
 
 #ifdef CONFIG_DEBUG_FEATURES
@@ -73,62 +87,34 @@ int tcp_backlogcreate(FAR struct tcp_conn_s *conn, int nblg)
     }
 #endif
 
-  /* Then allocate the backlog as requested */
+  /* Clamp the requested backlog to the valid range.  nblg <= 0 disables
+   * backlog support, leaving the connection as a non-listener (bl_max == 0).
+   */
 
-  if (nblg > 0)
+  if (nblg > SOMAXCONN)
     {
-      /* nblog value must less than SOMAXCONN */
-
-      if (nblg > SOMAXCONN)
-        {
-          nblg = SOMAXCONN;
-        }
-
-      /* Align the list of backlog structures to 32-bit boundaries.  This
-       * may be excessive on 24-16-bit address machines; and insufficient
-       * on 64-bit address machines -- REVISIT
-       */
-
-      offset = (sizeof(struct tcp_backlog_s) + 3) & ~3;
-
-      /* Then determine the full size of the allocation include the
-       * tcp_backlog_s, a pre-allocated array of struct tcp_blcontainer_s
-       * and alignment padding
-       */
-
-      size = offset + nblg * sizeof(struct tcp_blcontainer_s);
-
-      /* Then allocate that much */
-
-      bls = kmm_zalloc(size);
-      if (!bls)
-        {
-          nerr("ERROR: Failed to allocate backlog\n");
-          return -ENOMEM;
-        }
-
-      /* Then add all of the pre-allocated containers to the free list */
-
-      blc = (FAR struct tcp_blcontainer_s *)(((FAR uint8_t *)bls) + offset);
-      for (i = 0; i < nblg; i++)
-        {
-          sq_addfirst(&blc->bc_node, &bls->bl_free);
-          blc++;
-        }
+      nblg = SOMAXCONN;
+    }
+  else if (nblg < 0)
+    {
+      nblg = 0;
     }
 
-  /* Destroy any existing backlog (shouldn't be any) */
+  /* Destroy any existing backlog (shouldn't be any).  Since the network is
+   * locked, destroying the old backlog and replacing it with the new one is
+   * an atomic operation.
+   */
 
   conn_lock(&conn->sconn);
   tcp_backlogdestroy(conn);
 
-  /* Now install the backlog tear-off in the connection.  NOTE that bls may
-   * actually be NULL if nblg is <= 0;  In that case, we are disabling
-   * backlog support.  Since the network is locked, destroying the old
-   * backlog and replace it with the new is an atomic operation
+  /* Install the new backlog in the connection.  nblg has been clamped to
+   * [0, SOMAXCONN]; a value of 0 simply disables backlog support and leaves
+   * the connection as a non-listener (bl_max == 0).
    */
 
-  conn->backlog = bls;
+  conn->bl_max = nblg;
+
   conn_unlock(&conn->sconn);
   return OK;
 }
@@ -150,9 +136,8 @@ int tcp_backlogcreate(FAR struct tcp_conn_s *conn, int nblg)
 
 int tcp_backlogdestroy(FAR struct tcp_conn_s *conn)
 {
-  FAR struct tcp_backlog_s     *blg;
-  FAR struct tcp_blcontainer_s *blc;
-  FAR struct tcp_conn_s        *blconn;
+  FAR sq_entry_t        *node;
+  FAR struct tcp_conn_s *blconn;
 
   ninfo("conn=%p\n", conn);
 
@@ -163,38 +148,25 @@ int tcp_backlogdestroy(FAR struct tcp_conn_s *conn)
     }
 #endif
 
-  /* Make sure that the connection has a backlog to be destroyed */
+  /* Handle any pending connections in the backlog */
 
-  if (conn->backlog)
+  while ((node = sq_remfirst(&conn->bl_node)) != NULL)
     {
-      /* Remove the backlog structure reference from the connection */
+      blconn = tcp_backlog_conn(node);
 
-      blg           = conn->backlog;
-      conn->backlog = NULL;
+      /* REVISIT
+       * -- such connections really need to be gracefully closed
+       */
 
-      /* Handle any pending connections in the backlog */
-
-      while ((blc = (FAR struct tcp_blcontainer_s *)
-                    sq_remfirst(&blg->bl_pending)) != NULL)
-        {
-          blconn = blc->bc_conn;
-          if (blconn)
-            {
-              /* REVISIT
-               * -- such connections really need to be gracefully closed
-               */
-
-              blconn->blparent = NULL;
-              blconn->backlog  = NULL;
-              blconn->crefs    = 0;
-              tcp_free(blconn);
-            }
-        }
-
-      /* Then free the entire backlog structure */
-
-      kmm_free(blg);
+      blconn->blparent = NULL;
+      blconn->crefs    = 0;
+      tcp_free(blconn);
     }
+
+  /* Mark the connection as no longer a listener */
+
+  conn->bl_max   = 0;
+  conn->bl_count = 0;
 
   return OK;
 }
@@ -215,44 +187,30 @@ int tcp_backlogdestroy(FAR struct tcp_conn_s *conn)
 int tcp_backlogadd(FAR struct tcp_conn_s *conn,
                    FAR struct tcp_conn_s *blconn)
 {
-  FAR struct tcp_backlog_s     *bls;
-  FAR struct tcp_blcontainer_s *blc;
-  int ret = -EINVAL;
-
   ninfo("conn=%p blconn=%p\n", conn, blconn);
 
-#ifdef CONFIG_DEBUG_FEATURES
-  if (!conn)
+  if (conn->bl_max == 0 || !blconn)
     {
       return -EINVAL;
     }
-#endif
 
-  bls = conn->backlog;
-  if (bls && blconn)
+  /* Make sure that the backlog is not already full */
+
+  if (conn->bl_count >= conn->bl_max)
     {
-      /* Get a container for the connection from the free list */
-
-      blc = (FAR struct tcp_blcontainer_s *)sq_remfirst(&bls->bl_free);
-      if (!blc)
-        {
-          nerr("ERROR: There are no free containers for TCP BACKLOG!\n");
-          ret = -ENOMEM;
-        }
-      else
-        {
-          /* Save the connection reference in the container and put the
-           * container at the end of the pending connection list (FIFO).
-           */
-
-          blc->bc_conn = blconn;
-          blconn->blparent = conn;
-          sq_addlast(&blc->bc_node, &bls->bl_pending);
-          ret = OK;
-        }
+      nerr("ERROR: There are no free slots for TCP BACKLOG!\n");
+      return -ENOMEM;
     }
 
-  return ret;
+  /* Link the new connection into the end of the pending list (FIFO) through
+   * its own node, and record its parent listener.
+   */
+
+  blconn->blparent = conn;
+  sq_addlast(&blconn->bl_entry, &conn->bl_node);
+  conn->bl_count++;
+
+  return OK;
 }
 
 /****************************************************************************
@@ -269,7 +227,7 @@ int tcp_backlogadd(FAR struct tcp_conn_s *conn,
 
 bool tcp_backlogpending(FAR struct tcp_conn_s *conn)
 {
-  return (conn && conn->backlog && !sq_empty(&conn->backlog->bl_pending));
+  return (conn && !sq_empty(&conn->bl_node));
 }
 
 /****************************************************************************
@@ -277,7 +235,7 @@ bool tcp_backlogpending(FAR struct tcp_conn_s *conn)
  *
  * Description:
  *  Called from tcp_input().  Before alloc a new accept connection, tcp_input
- *  will call this API to see if there are free node in the backlog.
+ *  will call this API to see if there is a free slot in the backlog.
  *
  * Assumptions:
  *   Called from network socket logic with the network locked
@@ -286,7 +244,7 @@ bool tcp_backlogpending(FAR struct tcp_conn_s *conn)
 
 bool tcp_backlogavailable(FAR struct tcp_conn_s *conn)
 {
-  return (conn && conn->backlog && !sq_empty(&conn->backlog->bl_free));
+  return (conn && conn->bl_count < conn->bl_max);
 }
 
 /****************************************************************************
@@ -303,9 +261,8 @@ bool tcp_backlogavailable(FAR struct tcp_conn_s *conn)
 
 FAR struct tcp_conn_s *tcp_backlogremove(FAR struct tcp_conn_s *conn)
 {
-  FAR struct tcp_backlog_s     *bls;
-  FAR struct tcp_blcontainer_s *blc;
-  FAR struct tcp_conn_s        *blconn = NULL;
+  FAR sq_entry_t        *node;
+  FAR struct tcp_conn_s *blconn = NULL;
 
 #ifdef CONFIG_DEBUG_FEATURES
   if (!conn)
@@ -314,25 +271,14 @@ FAR struct tcp_conn_s *tcp_backlogremove(FAR struct tcp_conn_s *conn)
     }
 #endif
 
-  bls = conn->backlog;
-  if (bls)
+  /* Remove the connection at the head of the pending list (FIFO) */
+
+  node = sq_remfirst(&conn->bl_node);
+  if (node)
     {
-      /* Remove the a container at the head of the pending connection list
-       * (FIFO)
-       */
-
-      blc = (FAR struct tcp_blcontainer_s *)sq_remfirst(&bls->bl_pending);
-      if (blc)
-        {
-          /* Extract the connection reference from the container and put
-           * container in the free list
-           */
-
-          blconn       = blc->bc_conn;
-          blc->bc_conn = NULL;
-          blconn->blparent = NULL;
-          sq_addlast(&blc->bc_node, &bls->bl_free);
-        }
+      blconn           = tcp_backlog_conn(node);
+      blconn->blparent = NULL;
+      conn->bl_count--;
     }
 
   ninfo("conn=%p, returning %p\n", conn, blconn);
@@ -355,9 +301,8 @@ FAR struct tcp_conn_s *tcp_backlogremove(FAR struct tcp_conn_s *conn)
 int tcp_backlogdelete(FAR struct tcp_conn_s *conn,
                       FAR struct tcp_conn_s *blconn)
 {
-  FAR struct tcp_backlog_s     *bls;
-  FAR struct tcp_blcontainer_s *blc;
-  FAR struct tcp_blcontainer_s *prev;
+  FAR sq_entry_t *node;
+  FAR sq_entry_t *prev;
 
   ninfo("conn=%p blconn=%p\n", conn, blconn);
 
@@ -368,49 +313,34 @@ int tcp_backlogdelete(FAR struct tcp_conn_s *conn,
     }
 #endif
 
-  bls = conn->backlog;
-  if (bls)
+  /* Find the node that holds the connection */
+
+  for (node = sq_peek(&conn->bl_node), prev = NULL;
+       node;
+       prev = node, node = sq_next(node))
     {
-      /* Find the container hold the connection */
-
-      for (blc = (FAR struct tcp_blcontainer_s *)sq_peek(&bls->bl_pending),
-           prev = NULL;
-           blc;
-           prev = blc,
-            blc = (FAR struct tcp_blcontainer_s *)sq_next(&blc->bc_node))
+      if (tcp_backlog_conn(node) == blconn)
         {
-          if (blc->bc_conn == blconn)
+          if (prev)
             {
-              if (prev)
-                {
-                  /* Remove the a container from the middle of the list of
-                   * pending connections
-                   */
+              /* Remove the node from the middle of the pending list */
 
-                  sq_remafter(&prev->bc_node, &bls->bl_pending);
-                }
-              else
-                {
-                  /* Remove the a container from the head of the list of
-                   * pending connections
-                   */
-
-                  sq_remfirst(&bls->bl_pending);
-                }
-
-              /* Put container in the free list */
-
-              blc->bc_conn = NULL;
-              sq_addlast(&blc->bc_node, &bls->bl_free);
-              return OK;
+              sq_remafter(prev, &conn->bl_node);
             }
-        }
+          else
+            {
+              /* Remove the node from the head of the pending list */
 
-      nerr("ERROR: Failed to find pending connection\n");
-      return -EINVAL;
+              sq_remfirst(&conn->bl_node);
+            }
+
+          conn->bl_count--;
+          return OK;
+        }
     }
 
-  return OK;
+  nerr("ERROR: Failed to find pending connection\n");
+  return -EINVAL;
 }
 
 #endif /* CONFIG_NET && CONFIG_NET_TCP && CONFIG_NET_TCPBACKLOG */

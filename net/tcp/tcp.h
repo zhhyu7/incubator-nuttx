@@ -203,7 +203,6 @@ struct pollfd;    /* Forward reference */
 
 struct net_driver_s;      /* Forward reference */
 struct devif_callback_s;  /* Forward reference */
-struct tcp_backlog_s;     /* Forward reference */
 struct tcp_hdr_s;         /* Forward reference */
 
 /* This is a container that holds the poll-related information */
@@ -393,16 +392,31 @@ struct tcp_conn_s
 #ifdef CONFIG_NET_TCPBACKLOG
   /* Listen backlog support
    *
-   *   blparent - The backlog parent.  If this connection is backlogged,
-   *     this field will be non-null and will refer to the TCP connection
-   *     structure in which this connection is backlogged.
-   *   backlog - The pending connection backlog.  If this connection is
-   *     configured as a listener with backlog, then this refers to the
-   *     struct tcp_backlog_s tear-off structure that manages that backlog.
+   * A tcp_conn_s is, at any instant, in at most one of two backlog roles,
+   * and both roles share the same storage via an anonymous union:
+   *
+   *   Listener (bl_max > 0): bl_node is the HEAD of the pending-connection
+   *     list (an sq_queue_t); bl_max is the backlog capacity from
+   *     listen(fd, n) and bl_count tracks the number of pending connections.
+   *   Child (blparent != NULL): bl_entry is the ENTRY that links this
+   *     connection into its parent listener's pending list (an sq_entry_t);
+   *     bl_max/bl_count are unused.
+   *
+   * The two roles are mutually exclusive (a listener never has a non-NULL
+   * blparent and vice-versa), so a single storage slot suffices and no
+   * separate container object is needed.  Expressing both roles as an
+   * anonymous union keeps every use site correctly typed without any
+   * pointer casts.
    */
 
-  FAR struct tcp_conn_s    *blparent;
-  FAR struct tcp_backlog_s *backlog;
+  FAR struct tcp_conn_s    *blparent;  /* Non-NULL: backlogged on this parent */
+  union
+  {
+    sq_queue_t              bl_node;   /* Listener: pending-connection queue head */
+    sq_entry_t              bl_entry;  /* Child: node linked into parent's queue */
+  };
+  uint16_t                  bl_max;    /* Listener capacity (0: not a listener) */
+  uint16_t                  bl_count;  /* Pending connections (listener only) */
 #endif
 
 #ifdef CONFIG_NET_TCP_KEEPALIVE
@@ -480,27 +494,6 @@ struct tcp_wrbuffer_s
   uint8_t    wb_nack;      /* The number of ack count */
 #endif
   struct iob_s *wb_iob;    /* Head of the I/O buffer chain */
-};
-#endif
-
-/* Support for listen backlog:
- *
- *   struct tcp_blcontainer_s describes one backlogged connection
- *   struct tcp_backlog_s is a "tear-off" describing all backlog for a
- *      listener connection
- */
-
-#ifdef CONFIG_NET_TCPBACKLOG
-struct tcp_blcontainer_s
-{
-  sq_entry_t bc_node;             /* Implements a singly linked list */
-  FAR struct tcp_conn_s *bc_conn; /* Holds reference to the new connection structure */
-};
-
-struct tcp_backlog_s
-{
-  sq_queue_t bl_free;             /* Implements a singly-linked list of free containers */
-  sq_queue_t bl_pending;          /* Implements a singly-linked list of pending connections */
 };
 #endif
 

@@ -884,7 +884,7 @@ void tcp_free(FAR struct tcp_conn_s *conn)
 
   /* Remove any backlog attached to this connection */
 
-  if (conn->backlog)
+  if (conn->bl_max > 0)
     {
       tcp_backlogdestroy(conn);
     }
