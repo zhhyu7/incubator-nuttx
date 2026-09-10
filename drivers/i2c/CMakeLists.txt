@@ -52,6 +52,10 @@ if(CONFIG_I2C)
     list(APPEND SRCS i2c_rpmsg_server.c)
   endif()
 
+  if(CONFIG_MCAL_I2C)
+    list(APPEND SRCS i2c_mcal.c)
+  endif()
+
   # Include the selected I2C multiplexer drivers
 
   if(CONFIG_I2CMULTIPLEXER_PCA9540BDP)
