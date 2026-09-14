@@ -36,37 +36,6 @@
  ****************************************************************************/
 
 /****************************************************************************
- * Name: netdev_iob_next
- *
- * Description:
- *   Per-chain continuation allocator installed on driver-supplied IOBs.
- *   Adapts the device d_alloc callback to the iob_s io_alloc signature
- *   (FAR struct iob_s *(*)(FAR void *arg, uint16_t size, bool throttled,
- *   unsigned int timeout)) so that the generic IOB data operations
- *   (iob_copyin, iob_clone_partial, iob_update_pktlen) can grow a
- *   driver-owned chain from the same allocator without any knowledge of the
- *   network device.  Returns the raw driver IOB; the generic helper resets
- *   io_offset/io_len/io_pktlen and propagates the allocator.
- *
- ****************************************************************************/
-
-#if CONFIG_IOB_EXTRA_HEADS > 0
-static FAR struct iob_s *netdev_iob_next(FAR void *arg, uint16_t size,
-                                         bool throttled,
-                                         unsigned int timeout)
-{
-  FAR struct net_driver_s *dev = arg;
-
-  /* Forward the caller's allocation policy to the driver allocator so a
-   * continuation buffer can block or draw from the throttled reserve just
-   * like the head buffer.
-   */
-
-  return dev->d_alloc(dev, size, throttled, timeout);
-}
-#endif
-
-/****************************************************************************
  * Name: netdev_iob_timedalloc
  *
  * Description:
@@ -79,9 +48,10 @@ static FAR struct iob_s *netdev_iob_next(FAR void *arg, uint16_t size,
  *
  *     - When the device supplies its own allocator (d_alloc, e.g. a
  *       DMA-capable / zero-copy NIC) the head IOB is obtained from the
- *       driver and a per-chain continuation allocator is installed so that
- *       every buffer of the chain originates from the same source.  This
- *       path only exists when CONFIG_IOB_EXTRA_HEADS > 0.
+ *       driver, which also installs the per-chain continuation allocator
+ *       (io_alloc/io_arg) so that every buffer of the chain originates from
+ *       the same source.  This path only exists when
+ *       CONFIG_IOB_EXTRA_HEADS > 0.
  *     - Otherwise the IOB is drawn from the global pool, retrying against
  *       the throttled reserve when requested.
  *
@@ -119,17 +89,6 @@ FAR struct iob_s *netdev_iob_timedalloc(FAR struct net_driver_s *dev,
        */
 
       iob = dev->d_alloc(dev, size, throttled, timeout);
-      if (iob != NULL)
-        {
-          /* Install the per-chain continuation allocator so that any later
-           * growth of this chain by the generic IOB data operations (copyin,
-           * clone, update_pktlen) draws from the same driver source as the
-           * head buffer.
-           */
-
-          iob->io_alloc = netdev_iob_next;
-          iob->io_arg   = dev;
-        }
     }
 #endif
 

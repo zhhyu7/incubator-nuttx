@@ -203,15 +203,21 @@ FAR struct iob_s *iob_timedalloc_with_size(uint16_t size, bool throttled,
  *   data    - Make io_data point to a specific address, the caller is
  *             responsible for the memory management. The caller should
  *             ensure that the memory is not freed before the iob is freed.
- *   size    - The size of the data parameter
- *   free_cb - Notify the caller when the iob is freed. The caller can
- *             perform additional operations on the data before it is freed.
- *             The free_cb is called when the iob is freed.
+ *   size     - The size of the data parameter
+ *   alloc_cb - Per-chain continuation allocator stored in io_alloc, so the
+ *              chain keeps growing from the caller instead of the global
+ *              pool.  May be NULL to extend from the global pool.
+ *   free_cb  - Notify the caller when the iob is freed. The caller can
+ *              perform additional operations on the data before it is freed.
+ *              The free_cb is called when the iob is freed.
+ *   arg      - Private context stored in io_arg and handed back as the first
+ *              argument of both callbacks.  May be NULL.
  *
  ****************************************************************************/
 
 FAR struct iob_s *iob_alloc_with_data(FAR void *data, uint16_t size,
-                                      iob_free_cb_t free_cb)
+                                      iob_alloc_cb_t alloc_cb,
+                                      iob_free_cb_t free_cb, FAR void *arg)
 {
   FAR struct iob_s *iob;
 
@@ -221,7 +227,9 @@ FAR struct iob_s *iob_alloc_with_data(FAR void *data, uint16_t size,
   if (iob)
     {
       iob->io_bufsize = size;
+      iob->io_alloc   = alloc_cb;
       iob->io_free    = free_cb;
+      iob->io_arg     = arg;
       iob->io_data    = data;
     }
 
@@ -239,14 +247,20 @@ FAR struct iob_s *iob_alloc_with_data(FAR void *data, uint16_t size,
  *             responsible for the memory management. The caller should
  *             ensure that the memory is not freed before the iob is freed,
  *             and caller need to reserve space for alignment.
- *   size    - The size of the data parameter
- *   free_cb - Notify the caller when the iob is freed. The caller can
- *             perform additional operations on the data before it is freed.
+ *   size     - The size of the data parameter
+ *   alloc_cb - Per-chain continuation allocator stored in io_alloc, so the
+ *              chain keeps growing from the caller instead of the global
+ *              pool.  May be NULL to extend from the global pool.
+ *   free_cb  - Notify the caller when the iob is freed. The caller can
+ *              perform additional operations on the data before it is freed.
+ *   arg      - Private context stored in io_arg and handed back as the first
+ *              argument of both callbacks.  May be NULL.
  *
  ****************************************************************************/
 
 FAR struct iob_s *iob_init_with_data(FAR void *data, uint16_t size,
-                                     iob_free_cb_t free_cb)
+                                     iob_alloc_cb_t alloc_cb,
+                                     iob_free_cb_t free_cb, FAR void *arg)
 {
   FAR struct iob_s *iob = (FAR struct iob_s *)data;
 
@@ -254,7 +268,9 @@ FAR struct iob_s *iob_init_with_data(FAR void *data, uint16_t size,
   DEBUGASSERT(size >= sizeof(*iob));
 
   memset(iob, 0, sizeof(*iob));
+  iob->io_alloc   = alloc_cb;
   iob->io_free    = free_cb;
+  iob->io_arg     = arg;
   iob->io_data    = iob->io_data_;
   iob->io_bufsize = size - sizeof(*iob);
 

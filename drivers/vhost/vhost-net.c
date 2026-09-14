@@ -63,18 +63,13 @@ struct vhost_net_priv_s
   int                       bufnum;
 };
 
-/* RX metadata stored inline in the VIRTIO_NET_HDRSIZE bytes preceding the
- * packet data.  It is overlaid on a (possibly unaligned) vring buffer, so
- * the packed attribute makes the compiler emit safe member accesses.
+/* The vring head index of an RX buffer is stashed inline in the
+ * VIRTIO_NET_HDRSIZE bytes preceding the packet data.  The owning device is
+ * not stored there: it is registered as the iob io_arg and handed back to
+ * the free callback by iob_free().
  */
 
-begin_packed_struct struct vhost_net_llhdr_s
-{
-  FAR struct vhost_net_priv_s *priv;   /* Owning device */
-  uint16_t                     idx;    /* vring head index */
-} end_packed_struct;
-
-static_assert(VIRTIO_NET_HDRSIZE >= sizeof(struct vhost_net_llhdr_s),
+static_assert(VIRTIO_NET_HDRSIZE >= sizeof(uint16_t),
               "VIRTIO_NET_HDRSIZE too small for inline RX metadata");
 
 /****************************************************************************
@@ -142,17 +137,17 @@ static const struct netdev_ops_s g_vhost_net_ops =
  * Name: vhost_net_rxfree
  ****************************************************************************/
 
-static void vhost_net_rxfree(FAR void *data)
+static void vhost_net_rxfree(FAR void *arg, FAR void *data)
 {
-  FAR struct vhost_net_llhdr_s *hdr = (FAR struct vhost_net_llhdr_s *)
+  FAR uint16_t *idx = (FAR uint16_t *)
     ((FAR uint8_t *)data - VIRTIO_NET_HDRSIZE);
-  FAR struct vhost_net_priv_s *priv = hdr->priv;
+  FAR struct vhost_net_priv_s *priv = arg;
   FAR struct virtqueue *vq;
   irqstate_t flags;
 
   vq = priv->hdev->vrings_info[VHOST_NET_RX].vq;
   flags = spin_lock_irqsave(&priv->lock[VHOST_NET_RX]);
-  virtqueue_add_consumed_buffer(vq, hdr->idx, 0);
+  virtqueue_add_consumed_buffer(vq, *idx, 0);
   virtqueue_kick(vq);
   spin_unlock_irqrestore(&priv->lock[VHOST_NET_RX], flags);
 }
@@ -166,7 +161,6 @@ vhost_net_alloc_rxpkt(FAR struct vhost_net_priv_s *priv,
                       FAR struct virtqueue_buf *vb, size_t vbcnt,
                       uint16_t idx)
 {
-  FAR struct vhost_net_llhdr_s *hdr = vb[0].buf;
   FAR uint8_t *base;
   FAR netpkt_t *pkt;
   uint16_t len;
@@ -177,14 +171,14 @@ vhost_net_alloc_rxpkt(FAR struct vhost_net_priv_s *priv,
   len  = vb[0].len - VIRTIO_NET_HDRSIZE;
   base = (FAR uint8_t *)vb[0].buf + VIRTIO_NET_HDRSIZE;
 
-  /* Stash priv + idx inline in the virtio-net header region that sits
-   * right before "base".  The free callback recovers them from there.
+  /* Stash the vring head index inline in the virtio-net header region that
+   * sits right before "base".  The free callback recovers it from there,
+   * while "priv" reaches it through the iob io_arg registered below.
    */
 
-  hdr->priv = priv;
-  hdr->idx  = idx;
+  *(FAR uint16_t *)vb[0].buf = idx;
 
-  pkt = iob_alloc_with_data(base, len, vhost_net_rxfree);
+  pkt = iob_alloc_with_data(base, len, NULL, vhost_net_rxfree, priv);
   if (pkt != NULL)
     {
       /* The network stack treats IOB_DATA(pkt) (i.e. io_data + io_offset)
@@ -198,9 +192,9 @@ vhost_net_alloc_rxpkt(FAR struct vhost_net_priv_s *priv,
        *     ^ NETLLBUF         ^ IOB_DATA / IPBUF(0)
        *
        * io_data must stay equal to "base" because the iob free callback
-       * receives io_data and reads the vhost_net_llhdr_s that precedes
-       * it.  netpkt_setdatalen() then subtracts NET_LL_HDRLEN from "len"
-       * to store the L3 payload length in io_pktlen, so the upper half
+       * receives io_data and reads the vring head index that precedes it.
+       * netpkt_setdatalen() then subtracts NET_LL_HDRLEN from "len" to
+       * store the L3 payload length in io_pktlen, so the upper half
        * computes d_len correctly.
        */
 

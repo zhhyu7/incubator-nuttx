@@ -425,7 +425,37 @@ static inline_function int iob_get_bufsize(int level)
  * Public Types
  ****************************************************************************/
 
-typedef CODE void (*iob_free_cb_t)(FAR void *data);
+struct iob_s;
+
+/* Per-chain continuation allocator for an I/O buffer chain whose buffers
+ * originate from a driver rather than from the global IOB pool.
+ *
+ *   arg       - The private context registered with the callback (io_arg).
+ *   size      - Requested total buffer capacity in bytes.
+ *   throttled - Draw from the throttled reserve when true.
+ *   timeout   - Allocation timeout in milliseconds (0 = no wait,
+ *               UINT_MAX = wait forever).
+ *
+ * Returns the next buffer of the chain, or NULL on allocation failure.
+ */
+
+typedef CODE FAR struct iob_s *(*iob_alloc_cb_t)(FAR void *arg,
+                                                 uint16_t size,
+                                                 bool throttled,
+                                                 unsigned int timeout);
+
+/* Custom free callback for an I/O buffer carrying an external payload.
+ *
+ *   arg  - The private context registered together with the callback
+ *          (io_arg), so the callback does not have to recover it from the
+ *          payload memory.  It comes first to match the io_alloc signature.
+ *   data - The payload to release.  This is io_data for a buffer created by
+ *          iob_alloc_with_data(), or the iob itself for a buffer created by
+ *          iob_init_with_data() (where the header and the payload live in
+ *          the same caller-owned block).
+ */
+
+typedef CODE void (*iob_free_cb_t)(FAR void *arg, FAR void *data);
 
 /* Represents one I/O buffer.  A packet is contained by one or more I/O
  * buffers in a chain.  The io_pktlen is only valid for the I/O buffer at
@@ -495,8 +525,13 @@ struct iob_s
    * stays consistent.
    */
 
-  FAR struct iob_s *(*io_alloc)(FAR void *arg, uint16_t size,
-                                bool throttled, unsigned int timeout);
+  iob_alloc_cb_t io_alloc;
+
+  /* Private context of this buffer.  It is the first argument of both
+   * io_alloc() and io_free(), so there is one context per buffer and it is
+   * installed once, by whoever allocates the buffer.
+   */
+
   FAR void     *io_arg;
   iob_free_cb_t io_free;  /* Custom free callback */
   FAR uint8_t  *io_data;
@@ -651,15 +686,21 @@ FAR struct iob_s *iob_alloc_with_size(uint16_t size, bool throttled)
  *             | io_data |--+   +--------+
  *             +---------+
  *
- *   size    - The size of the data parameter
- *   free_cb - Notify the caller when the iob is freed. The caller can
- *             perform additional operations on the data before it is freed.
- *             The free_cb is called when the iob is freed.
+ *   size     - The size of the data parameter
+ *   alloc_cb - Per-chain continuation allocator stored in io_alloc, so the
+ *              chain keeps growing from the caller instead of the global
+ *              pool.  May be NULL to extend from the global pool.
+ *   free_cb  - Notify the caller when the iob is freed. The caller can
+ *              perform additional operations on the data before it is freed.
+ *              The free_cb is called when the iob is freed.
+ *   arg      - Private context stored in io_arg and handed back as the first
+ *              argument of both callbacks.  May be NULL.
  *
  ****************************************************************************/
 
 FAR struct iob_s *iob_alloc_with_data(FAR void *data, uint16_t size,
-                                      iob_free_cb_t free_cb);
+                                      iob_alloc_cb_t alloc_cb,
+                                      iob_free_cb_t free_cb, FAR void *arg);
 
 /****************************************************************************
  * Name: iob_init_with_data
@@ -672,9 +713,14 @@ FAR struct iob_s *iob_alloc_with_data(FAR void *data, uint16_t size,
  *             responsible for the memory management. The caller should
  *             ensure that the memory is not freed before the iob is freed,
  *             and caller need to reserve space for alignment.
- *   size    - The size of the data parameter
- *   free_cb - Notify the caller when the iob is freed. The caller can
- *             perform additional operations on the data before it is freed.
+ *   size     - The size of the data parameter
+ *   alloc_cb - Per-chain continuation allocator stored in io_alloc, so the
+ *              chain keeps growing from the caller instead of the global
+ *              pool.  May be NULL to extend from the global pool.
+ *   free_cb  - Notify the caller when the iob is freed. The caller can
+ *              perform additional operations on the data before it is freed.
+ *   arg      - Private context stored in io_arg and handed back as the first
+ *              argument of both callbacks.  May be NULL.
  *
  *             +---------+
  *             |   IOB   |
@@ -685,7 +731,8 @@ FAR struct iob_s *iob_alloc_with_data(FAR void *data, uint16_t size,
  ****************************************************************************/
 
 FAR struct iob_s *iob_init_with_data(FAR void *data, uint16_t size,
-                                     iob_free_cb_t free_cb);
+                                     iob_alloc_cb_t alloc_cb,
+                                     iob_free_cb_t free_cb, FAR void *arg);
 
 /****************************************************************************
  * Name: iob_timedalloc_next
@@ -696,9 +743,9 @@ FAR struct iob_s *iob_init_with_data(FAR void *data, uint16_t size,
  *
  *   When the buffer being extended carries a per-chain allocator (io_alloc,
  *   set up for chains whose buffers originate from a network driver's
- *   d_alloc), the next buffer is obtained from that same allocator and
- *   the allocator is propagated onto the new buffer so the whole chain
- *   keeps growing from one source.
+ *   d_alloc), the next buffer is obtained from that same allocator, which is
+ *   also responsible for wiring io_alloc/io_arg onto what it returns so the
+ *   whole chain keeps growing from one source.
  *
  *   Otherwise the buffer is allocated from the global IOB pool, exactly
  *   matching the legacy iob_timedalloc_with_size behavior.
@@ -733,11 +780,6 @@ FAR struct iob_s *iob_timedalloc_next(FAR struct iob_s *iob, bool throttled,
 
       next = iob->io_alloc(iob->io_arg, IOB_BUFSIZE(iob),
                            throttled, timeout);
-      if (next != NULL)
-        {
-          next->io_alloc = iob->io_alloc;
-          next->io_arg   = iob->io_arg;
-        }
     }
   else
     {

@@ -891,12 +891,38 @@ static int netdev_upper_txavail(FAR struct net_driver_s *dev)
 }
 
 /****************************************************************************
+ * Name: netdev_upper_iobnext
+ *
+ * Description:
+ *   Per-chain continuation allocator (the iob_s io_alloc callback) installed
+ *   on the buffers produced by netdev_upper_alloc().  Adapts the io_alloc
+ *   signature to d_alloc so the generic IOB data operations (iob_copyin,
+ *   iob_clone_partial, iob_update_pktlen) can grow a driver-owned chain from
+ *   the same source without any knowledge of the network device.
+ *
+ ****************************************************************************/
+
+#if CONFIG_IOB_EXTRA_HEADS > 0
+static FAR struct iob_s *netdev_upper_iobnext(FAR void *arg, uint16_t size,
+                                              bool throttled,
+                                              unsigned int timeout)
+{
+  FAR struct net_driver_s *dev = arg;
+
+  return dev->d_alloc(dev, size, throttled, timeout);
+}
+#endif
+
+/****************************************************************************
  * Name: netdev_upper_alloc
  *
  * Description:
  *   Driver-supplied IOB allocator (the d_alloc callback).  Delegates to the
  *   lower-half's ioballoc operation so the lower half can supply its own
  *   (e.g. DMA-capable / zero-copy) TX buffer.
+ *
+ *   As the allocator it also wires the buffer for chain continuation, unless
+ *   the lower half already registered its own allocator and context.
  *
  * Input Parameters:
  *   dev       - Reference to the NuttX driver state structure
@@ -917,11 +943,22 @@ netdev_upper_alloc(FAR struct net_driver_s *dev, uint16_t size,
                    bool throttled, unsigned int timeout)
 {
   FAR struct netdev_upperhalf_s *upper = dev->d_private;
+  FAR struct iob_s *iob;
 
   /* Delegate to the lower-half supplied allocator. */
 
-  return upper->lower->ops->alloc(upper->lower, 0, size, throttled,
-                                  timeout);
+  iob = upper->lower->ops->alloc(upper->lower, 0, size, throttled, timeout);
+  if (iob != NULL && iob->io_alloc == NULL)
+    {
+      /* The lower half did not register an allocator of its own, so let the
+       * chain keep growing through this callback.
+       */
+
+      iob->io_alloc = netdev_upper_iobnext;
+      iob->io_arg   = dev;
+    }
+
+  return iob;
 }
 #endif
 

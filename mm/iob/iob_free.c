@@ -125,11 +125,11 @@ FAR struct iob_s *iob_free(FAR struct iob_s *iob)
     {
       if (iob->io_data == iob->io_data_)
         {
-          iob->io_free(iob);
+          iob->io_free(iob->io_arg, iob);
         }
       else
         {
-          iob->io_free(iob->io_data);
+          iob->io_free(iob->io_arg, iob->io_data);
 #ifdef CONFIG_DEBUG_IOB
           iob->io_owner[0] = '\0';
 #endif
