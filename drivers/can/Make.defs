@@ -52,6 +52,10 @@ ifeq ($(CONFIG_CAN_VCAN),y)
   CSRCS += vcan.c
 endif
 
+ifeq ($(CONFIG_LIN_SERIAL),y)
+  CSRCS += lin_serial.c
+endif
+
 # Include CAN device driver build support
 
 DEPPATH += --dep-path can

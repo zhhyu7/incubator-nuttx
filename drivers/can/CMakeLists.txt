@@ -49,4 +49,8 @@ if(CONFIG_CAN_VCAN)
   list(APPEND SRCS vcan.c)
 endif()
 
+if(CONFIG_LIN_SERIAL)
+  list(APPEND SRCS lin_serial.c)
+endif()
+
 target_sources(drivers PRIVATE ${SRCS})

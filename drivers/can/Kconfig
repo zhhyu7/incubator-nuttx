@@ -429,4 +429,40 @@ config CAN_VCAN_RXTHREAD_PRIORITY
 
 endif # CAN_VCAN
 
+config LIN_SERIAL
+	bool "Generic LIN-over-tty (SocketCAN) driver"
+	default n
+	depends on NET_CAN
+	---help---
+		Media-agnostic LIN driver that carries SocketCAN "lin%d" traffic
+		over a plain tty device.  The same driver serves any NuttX serial
+		port ("/dev/ttySx").  Interfaces are created by the board/bringup
+		logic through lin_serial_register(devpath, ifno, baud, master,
+		echo).
+
+if LIN_SERIAL
+
+config LIN_SERIAL_MODE_HARDWARE
+	bool "Hardware LIN transceiver (BREAK signaling)"
+	default n
+	---help---
+		Enable UART BREAK signaling for real LIN transceiver hardware.
+		When enabled, each TX frame is preceded by a UART BREAK and
+		wakeup uses a BREAK pulse per ISO 17987.
+		When disabled, the driver omits BREAK and works over any serial
+		transport (QEMU virtio-serial, SilKit chardev bridge, etc.).
+		The frame format (SYNC+PID+data+checksum) is identical in both
+		modes.
+
+config LIN_SERIAL_IDLE_TIMEOUT
+	int "Bus idle timeout before auto-sleep (seconds, 0=disable)"
+	default 0
+	---help---
+		If non-zero, the LIN interface transitions to SLEEP automatically
+		after this many seconds without any bus activity (no TX or RX).
+		The LIN specification recommends 4-10 seconds.  Set to 0 to
+		disable idle-timeout sleep.
+
+endif # LIN_SERIAL
+
 endmenu # CAN Driver Support
