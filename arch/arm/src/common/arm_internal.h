@@ -304,7 +304,7 @@ void arm_pminitialize(void);
 
 /* Interrupt handling *******************************************************/
 
-#if CONFIG_ARCH_INTERRUPTSTACK > 7
+#if CONFIG_ARCH_INTERRUPTSTACK > 7 || !defined(CONFIG_UP)
 void weak_function arm_initialize_stack(void);
 #else
 #  define arm_initialize_stack()

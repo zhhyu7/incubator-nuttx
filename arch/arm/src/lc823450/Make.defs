@@ -91,7 +91,6 @@ CHIP_CSRCS += lc823450_sleep.c
 endif
 
 ifeq ($(CONFIG_SMP), y)
-CHIP_CSRCS += lc823450_cpuidlestack.c
 CHIP_CSRCS += lc823450_cpucall.c
 CHIP_CSRCS += lc823450_cpustart.c
 CMN_ASRCS  := $(filter-out arm_testset.S,$(CMN_ASRCS))

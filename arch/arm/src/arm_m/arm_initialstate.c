@@ -25,11 +25,13 @@
 #include <nuttx/config.h>
 
 #include <sys/types.h>
+#include <assert.h>
 #include <stdint.h>
 #include <string.h>
 
 #include <nuttx/arch.h>
 #include <nuttx/irq.h>
+#include <nuttx/sched.h>
 #include <nuttx/tls.h>
 #include <tls/tls.h>
 #include <arch/arm_m/nvicpri.h>
@@ -52,8 +54,58 @@ uint8_t aligned_data(STACKFRAME_ALIGN) g_intstackalloc[INTSTACK_SIZE];
 #endif
 
 /****************************************************************************
+ * Private Data
+ ****************************************************************************/
+
+#ifndef CONFIG_UP
+static uint32_t aligned_data(STACKFRAME_ALIGN)
+g_cpu_idlestack[CONFIG_NCPUS - 1][CONFIG_IDLETHREAD_STACKSIZE >> 2];
+#endif
+
+/****************************************************************************
  * Public Functions
  ****************************************************************************/
+
+/****************************************************************************
+ * Name: up_cpu_idlestack
+ *
+ * Description:
+ *   Set up the stack-related TCB fields of the IDLE task for the given CPU.
+ *   CPU0 uses the linker-provided IDLE stack (g_idle_topstack), every other
+ *   CPU uses its own entry of g_cpu_idlestack.  Shared by SMP (called from
+ *   nx_start()) and BMP (called from up_initial_state() on each core).
+ *
+ * Input Parameters:
+ *   cpu        - CPU index the IDLE task is being created for.
+ *   tcb        - The TCB of the CPU IDLE task.
+ *   stack_size - Requested IDLE stack size (CONFIG_IDLETHREAD_STACKSIZE).
+ *
+ ****************************************************************************/
+
+int up_cpu_idlestack(int cpu, struct tcb_s *tcb, size_t stack_size)
+{
+  uintptr_t stack_alloc;
+
+  DEBUGASSERT(cpu >= 0 && cpu < CONFIG_NCPUS && tcb != NULL);
+  DEBUGASSERT(stack_size <= CONFIG_IDLETHREAD_STACKSIZE);
+
+#ifndef CONFIG_UP
+  if (cpu > 0)
+    {
+      stack_alloc = (uintptr_t)g_cpu_idlestack[cpu - 1];
+    }
+  else
+#endif
+    {
+      stack_alloc = (uintptr_t)g_idle_topstack - CONFIG_IDLETHREAD_STACKSIZE;
+    }
+
+  tcb->adj_stack_size  = stack_size;
+  tcb->stack_alloc_ptr = (void *)stack_alloc;
+  tcb->stack_base_ptr  = tcb->stack_alloc_ptr;
+
+  return OK;
+}
 
 /****************************************************************************
  * Name: up_initial_state
@@ -84,10 +136,7 @@ void up_initial_state(struct tcb_s *tcb)
 
   if (tcb->pid == IDLE_PROCESS_ID)
     {
-      tcb->stack_alloc_ptr = (void *)(g_idle_topstack -
-                                      CONFIG_IDLETHREAD_STACKSIZE);
-      tcb->stack_base_ptr  = tcb->stack_alloc_ptr;
-      tcb->adj_stack_size  = CONFIG_IDLETHREAD_STACKSIZE;
+      up_cpu_idlestack(this_cpu(), tcb, CONFIG_IDLETHREAD_STACKSIZE);
 
 #ifdef CONFIG_STACK_COLORATION
       /* If stack debug is enabled, then fill the stack with a
@@ -214,22 +263,67 @@ void up_initial_state(struct tcb_s *tcb)
 #endif
 }
 
-#if CONFIG_ARCH_INTERRUPTSTACK > 7
+#ifndef CONFIG_UP
+/****************************************************************************
+ * Name: arm_switch_idlestack
+ *
+ * Description:
+ *   Move a secondary core that is still on the shared reset stack (BMP)
+ *   onto its own IDLE stack.  The callers' live frames are copied so that
+ *   they still return on the new MSP.
+ *
+ ****************************************************************************/
+
+static noinline_function void arm_switch_idlestack(void)
+{
+  uintptr_t boot_top = (uintptr_t)_vectors[0];
+  uintptr_t sp = up_getsp();
+  uintptr_t new_sp;
+
+  if (this_cpu() == 0 || sp > boot_top ||
+      sp <= boot_top - CONFIG_IDLETHREAD_STACKSIZE)
+    {
+      return;
+    }
+
+  new_sp = (uintptr_t)g_cpu_idlestack[this_cpu() - 1] +
+           CONFIG_IDLETHREAD_STACKSIZE - (boot_top - sp);
+  memcpy((void *)new_sp, (void *)sp, boot_top - sp);
+
+  __asm__ __volatile__
+    (
+      "msr msp, %0\n"
+      "isb sy\n"
+      :
+      : "r" (new_sp)
+      : "memory");
+}
+#endif
+
+#if CONFIG_ARCH_INTERRUPTSTACK > 7 || !defined(CONFIG_UP)
 /****************************************************************************
  * Name: arm_initialize_stack
  *
  * Description:
- *   If interrupt stack is defined, the PSP and MSP need to be reinitialized.
+ *   Move a BMP secondary core onto its own IDLE stack.  If interrupt stack
+ *   is defined, the PSP and MSP need to be reinitialized.
  *
  ****************************************************************************/
 
 noinline_function void arm_initialize_stack(void)
 {
+#if CONFIG_ARCH_INTERRUPTSTACK > 7
   uint32_t stacklim = up_get_intstackbase(this_cpu());
   uint32_t stack = stacklim + INTSTACK_SIZE;
   uint32_t tempa = 0;
   uint32_t tempb = 2;
+#endif
 
+#ifndef CONFIG_UP
+  arm_switch_idlestack();
+#endif
+
+#if CONFIG_ARCH_INTERRUPTSTACK > 7
   __asm__ __volatile__
     (
 #ifndef CONFIG_ARCH_ARMV6M
@@ -280,5 +374,6 @@ noinline_function void arm_initialize_stack(void)
       : "r" (stack), "r" (tempa), "r" (tempb)
 #endif
       : "memory");
+#endif
 }
 #endif

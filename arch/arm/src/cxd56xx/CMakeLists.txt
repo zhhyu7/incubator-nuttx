@@ -42,7 +42,6 @@ set(SRCS
     cxd56_hwspinlock.c)
 
 if(CONFIG_SMP)
-  list(APPEND SRCS cxd56_cpuidlestack.c)
   list(APPEND SRCS cxd56_cpucall.c)
   list(APPEND SRCS cxd56_cpustart.c)
 endif()
