@@ -118,6 +118,13 @@ struct lin_serial_dev_s
   struct pollfd    fds;
   struct work_s    rx_work;       /* RX deferred processing */
   struct work_s    idle_work;     /* Bus idle timeout → sleep */
+
+  /* Slave TX cache:
+   * pre-loaded responses and RTR subscription indexed by LIN ID (0-63).
+   * Entries with can_id == 0 are unused.
+   */
+
+  struct can_frame tx_cache[LIN_ID_MAX + 1];
 };
 
 /****************************************************************************
@@ -366,6 +373,38 @@ lin_serial_report_tcf(FAR struct lin_serial_dev_s *priv,
 }
 
 /****************************************************************************
+ * Name: lin_serial_is_sleep_frame
+ *
+ * Description:
+ *   Check if a completed RX frame is the LIN sleep diagnostic frame
+ *   (ID 0x3c, data[0]=0x00, data[1..7]=0xff).  Returns true if the
+ *   payload matches the sleep pattern.  The caller is responsible for
+ *   the actual state transition and event reporting.
+ *
+ ****************************************************************************/
+
+static bool lin_serial_is_sleep_frame(FAR const struct can_frame *frame)
+{
+  static const uint8_t sleep_payload[8] =
+    {
+      0x00, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff
+    };
+
+  if ((frame->can_id & LIN_ID_MASK) != 0x3c)
+    {
+      return false;
+    }
+
+  if (frame->can_dlc != 8 ||
+      memcmp(frame->data, sleep_payload, 8) != 0)
+    {
+      return false;
+    }
+
+  return true;
+}
+
+/****************************************************************************
  * Name: lin_serial_send_frame
  *
  * Description:
@@ -508,8 +547,10 @@ static inline_function void lin_serial_restart_idle_timer(
  *   Master mode: stays in RX_IDLE until transmit() RTR seeds the state:
  *     - echo=false → RX_COLLECTING (data bytes arrive immediately)
  *     - echo=true  → RX_ECHO_SYNC → RX_ECHO_PID → RX_COLLECTING
- *   Slave mode: WAIT_SYNC → WAIT_PID → COLLECTING (TODO — not yet
- *     implemented; currently falls through to a no-op break).
+ *   Slave mode: IDLE/WAIT_SYNC → WAIT_PID, then by tx_cache[id]:
+ *     - LIN_CACHE_RESPONSE → send cached response, back to IDLE
+ *     - LIN_RTR_FLAG       → COLLECTING (receive master's data)
+ *     - otherwise          → ignore, back to IDLE
  *   COLLECTING is shared by both roles for data + checksum reception.
  *
  ****************************************************************************/
@@ -526,13 +567,145 @@ static void lin_serial_process_rx(FAR struct lin_serial_dev_s *priv,
       switch (priv->rx_state)
         {
           case LIN_RX_IDLE:
-          case LIN_RX_WAIT_SYNC:
-          case LIN_RX_WAIT_PID:
 
-            /* IDLE: not receiving — discard.
-             * WAIT_SYNC / WAIT_PID: TODO — Slave header parsing.
+            /* Master: not receiving, discard.  Slave: idle means hunting
+             * for the next header, handled the same as WAIT_SYNC so that
+             * back-to-back frames in one read are not lost.
              */
 
+            if (priv->master)
+              {
+                break;
+              }
+
+            /* Fall through */
+
+          case LIN_RX_WAIT_SYNC:
+            if (data[i] == LIN_SERIAL_SYNC_BYTE)
+              {
+                priv->rx_state = LIN_RX_WAIT_PID;
+              }
+
+            break;
+
+          case LIN_RX_WAIT_PID:
+            {
+              uint8_t id = data[i] & LIN_ID_MASK;
+              uint8_t pid = lin_serial_pid_parity(id);
+              canid_t cached_id;
+              uint8_t dlc;
+              bool enhanced;
+
+              if (data[i] != pid)
+                {
+                  nwarn("%s: PID parity error: 0x%02x\n",
+                        priv->dev.netdev.d_ifname, data[i]);
+                  lin_serial_report_error(priv, LIN_ERR_RX,
+                                          LIN_ERR_RX_PID_PARITY);
+                  priv->rx_state = LIN_RX_WAIT_SYNC;
+                  break;
+                }
+
+              nxmutex_lock(&priv->mutex);
+              cached_id = priv->tx_cache[id].can_id;
+              dlc = priv->tx_cache[id].can_dlc;
+              if (dlc > CAN_MAX_DLEN)
+                {
+                  dlc = CAN_MAX_DLEN;
+                }
+
+              enhanced = (cached_id & LIN_CHECKSUM_EXTENDED) != 0;
+
+              if (cached_id & LIN_CACHE_RESPONSE)
+                {
+                  /* Serialize cached response under lock. */
+
+                  uint8_t tx_buf[LIN_SERIAL_FRAME_MAX];
+                  uint8_t tx_len;
+                  ssize_t ret;
+
+#ifndef CONFIG_LIN_SERIAL_MODE_HARDWARE
+                  tx_buf[0] = LIN_SERIAL_SYNC_BYTE;
+                  tx_buf[1] = pid;
+                  memcpy(&tx_buf[2], priv->tx_cache[id].data, dlc);
+                  tx_buf[2 + dlc] = lin_serial_checksum(enhanced,
+                    pid, priv->tx_cache[id].data, dlc);
+                  tx_len = 2 + dlc + 1;
+#else
+                  memcpy(tx_buf, priv->tx_cache[id].data, dlc);
+                  tx_buf[dlc] = lin_serial_checksum(enhanced,
+                    pid, priv->tx_cache[id].data, dlc);
+                  tx_len = dlc + 1;
+#endif
+
+                  if (cached_id & LIN_SINGLE_RESPONSE)
+                    {
+                      memset(&priv->tx_cache[id], 0,
+                             sizeof(struct can_frame));
+                    }
+
+                  nxmutex_unlock(&priv->mutex);
+
+                  /* Write to tty outside lock. */
+
+#ifndef CONFIG_LIN_SERIAL_MODE_HARDWARE
+                  ret = file_write(&priv->filep, &tx_len, 1);
+                  if (ret >= 0)
+                    {
+                      ret = file_write(&priv->filep, tx_buf, tx_len);
+                    }
+#else
+                  ret = file_write(&priv->filep, tx_buf, tx_len);
+#endif
+                  if (ret >= 0)
+                    {
+                      lin_serial_report_tcf(priv, id);
+                      lin_serial_restart_idle_timer(priv);
+                    }
+                  else
+                    {
+                      nwarn("%s: slave response id=%u failed: %zd\n",
+                            priv->dev.netdev.d_ifname, id, ret);
+                    }
+                }
+              else if (cached_id & LIN_RTR_FLAG)
+                {
+                  /* Slave RTR — prepare to receive with known DLC.
+                   * rx_pkt is shared with idle_timeout, keep the lock
+                   * held while replacing it.
+                   */
+
+                  if (priv->rx_pkt != NULL)
+                    {
+                      netpkt_free(&priv->dev, priv->rx_pkt, NETPKT_RX);
+                    }
+
+                  priv->rx_pkt = netpkt_alloc(&priv->dev, NETPKT_RX);
+                  if (priv->rx_pkt != NULL)
+                    {
+                      frame = (FAR struct can_frame *)
+                        netpkt_getdata(&priv->dev, priv->rx_pkt);
+                      memset(frame, 0, sizeof(struct can_frame));
+                      frame->can_id  = cached_id;
+                      frame->can_dlc = dlc;
+                      priv->rx_checksum = enhanced ? pid : 0;
+                      priv->rx_pos   = 0;
+                      priv->rx_state = LIN_RX_COLLECTING;
+                      nxmutex_unlock(&priv->mutex);
+                      break;
+                    }
+
+                  nxmutex_unlock(&priv->mutex);
+                }
+              else
+                {
+                  /* Unregistered PID — ignore. */
+
+                  nxmutex_unlock(&priv->mutex);
+                }
+
+              priv->rx_state = LIN_RX_IDLE;
+            }
             break;
 
           case LIN_RX_ECHO_SYNC:
@@ -634,6 +807,29 @@ static void lin_serial_process_rx(FAR struct lin_serial_dev_s *priv,
 
                 lin_serial_report_error(priv, LIN_ERR_RX,
                                         LIN_ERR_RX_CKSUM);
+                break;
+              }
+
+            if (!priv->master && lin_serial_is_sleep_frame(frame))
+              {
+                /* Sleep diagnostic frame — do not deliver to
+                 * application layer (consistent with aurix HW
+                 * driver).  Free the pkt, reset reassembly state,
+                 * then transition to SLEEP outside the lock.
+                 */
+
+                netpkt_free(&priv->dev, priv->rx_pkt, NETPKT_RX);
+                priv->rx_pkt   = NULL;
+                priv->rx_state = LIN_RX_IDLE;
+                nxmutex_unlock(&priv->mutex);
+
+                if (LIN_SERIAL_ISNORMAL(priv))
+                  {
+                    LIN_SERIAL_SETSLEEP(priv);
+                    lin_serial_report_event(priv,
+                                            LIN_EVT_SLEEP_PASSIVE);
+                  }
+
                 break;
               }
 
@@ -774,6 +970,21 @@ static int lin_serial_ifup(FAR struct netdev_lowerhalf_s *dev)
       return -EALREADY;
     }
 
+  /* Slave: pre-register the sleep diagnostic frame (ID 0x3C) as an
+   * RTR subscription so the existing RX path receives it without any
+   * special-case code in the state machine.  Classic checksum, DLC=8
+   * per the LIN specification.  The entry is never cleared by
+   * LIN_SINGLE_RESPONSE because sleep detection must remain active
+   * for the lifetime of the interface.  Done before the poll callback
+   * is registered, so rx_worker cannot race with this write.
+   */
+
+  if (!priv->master)
+    {
+      priv->tx_cache[0x3c].can_id  = LIN_RTR_FLAG | 0x3c;
+      priv->tx_cache[0x3c].can_dlc = 8;
+    }
+
   /* Register poll callback — the serial driver will invoke it when
    * data arrives.  The callback schedules a LPWORK item to do the
    * actual (potentially blocking) file_read.
@@ -849,6 +1060,10 @@ static int lin_serial_ifdown(FAR struct netdev_lowerhalf_s *dev)
   priv->rx_state = 0;
   priv->rx_pos   = 0;
 
+  /* Clear all cached Slave TX responses */
+
+  memset(priv->tx_cache, 0, sizeof(priv->tx_cache));
+
   netdev_lower_carrier_off(dev);
   ninfo("%s: interface down\n", priv->dev.netdev.d_ifname);
   return OK;
@@ -860,7 +1075,8 @@ static int lin_serial_ifdown(FAR struct netdev_lowerhalf_s *dev)
  * Description:
  *   Transmit a CAN/LIN frame over the backing tty device.
  *   Master mode: send full frame or Header-only (RTR).
- *   Slave mode: not yet implemented (returns -ENOSYS for cache ops).
+ *   Slave mode: cache response (LIN_CACHE_RESPONSE) or subscribe to
+ *     receive data (LIN_RTR_FLAG).  Direct bus transmission is rejected.
  *
  ****************************************************************************/
 
@@ -885,12 +1101,43 @@ static int lin_serial_transmit(FAR struct netdev_lowerhalf_s *dev,
 
   frame = (FAR struct can_frame *)netpkt_getdata(dev, pkt);
 
-  /* Slave cache response path — TODO: implement in slave phase */
+  /* Reject frames with both LIN_RTR_FLAG and LIN_CACHE_RESPONSE set —
+   * these flags are mutually exclusive per the LIN SocketCAN convention.
+   */
 
-  if (!priv->master && (frame->can_id & LIN_CACHE_RESPONSE))
+  if ((frame->can_id & LIN_RTR_FLAG) &&
+      (frame->can_id & LIN_CACHE_RESPONSE))
     {
+      nwarn("%s: RTR and CACHE_RESPONSE are mutually exclusive\n",
+            priv->dev.netdev.d_ifname);
+      return -EINVAL;
+    }
+
+  if (!priv->master)
+    {
+      /* Slave mode: only LIN_CACHE_RESPONSE and LIN_RTR_FLAG are
+       * accepted.  CACHE stores a pre-loaded response; RTR subscribes
+       * to receive data when Master sends the matching header.
+       * Slave must never send frames directly on the bus.
+       */
+
+      uint8_t id;
+
+      if (!(frame->can_id & (LIN_CACHE_RESPONSE | LIN_RTR_FLAG)))
+        {
+          nwarn("%s: slave cannot send frames directly\n",
+                priv->dev.netdev.d_ifname);
+          return -ENOTSUP;
+        }
+
+      id = frame->can_id & LIN_ID_MASK;
+
+      nxmutex_lock(&priv->mutex);
+      memcpy(&priv->tx_cache[id], frame, sizeof(struct can_frame));
+      nxmutex_unlock(&priv->mutex);
       netpkt_free(&priv->dev, pkt, NETPKT_TX);
-      return -ENOSYS;
+      netdev_lower_txdone(&priv->dev);
+      return OK;
     }
 
   /* Master mode: send frame on the bus. */
