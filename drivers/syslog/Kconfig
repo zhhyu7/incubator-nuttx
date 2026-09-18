@@ -202,18 +202,35 @@ config SYSLOG_TIMESTAMP
 	---help---
 		Prepend timestamp to syslog message.
 
-config SYSLOG_TIMESTAMP_REALTIME
-	bool "Use wall-clock for syslog timestamp"
-	default n
+choice
+	prompt "Timestamp clock source"
 	depends on SYSLOG_TIMESTAMP
+	default SYSLOG_TIMESTAMP_BOOTTIME
 	---help---
-		Use wall-clock (CLOCK_REALTIME) for timestamp.  By default,
-		CLOCK_MONOTONIC will be used.
+		Select which clock source(s) are prepended to each syslog line.
+
+config SYSLOG_TIMESTAMP_BOOTTIME
+	bool "Use boottime (CLOCK_MONOTONIC) for syslog timestamp"
+	---help---
+		Use boottime (CLOCK_MONOTONIC) for the syslog timestamp.
+
+config SYSLOG_TIMESTAMP_REALTIME
+	bool "Use wall-clock (CLOCK_REALTIME) for syslog timestamp"
+	---help---
+		Use wall-clock (CLOCK_REALTIME) for the syslog timestamp.
+
+config SYSLOG_TIMESTAMP_BOTH
+	bool "Use both wall-clock and boottime"
+	---help---
+		Show both a wall-clock and boottime timestamp.
+		the boottime appears right after the wall-clock timestamp.
+
+endchoice
 
 config SYSLOG_TIMESTAMP_FORMATTED
 	bool "Formatted syslog time"
 	default n
-	depends on SYSLOG_TIMESTAMP_REALTIME
+	depends on SYSLOG_TIMESTAMP_REALTIME || SYSLOG_TIMESTAMP_BOTH
 	---help---
 		Syslog timestamp will be formatted according to the
 		SYSLOG_TIMESTAMP_FORMAT format string.
@@ -234,12 +251,32 @@ config SYSLOG_TIMESTAMP_FORMAT
 		Formatter string for syslog timestamp printing.
 		Uses the standard "strftime" format specifiers.
 
+choice
+	prompt "Timestamp sub-second resolution"
+	depends on SYSLOG_TIMESTAMP
+	default SYSLOG_TIMESTAMP_FORMAT_MICROSECOND
+	---help---
+		Select the sub-second resolution appended after the seconds in the
+		syslog timestamp.
+
 config SYSLOG_TIMESTAMP_FORMAT_MICROSECOND
 	bool "Append microseconds after seconds"
-	default y if SYSLOG_TIMESTAMP_FORMAT = "%d/%m/%y %H:%M:%S"
 	---help---
 		Append microseconds after seconds in syslog timestamp.
 		Suggest SYSLOG_TIMESTAMP_FORMAT end with %S.
+
+config SYSLOG_TIMESTAMP_FORMAT_MILLISECOND
+	bool "Append milliseconds after seconds"
+	---help---
+		Append milliseconds after seconds in syslog timestamp,
+		Suggest SYSLOG_TIMESTAMP_FORMAT end with %S.
+
+config SYSLOG_TIMESTAMP_FORMAT_NONE
+	bool "No sub-second field"
+	---help---
+		Do not append any sub-second field after the seconds.
+
+endchoice
 
 config SYSLOG_TIMESTAMP_BUFFER
 	int "Formatted timestamp buffer size"
@@ -253,6 +290,8 @@ config SYSLOG_PRIORITY
 	default n
 	---help---
 		Prepend log priority (severity) to syslog message.
+		a single-letter code name (F/A/C/E/W/N/I/D for
+		EMERG/ALERT/CRIT/ERR/WARNING/NOTICE/INFO/DEBUG).
 
 config SYSLOG_PROCESS_NAME
 	bool "Prepend process name to syslog message"

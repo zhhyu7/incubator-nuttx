@@ -27,7 +27,6 @@
 #include <nuttx/config.h>
 
 #include <stdio.h>
-#include <string.h>
 #include <syslog.h>
 #include <errno.h>
 
@@ -44,7 +43,16 @@
  * Private Data
  ****************************************************************************/
 
-#if defined(CONFIG_SYSLOG_COLOR_OUTPUT)
+/* CONFIG_SYSLOG_TIMESTAMP_BOTH enables both clock sources, so enable the
+ * individual realtime and boottime timestamps.
+ */
+
+#ifdef CONFIG_SYSLOG_TIMESTAMP_BOTH
+#  define CONFIG_SYSLOG_TIMESTAMP_REALTIME 1
+#  define CONFIG_SYSLOG_TIMESTAMP_BOOTTIME 1
+#endif
+
+#ifdef CONFIG_SYSLOG_COLOR_OUTPUT
 static FAR const char * const g_priority_color[] =
   {
     "\e[31;1;5m", /* LOG_EMERG, Red, Bold, Blinking */
@@ -61,11 +69,12 @@ static FAR const char * const g_priority_color[] =
 #  define SYSLOG_COLOR_RESET_LEN (sizeof(SYSLOG_COLOR_RESET) - 1)
 #endif
 
-#if defined(CONFIG_SYSLOG_PRIORITY)
-static FAR const char * const g_priority_str[] =
+#ifdef CONFIG_SYSLOG_PRIORITY
+static const char g_priority_letter[] =
   {
-    "EMERG", "ALERT", "CRIT", "ERROR",
-    "WARN", "NOTICE", "INFO", "DEBUG"
+    /* EMERG, ALERT, CRIT, ERROR, WARN, NOTICE, INFO, DEBUG */
+
+    'F', 'A', 'C', 'E', 'W', 'N', 'I', 'D'
   };
 #endif
 
@@ -92,12 +101,27 @@ void nx_vsyslog(uint64_t meta, FAR const IPTR char *fmt, FAR va_list *ap)
 #ifdef CONFIG_SYSLOG_PROCESS_NAME
   FAR struct tcb_s *tcb = this_task();
 #endif
-#ifdef CONFIG_SYSLOG_TIMESTAMP
-  struct timespec ts;
-#  if defined(CONFIG_SYSLOG_TIMESTAMP_FORMATTED)
-  struct tm tm;
+#ifdef CONFIG_SYSLOG_TIMESTAMP_BOOTTIME
+  struct timespec ts_boot =
+    {
+      0
+    };
+
+#endif
+#ifdef CONFIG_SYSLOG_TIMESTAMP_REALTIME
+  struct timespec ts =
+    {
+      0
+    };
+
+#endif
+#ifdef CONFIG_SYSLOG_TIMESTAMP_FORMATTED
+  struct tm tm =
+    {
+      0
+    };
+
   char date_buf[CONFIG_SYSLOG_TIMESTAMP_BUFFER];
-#  endif
 #endif
 
   /* Per-tag filtering */
@@ -121,13 +145,6 @@ void nx_vsyslog(uint64_t meta, FAR const IPTR char *fmt, FAR va_list *ap)
   lib_syslograwstream_open(&stream);
 
 #ifdef CONFIG_SYSLOG_TIMESTAMP
-  ts.tv_sec = 0;
-  ts.tv_nsec = 0;
-
-#  if defined(CONFIG_SYSLOG_TIMESTAMP_FORMATTED)
-  memset(&tm, 0, sizeof(tm));
-#  endif
-
   /* Get the current time.  Since debug output may be generated very early
    * in the start-up sequence, hardware timer support may not yet be
    * available.
@@ -135,22 +152,22 @@ void nx_vsyslog(uint64_t meta, FAR const IPTR char *fmt, FAR va_list *ap)
 
   if (OSINIT_HW_READY())
     {
-#  if defined(CONFIG_SYSLOG_TIMESTAMP_REALTIME)
+#  ifdef CONFIG_SYSLOG_TIMESTAMP_REALTIME
       /* Use CLOCK_REALTIME if so configured */
 
       nxclock_gettime(CLOCK_REALTIME, &ts);
-#  else
-      /* Prefer monotonic when enabled, as it can be synchronized to
-       * RTC with clock_resynchronize.
-       */
+#  endif
 
-      nxclock_gettime(CLOCK_MONOTONIC, &ts);
+#  ifdef CONFIG_SYSLOG_TIMESTAMP_BOOTTIME
+      /* Use CLOCK_MONOTONIC if so configured */
+
+      nxclock_gettime(CLOCK_MONOTONIC, &ts_boot);
 #  endif
 
       /* Prepend the message with the current time, if available */
 
-#  if defined(CONFIG_SYSLOG_TIMESTAMP_FORMATTED)
-#    if defined(CONFIG_SYSLOG_TIMESTAMP_LOCALTIME)
+#  ifdef CONFIG_SYSLOG_TIMESTAMP_FORMATTED
+#    ifdef CONFIG_SYSLOG_TIMESTAMP_LOCALTIME
       localtime_r(&ts.tv_sec, &tm);
 #    else
       gmtime_r(&ts.tv_sec, &tm);
@@ -158,7 +175,7 @@ void nx_vsyslog(uint64_t meta, FAR const IPTR char *fmt, FAR va_list *ap)
 #  endif
     }
 
-#  if defined(CONFIG_SYSLOG_TIMESTAMP_FORMATTED)
+#  ifdef CONFIG_SYSLOG_TIMESTAMP_FORMATTED
   date_buf[0] = '\0';
   strftime(date_buf, CONFIG_SYSLOG_TIMESTAMP_BUFFER,
            CONFIG_SYSLOG_TIMESTAMP_FORMAT, &tm);
@@ -171,47 +188,67 @@ void nx_vsyslog(uint64_t meta, FAR const IPTR char *fmt, FAR va_list *ap)
     defined(CONFIG_SYSLOG_PROCESS_NAME)
 
   lib_sprintf_internal(&stream.common,
-#if defined(CONFIG_SYSLOG_COLOR_OUTPUT)
+#ifdef CONFIG_SYSLOG_COLOR_OUTPUT
   /* Reset the terminal style. */
 
                        SYSLOG_COLOR_RESET
 #endif
 
-#ifdef CONFIG_SYSLOG_TIMESTAMP
-#  if defined(CONFIG_SYSLOG_TIMESTAMP_FORMATTED)
+#ifdef CONFIG_SYSLOG_TIMESTAMP_REALTIME
+#  ifdef CONFIG_SYSLOG_TIMESTAMP_FORMATTED
 #    if defined(CONFIG_SYSLOG_TIMESTAMP_FORMAT_MICROSECOND)
                        "[%s.%06ld] "
+#    elif defined(CONFIG_SYSLOG_TIMESTAMP_FORMAT_MILLISECOND)
+                       "[%s.%03ld] "
 #    else
                        "[%s] "
 #    endif
 #  else
+#    if defined(CONFIG_SYSLOG_TIMESTAMP_FORMAT_MICROSECOND)
                        "[%5ju.%06ld] "
+#    elif defined(CONFIG_SYSLOG_TIMESTAMP_FORMAT_MILLISECOND)
+                       "[%5ju.%03ld] "
+#    else
+                       "[%5ju] "
+#    endif
 #  endif
 #endif
 
-#ifndef CONFIG_UP
-                       "[CPU%d] "
+#ifdef CONFIG_SYSLOG_TIMESTAMP_BOOTTIME
+  /* Prepend the boottime (monotonic seconds.subseconds). */
+
+#  if defined(CONFIG_SYSLOG_TIMESTAMP_FORMAT_MICROSECOND)
+                       "[%ju.%06ld] "
+#  elif defined(CONFIG_SYSLOG_TIMESTAMP_FORMAT_MILLISECOND)
+                       "[%ju.%03ld] "
+#  else
+                       "[%ju] "
+#  endif
 #endif
 
-#if defined(CONFIG_SYSLOG_PROCESSID)
+#ifdef CONFIG_SYSLOG_PROCESSID
   /* Prepend the Thread ID */
 
                        "[%2d] "
 #endif
 
-#if defined(CONFIG_SYSLOG_COLOR_OUTPUT)
+#ifdef CONFIG_SYSLOG_COLOR_OUTPUT
   /* Set the terminal style according to message priority. */
 
                        "%s"
 #endif
 
-#if defined(CONFIG_SYSLOG_PRIORITY)
+#ifdef CONFIG_SYSLOG_PRIORITY
   /* Prepend the message priority. */
 
-                       "[%6s] "
+                       "[%c] "
 #endif
 
-#if defined(CONFIG_SYSLOG_PREFIX)
+#ifndef CONFIG_UP
+                       "[%d] "
+#endif
+
+#ifdef CONFIG_SYSLOG_PREFIX
   /* Prepend the prefix, if available */
 
                        "[%s] "
@@ -221,42 +258,63 @@ void nx_vsyslog(uint64_t meta, FAR const IPTR char *fmt, FAR va_list *ap)
 
                        "%s: "
 #endif
-#ifdef CONFIG_SYSLOG_TIMESTAMP
-#  if defined(CONFIG_SYSLOG_TIMESTAMP_FORMATTED)
+#ifdef CONFIG_SYSLOG_TIMESTAMP_REALTIME
+#  ifdef CONFIG_SYSLOG_TIMESTAMP_FORMATTED
 #    if defined(CONFIG_SYSLOG_TIMESTAMP_FORMAT_MICROSECOND)
                        , date_buf, ts.tv_nsec / NSEC_PER_USEC
+#    elif defined(CONFIG_SYSLOG_TIMESTAMP_FORMAT_MILLISECOND)
+                       , date_buf, ts.tv_nsec / NSEC_PER_MSEC
 #    else
                        , date_buf
 #    endif
 #  else
+#    if defined(CONFIG_SYSLOG_TIMESTAMP_FORMAT_MICROSECOND)
                        , (uintmax_t)ts.tv_sec
                        , ts.tv_nsec / NSEC_PER_USEC
+#    elif defined(CONFIG_SYSLOG_TIMESTAMP_FORMAT_MILLISECOND)
+                       , (uintmax_t)ts.tv_sec
+                       , ts.tv_nsec / NSEC_PER_MSEC
+#    else
+                       , (uintmax_t)ts.tv_sec
+#    endif
 #  endif
+#endif
+
+#ifdef CONFIG_SYSLOG_TIMESTAMP_BOOTTIME
+#  if defined(CONFIG_SYSLOG_TIMESTAMP_FORMAT_MICROSECOND)
+                       , (uintmax_t)ts_boot.tv_sec
+                       , ts_boot.tv_nsec / NSEC_PER_USEC
+#  elif defined(CONFIG_SYSLOG_TIMESTAMP_FORMAT_MILLISECOND)
+                       , (uintmax_t)ts_boot.tv_sec
+                       , ts_boot.tv_nsec / NSEC_PER_MSEC
+#  else
+                       , (uintmax_t)ts_boot.tv_sec
+#  endif
+#endif
+
+#ifdef CONFIG_SYSLOG_PROCESSID
+  /* Prepend the Thread ID */
+
+                       , gettid()
+#endif
+
+#ifdef CONFIG_SYSLOG_COLOR_OUTPUT
+  /* Set the terminal style according to message priority. */
+
+                       , g_priority_color[LOG_GETPRI(meta)]
+#endif
+
+#ifdef CONFIG_SYSLOG_PRIORITY
+  /* Prepend the message priority. */
+
+                       , g_priority_letter[LOG_GETPRI(meta)]
 #endif
 
 #ifndef CONFIG_UP
                        , this_cpu()
 #endif
 
-#if defined(CONFIG_SYSLOG_PROCESSID)
-  /* Prepend the Thread ID */
-
-                       , gettid()
-#endif
-
-#if defined(CONFIG_SYSLOG_COLOR_OUTPUT)
-  /* Set the terminal style according to message priority. */
-
-                       , g_priority_color[LOG_GETPRI(meta)]
-#endif
-
-#if defined(CONFIG_SYSLOG_PRIORITY)
-  /* Prepend the message priority. */
-
-                       , g_priority_str[LOG_GETPRI(meta)]
-#endif
-
-#if defined(CONFIG_SYSLOG_PREFIX)
+#ifdef CONFIG_SYSLOG_PREFIX
   /* Prepend the prefix, if available */
 
                        , CONFIG_SYSLOG_PREFIX_STRING
@@ -280,7 +338,7 @@ void nx_vsyslog(uint64_t meta, FAR const IPTR char *fmt, FAR va_list *ap)
       lib_stream_putc(&stream.common, '\n');
     }
 
-#if defined(CONFIG_SYSLOG_COLOR_OUTPUT)
+#ifdef CONFIG_SYSLOG_COLOR_OUTPUT
   /* Reset the terminal style back to normal. */
 
   lib_stream_puts(&stream.common, SYSLOG_COLOR_RESET,
