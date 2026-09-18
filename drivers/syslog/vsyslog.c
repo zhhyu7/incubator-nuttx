@@ -197,19 +197,19 @@ void nx_vsyslog(uint64_t meta, FAR const IPTR char *fmt, FAR va_list *ap)
 #ifdef CONFIG_SYSLOG_TIMESTAMP_REALTIME
 #  ifdef CONFIG_SYSLOG_TIMESTAMP_FORMATTED
 #    if defined(CONFIG_SYSLOG_TIMESTAMP_FORMAT_MICROSECOND)
-                       "[%s.%06ld] "
+                       "%s.%06ld "
 #    elif defined(CONFIG_SYSLOG_TIMESTAMP_FORMAT_MILLISECOND)
-                       "[%s.%03ld] "
+                       "%s.%03ld "
 #    else
-                       "[%s] "
+                       "%s "
 #    endif
 #  else
 #    if defined(CONFIG_SYSLOG_TIMESTAMP_FORMAT_MICROSECOND)
-                       "[%5ju.%06ld] "
+                       "%5ju.%06ld "
 #    elif defined(CONFIG_SYSLOG_TIMESTAMP_FORMAT_MILLISECOND)
-                       "[%5ju.%03ld] "
+                       "%5ju.%03ld "
 #    else
-                       "[%5ju] "
+                       "%5ju "
 #    endif
 #  endif
 #endif
@@ -218,18 +218,18 @@ void nx_vsyslog(uint64_t meta, FAR const IPTR char *fmt, FAR va_list *ap)
   /* Prepend the boottime (monotonic seconds.subseconds). */
 
 #  if defined(CONFIG_SYSLOG_TIMESTAMP_FORMAT_MICROSECOND)
-                       "[%ju.%06ld] "
+                       "%ju.%06ld "
 #  elif defined(CONFIG_SYSLOG_TIMESTAMP_FORMAT_MILLISECOND)
-                       "[%ju.%03ld] "
+                       "%ju.%03ld "
 #  else
-                       "[%ju] "
+                       "%ju "
 #  endif
 #endif
 
 #ifdef CONFIG_SYSLOG_PROCESSID
   /* Prepend the Thread ID */
 
-                       "[%2d] "
+                       "%2d "
 #endif
 
 #ifdef CONFIG_SYSLOG_COLOR_OUTPUT
@@ -241,17 +241,17 @@ void nx_vsyslog(uint64_t meta, FAR const IPTR char *fmt, FAR va_list *ap)
 #ifdef CONFIG_SYSLOG_PRIORITY
   /* Prepend the message priority. */
 
-                       "[%c] "
+                       "%c "
 #endif
 
 #ifndef CONFIG_UP
-                       "[%d] "
+                       "%d "
 #endif
 
 #ifdef CONFIG_SYSLOG_PREFIX
   /* Prepend the prefix, if available */
 
-                       "[%s] "
+                       "%s "
 #endif
 #ifdef CONFIG_SYSLOG_PROCESS_NAME
   /* Prepend the thread name */
