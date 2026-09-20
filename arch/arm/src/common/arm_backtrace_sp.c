@@ -41,10 +41,10 @@
 
 #define INSTR_IS(i, o)      (((i) & (IMASK_##o)) == (IOP_##o))
 
-#define IMASK_T_BLX         0xff80      /* blx */
+#define IMASK_T_BLX         0xff80      /* blx rN */
 #define IOP_T_BLX           0x4780
 
-#define IMASK_T_BL          0xf800      /* blx */
+#define IMASK_T_BL          0xf800      /* bl/blx <imm> first halfword */
 #define IOP_T_BL            0xf000
 
 /****************************************************************************
@@ -105,10 +105,84 @@ static bool in_code_region(unsigned long pc)
 }
 
 /****************************************************************************
+ * Name: validate_bl_site
+ *
+ * Description:
+ *  Check that a candidate return address was really produced by a call
+ *  instruction, i.e. that the halfwords just below it decode as BLX rN,
+ *  BL <imm> or BLX <imm>.
+ *
+ * Input Parameters:
+ *   candidate - Candidate return address read from the stack
+ *   site      - Receives the address of the branch instruction
+ *
+ * Returned Value:
+ *   true when the candidate is preceded by a call instruction
+ *
+ ****************************************************************************/
+
+#ifdef CONFIG_ARM_UNWINDER_STACK_POINTER_INSTRUCTION_CHECK
+nosanitize_address
+static bool validate_bl_site(unsigned long candidate, unsigned long *site)
+{
+  unsigned long addr = (candidate & ~1ul) - 2;
+  uint16_t ins1;
+  uint16_t ins2;
+
+  if (!in_code_region(addr))
+    {
+      return false;
+    }
+
+  /* 16 bit BLX rN: the whole call is the halfword at candidate - 2 */
+
+  ins1 = *(uint16_t *)addr;
+  if (INSTR_IS(ins1, T_BLX))
+    {
+      *site = addr;
+      return true;
+    }
+
+  /* 32 bit BL / BLX <imm>: first halfword at candidate - 4, second at
+   * candidate - 2.
+   *
+   * BL       11110 S imm10 : 11 J1 1 J2 imm11   -> hw2 & 0xd000 == 0xd000
+   * BLX<imm> 11110 S imm10 : 11 J1 0 J2 imm10 H -> hw2 & 0xd000 == 0xc000
+   */
+
+  if (addr < 2)
+    {
+      return false;
+    }
+
+  addr -= 2;
+  if (!in_code_region(addr))
+    {
+      return false;
+    }
+
+  ins1 = *(uint16_t *)addr;
+  ins2  = *(uint16_t *)(addr + 2);
+
+  if (INSTR_IS(ins1, T_BL) &&
+      ((ins2 & 0xd000) == 0xd000 || (ins2 & 0xd000) == 0xc000))
+    {
+      *site = addr;
+      return true;
+    }
+
+  return false;
+}
+#endif
+
+/****************************************************************************
  * Name: backtrace_branch
  *
  * Description:
- *  backtrace() parsing the return address through branch instruction
+ *  backtrace() parsing the return address through branch instruction.
+ *  This is the word by word stack scan.  It is used standalone when the
+ *  prologue unwinder is disabled, and as the fallback path when prologue
+ *  analysis fails.
  *
  ****************************************************************************/
 
@@ -119,7 +193,7 @@ static int backtrace_branch(unsigned long base, unsigned long top,
 {
   unsigned long addr;
 #ifdef CONFIG_ARM_UNWINDER_STACK_POINTER_INSTRUCTION_CHECK
-  uint16_t ins16;
+  unsigned long site;
 #endif
   int i;
   irqstate_t flags;
@@ -145,47 +219,23 @@ static int backtrace_branch(unsigned long base, unsigned long top,
           continue;
         }
 
-      addr = (addr & ~1) - 2;
+#ifdef CONFIG_ARM_UNWINDER_STACK_POINTER_INSTRUCTION_CHECK
+      if (!validate_bl_site(addr, &site))
+        {
+          continue;
+        }
+
+      if ((*skip)-- <= 0)
+        {
+          buffer[i++] = (void *)site;
+        }
+#else
+      addr = (addr & ~1ul) - 2;
       if (!in_code_region(addr))
         {
           continue;
         }
 
-#ifdef CONFIG_ARM_UNWINDER_STACK_POINTER_INSTRUCTION_CHECK
-      ins16 = *(uint16_t *)addr;
-      if (INSTR_IS(ins16, T_BLX))
-        {
-          if ((*skip)-- <= 0)
-            {
-              buffer[i++] = (void *)addr;
-            }
-        }
-
-      /* BL Instruction
-       * OFFSET: 31 30 29 28 27 26 25 24 23 22 21 20 19 18 17 16
-       * VALUE :  1  1  1  1  0  -  -  -  -  -  -  -  -  -  -  -
-       * OFFSET: 15 14 13 12 11 10 09 08 07 06 05 04 03 02 01 00
-       * VALUE :  1  1  -  1  -  -  -  -  -  -  -  -  -  -  -  -
-       */
-
-      else if ((ins16 & 0xd000) == 0xd000)
-        {
-          addr -= 2;
-          if (!in_code_region(addr))
-            {
-              continue;
-            }
-
-          ins16 = *(uint16_t *)addr;
-          if (INSTR_IS(ins16, T_BL))
-            {
-              if ((*skip)-- <= 0)
-                {
-                  buffer[i++] = (void *)addr;
-                }
-            }
-        }
-#else
       if ((*skip)-- <= 0)
         {
           buffer[i++] = (void *)addr;
