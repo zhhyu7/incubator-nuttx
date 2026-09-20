@@ -44,6 +44,7 @@
 #include <nuttx/fs/ioctl.h>
 #include <nuttx/kmalloc.h>
 #include <nuttx/mqueue.h>
+#include <nuttx/semaphore.h>
 #include <nuttx/signal.h>
 #include <nuttx/kthread.h>
 
@@ -60,6 +61,7 @@
 struct audio_fake_s
 {
   struct audio_lowerhalf_s dev; /* Audio lower half (this device) */
+  sem_t         exitsem;        /* 1 while no worker thread is alive */
 #ifndef CONFIG_AUDIO_EXCLUDE_STOP
   volatile bool terminate;      /* True: request to terminate */
 #endif
@@ -904,6 +906,9 @@ static int audio_fake_workerthread(int argc, FAR char **argv)
 #endif
   audinfo("Exit %s\n", priv->params->devname);
 
+  /* Must be the last access to priv: the waiter may reuse it right away */
+
+  nxsem_post(&priv->exitsem);
   return OK;
 }
 
@@ -927,6 +932,14 @@ static int audio_fake_start(FAR struct audio_lowerhalf_s *dev)
   char arg1[32];
   int ret;
 
+#ifndef CONFIG_AUDIO_EXCLUDE_STOP
+  /* A previous worker may have exited by itself (final buffer or error)
+   * without stop(); make sure its cleanup is done before reinit.
+   */
+
+  nxsem_wait_uninterruptible(&priv->exitsem);
+#endif
+
   ret = audio_fake_file_init(dev);
   if (ret < 0)
     {
@@ -935,12 +948,12 @@ static int audio_fake_start(FAR struct audio_lowerhalf_s *dev)
           ret = audio_fake_sin_data_init(dev);
           if (ret < 0)
             {
-              return ret;
+              goto errout;
             }
         }
       else
         {
-          return ret;
+          goto errout;
         }
     }
 
@@ -964,7 +977,7 @@ static int audio_fake_start(FAR struct audio_lowerhalf_s *dev)
   if (ret < 0)
     {
       auderr("ERROR: kthread_create failed: %d\n", ret);
-      return ret;
+      goto errout;
     }
   else
     {
@@ -972,6 +985,12 @@ static int audio_fake_start(FAR struct audio_lowerhalf_s *dev)
     }
 
   return OK;
+
+errout:
+#ifndef CONFIG_AUDIO_EXCLUDE_STOP
+  nxsem_post(&priv->exitsem);
+#endif
+  return ret;
 }
 
 /****************************************************************************
@@ -992,13 +1011,29 @@ static int audio_fake_stop(FAR struct audio_lowerhalf_s *dev)
 {
   FAR struct audio_fake_s *priv = (FAR struct audio_fake_s *)dev;
   struct audio_msg_s term_msg;
+  int ret;
 
   /* Send a message to stop all audio streaming */
 
   term_msg.msg_id = AUDIO_MSG_STOP;
   term_msg.u.data = 0;
-  file_mq_send(&priv->mq, (FAR const char *)&term_msg, sizeof(term_msg),
-               CONFIG_AUDIO_FAKE_MSG_PRIO);
+  ret = file_mq_send(&priv->mq, (FAR const char *)&term_msg,
+                     sizeof(term_msg), CONFIG_AUDIO_FAKE_MSG_PRIO);
+  if (ret < 0)
+    {
+      auderr("ERROR: stop %s file_mq_send failed: %d\n",
+             priv->params->devname, ret);
+      return ret;
+    }
+
+  /* Wait for the worker to finish its cleanup and report
+   * AUDIO_CALLBACK_COMPLETE, so the upper-half lock covers the teardown.
+   * kthreads share one task group, so nxsched_waitpid() cannot be used.
+   * Hand the semaphore back for the next start().
+   */
+
+  nxsem_wait_uninterruptible(&priv->exitsem);
+  nxsem_post(&priv->exitsem);
 
   audinfo("Return OK\n");
   return OK;
@@ -1290,12 +1325,14 @@ int audio_fake_register(FAR const audio_fake_params_t *params,
       *param = params[i];
       priv->dev.ops = &g_audioops;
       priv->params  = param;
+      nxsem_init(&priv->exitsem, 0, 1);
 
       ret = audio_register(param->devname, &priv->dev);
       if (ret < 0)
         {
           audwarn("WARNING: Failed to register (%s) fake audio device(%d)\n",
                   params->devname, ret);
+          nxsem_destroy(&priv->exitsem);
           kmm_free(priv);
           kmm_free(param);
           continue;
