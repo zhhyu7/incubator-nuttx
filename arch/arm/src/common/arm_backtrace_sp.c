@@ -297,7 +297,9 @@ int up_backtrace(struct tcb_s *tcb,
 
       if (up_interrupt_context())
         {
-          unsigned long usp = up_getusrsp(running_regs());
+          uint32_t *regs = (uint32_t *)running_regs();
+          unsigned long usp = up_getusrsp(regs);
+          unsigned long upc = up_getusrpc(regs);
 
 #if CONFIG_ARCH_INTERRUPTSTACK > 7
           ret = backtrace_branch(up_get_intstackbase(this_cpu()),
@@ -312,8 +314,23 @@ int up_backtrace(struct tcb_s *tcb,
 #endif
           if (ret < size && usp != 0)
             {
-              ret += backtrace_branch(base, top, usp, &buffer[ret],
-                                      size - ret, &skip);
+              /* Crossing over to the stack that was interrupted.  The PC the
+               * exception was taken at is the innermost frame of that stack
+               * and is held in the saved context rather than on the stack,
+               * so it has to be recorded here or the faulting function is
+               * missing from the backtrace.
+               */
+
+              if (upc != 0 && in_code_region(upc) && skip-- <= 0)
+                {
+                  buffer[ret++] = (void *)upc;
+                }
+
+              if (ret < size)
+                {
+                  ret += backtrace_branch(base, top, usp, &buffer[ret],
+                                          size - ret, &skip);
+                }
             }
         }
       else
