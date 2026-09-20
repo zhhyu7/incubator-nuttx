@@ -156,7 +156,7 @@ static clock_t nxsched_cpu_scheduler(int cpu, clock_t ticks,
        * timeslice.
        */
 
-      rtcb->rr_starttime = ticks;
+      rtcb->starttime = ticks;
       ret = nxsched_process_roundrobin(rtcb, elapsed, noswitches);
     }
 #  endif

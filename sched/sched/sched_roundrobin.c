@@ -263,7 +263,7 @@ clock_t nxsched_process_roundrobin(FAR struct tcb_s *tcb, clock_t ticks,
 void nxsched_suspend_roundrobin(FAR struct tcb_s *tcb)
 {
   clock_t now     = clock_systime_ticks();
-  clock_t elapsed = now - tcb->rr_starttime;
+  clock_t elapsed = now - tcb->starttime;
 
   nxsched_process_roundrobin(tcb, elapsed, true);
   nxsched_timer_cancel();
@@ -289,7 +289,7 @@ void nxsched_resume_roundrobin(FAR struct tcb_s *tcb)
 {
   clock_t now = clock_systime_ticks();
   DEBUGASSERT(tcb->timeslice >= 0);
-  tcb->rr_starttime = now;
+  tcb->starttime = now;
   nxsched_timer_start(now, tcb->timeslice);
 }
 #endif
