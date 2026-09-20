@@ -42,6 +42,7 @@
 #include <nuttx/clock.h>
 #include <nuttx/semaphore_type.h>
 #include <nuttx/queue.h>
+#include <nuttx/list_type.h>
 #include <nuttx/wdog.h>
 #include <nuttx/hrtimer.h>
 #include <nuttx/fs/fs.h>
@@ -69,10 +70,6 @@
 #endif
 
 /* Sporadic scheduling */
-
-#ifndef CONFIG_SCHED_SPORADIC_MAXREPL
-#  define CONFIG_SCHED_SPORADIC_MAXREPL 3
-#endif
 
 /* Task Management Definitions **********************************************/
 
@@ -128,13 +125,6 @@
 #  define CHILD_FLAG_TTYPE_PTHREAD (1U << CHILD_FLAG_TTYPE_SHIFT) /* User pthread */
 #  define CHILD_FLAG_TTYPE_KERNEL  (2U << CHILD_FLAG_TTYPE_SHIFT) /* Kernel thread */
 #define CHILD_FLAG_EXITED          (1U << 2)                      /* Bit 2: The child thread has exit'ed */
-                                                                  /* Bits 3-7: Available */
-
-/* Sporadic scheduler flags */
-
-#define SPORADIC_FLAG_ALLOCED      (1U << 0)                      /* Bit 0: Timer is allocated */
-#define SPORADIC_FLAG_MAIN         (1U << 1)                      /* Bit 1: The main timer */
-#define SPORADIC_FLAG_REPLENISH    (1U << 2)                      /* Bit 2: Replenishment cycle */
                                                                   /* Bits 3-7: Available */
 
 /* Most internal nxsched_* interfaces are not available in the user space in
@@ -421,17 +411,21 @@ typedef union entry_u entry_t;
 
 #ifdef CONFIG_SCHED_SPORADIC
 
-/* This structure represents one replenishment interval.  This is what is
- * received by each timeout handler.
+/* One replenishment chunk of the sporadic server budget.  The chunks form
+ * the replenishment queue of the corrected sporadic server algorithm
+ * (Stanovich, Baker, Wang and Harbour, "Defects of the POSIX Sporadic
+ * Server and How to Correct Them", RTAS'10), ordered by eligibility time
+ * (earliest first).
  */
 
-struct sporadic_s;
-struct replenishment_s
+struct sporadic_repl_s
 {
-  FAR struct tcb_s *tcb;            /* The parent TCB structure             */
-  struct wdog_s timer;              /* Timer dedicated to this interval     */
-  uint32_t budget;                  /* Current budget time                  */
-  uint8_t  flags;                   /* See SPORADIC_FLAG_* definitions      */
+  struct list_node node;            /* Doubly-linked list node (queue); when
+                                     * on the free stack, node.next chains
+                                     * to the next free entry.
+                                     */
+  clock_t          time;            /* Time when chunk becomes eligible     */
+  uint32_t         amt;             /* Chunk size in ticks                  */
 };
 
 /* This structure is an allocated "plug-in" to the main TCB structure.  It is
@@ -443,22 +437,31 @@ struct replenishment_s
 
 struct sporadic_s
 {
-  bool      suspended;              /* Thread is currently suspended         */
-  int       hi_priority;            /* Sporadic high priority                */
-  int       low_priority;           /* Sporadic low priority                 */
+  uint8_t   hi_priority;            /* Sporadic high priority                */
+  uint8_t   low_priority;           /* Sporadic low priority                 */
   uint8_t   max_repl;               /* Maximum number of replenishments      */
-  uint8_t   nrepls;                 /* Number of active replenishments       */
   uint32_t  repl_period;            /* Sporadic replenishment period         */
   uint32_t  budget;                 /* Sporadic execution budget period      */
-  clock_t   eventtime;              /* Time thread suspended or [re-]started */
+  uint32_t  usage;                  /* Foreground execution charged against
+                                     * the head chunk of the queue           */
 
-  /* This is the last interval timer activated */
+  /* The replenishment queue, ordered by eligibility time (earliest first).
+   * The budget is always fully distributed over the queue:
+   * budget == sum of all chunk amounts in the list.
+   */
 
-  FAR struct replenishment_s *active;
+  struct list_node repls;           /* Replenishment queue head              */
+  FAR struct sporadic_repl_s *free; /* Free chunk stack (LIFO)               */
+  FAR struct sporadic_repl_s *pool; /* Replenishment pool (dynamic alloc)    */
 
-  /* This is the list of replenishment interval timers */
+  /* Fires when the head chunk becomes eligible while the thread runs at
+   * the background priority (the "replenishment" event of the algorithm).
+   * The "exhaustion" event is provided by the generic scheduler event
+   * timer armed with the remaining timeslice.
+   */
 
-  struct replenishment_s replenishments[CONFIG_SCHED_SPORADIC_MAXREPL];
+  hrtimer_t replenishment;
+  FAR struct tcb_s *tcb;            /* Back pointer to owning TCB            */
 };
 
 #endif /* CONFIG_SCHED_SPORADIC */

@@ -170,16 +170,6 @@ static clock_t nxsched_cpu_scheduler(int cpu, clock_t ticks,
       FAR struct sporadic_s *sporadic = rtcb->sporadic;
       DEBUGASSERT(sporadic);
 
-      /* Save the last time that the scheduler ran.  This time was saved
-       * higher in the calling hierarchy but cannot be applied until here.
-       * That is because there are cases that context switches may occur
-       * between then and before we get here.  So we can't positive of
-       * which task TCB to save the time in until we are here and
-       * committed to updating the scheduler for this TCB.
-       */
-
-      sporadic->eventtime = ticks;
-
       /* Yes, check if the currently executing task has exceeded its
        * budget.
        */

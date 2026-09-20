@@ -419,10 +419,10 @@ int  nxsched_initialize_sporadic(FAR struct tcb_s *tcb);
 int  nxsched_start_sporadic(FAR struct tcb_s *tcb);
 int  nxsched_stop_sporadic(FAR struct tcb_s *tcb);
 int  nxsched_reset_sporadic(FAR struct tcb_s *tcb);
-int  nxsched_resume_sporadic(FAR struct tcb_s *tcb);
-int  nxsched_suspend_sporadic(FAR struct tcb_s *tcb);
-clock_t nxsched_process_sporadic(FAR struct tcb_s *tcb, clock_t ticks,
-                                 bool noswitches);
+void nxsched_resume_sporadic(FAR struct tcb_s *tcb, clock_t now);
+void nxsched_suspend_sporadic(FAR struct tcb_s *tcb, clock_t now);
+void nxsched_process_sporadic(FAR struct tcb_s *tcb, clock_t ticks,
+                              bool noswitches);
 void nxsched_sporadic_lowpriority(FAR struct tcb_s *tcb);
 #endif
 

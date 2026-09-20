@@ -220,7 +220,7 @@ __jumpfunc__ void nxsched_suspend_scheduler(FAR struct tcb_s *tcb)
   if ((tcb->flags & TCB_FLAG_POLICY_MASK) == TCB_FLAG_SCHED_SPORADIC &&
       tcb->sporadic != NULL)
     {
-      DEBUGVERIFY(nxsched_suspend_sporadic(tcb));
+      nxsched_suspend_sporadic(tcb, clock_systime_ticks());
     }
 #endif
 
@@ -272,9 +272,7 @@ __jumpfunc__ void nxsched_resume_scheduler(FAR struct tcb_s *tcb)
   if ((tcb->flags & TCB_FLAG_POLICY_MASK) == TCB_FLAG_SCHED_SPORADIC &&
       tcb->sporadic != NULL)
     {
-      /* Reset the replenishment cycle if it is appropriate to do so */
-
-      DEBUGVERIFY(nxsched_resume_sporadic(tcb));
+      nxsched_resume_sporadic(tcb, clock_systime_ticks());
     }
 #endif
 

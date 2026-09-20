@@ -95,7 +95,7 @@ static inline void nxsched_cpu_scheduler(int cpu)
        * budget.
        */
 
-      nxsched_process_sporadic(rtcb, 1, false);
+      nxsched_process_sporadic(rtcb, 1, nxsched_islocked_tcb(rtcb));
     }
 #endif
 }

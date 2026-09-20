@@ -74,7 +74,6 @@ int process_sporadic(FAR struct tcb_s *tcb,
 
   if (ret >= 0)
     {
-      atomic_or(&tcb->flags, TCB_FLAG_SCHED_SPORADIC);
       tcb->timeslice         = budget_ticks;
 
       sporadic               = tcb->sporadic;
