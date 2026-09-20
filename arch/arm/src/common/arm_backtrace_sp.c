@@ -31,6 +31,11 @@
 #include "sched/sched.h"
 #include "arm_internal.h"
 
+#ifdef CONFIG_ARCH_ARM_M
+#  include "exc_return.h"
+#  include "psr.h"
+#endif
+
 /****************************************************************************
  * Pre-processor Definitions
  ****************************************************************************/
@@ -841,6 +846,89 @@ static unsigned long prologue_start(unsigned long lr_push)
   return addr;
 }
 
+#ifdef CONFIG_ARCH_ARM_M
+
+/****************************************************************************
+ * Name: is_exc_return
+ *
+ * Description:
+ *  Check whether an LR value is an EXC_RETURN magic value, which means the
+ *  frame below belongs to an exception handler.  EXC_RETURN_BASE holds the
+ *  bits the hardware always sets, so such a value can never alias a code
+ *  address.
+ *
+ ****************************************************************************/
+
+static inline bool is_exc_return(unsigned long lr)
+{
+  return (lr & EXC_RETURN_BASE) == EXC_RETURN_BASE;
+}
+
+/****************************************************************************
+ * Name: step_exc_frame
+ *
+ * Description:
+ *  Parse the exception frame that the Cortex-M hardware pushed on exception
+ *  entry and recover the interrupted PC / LR.
+ *
+ * Input Parameters:
+ *   top    - Upper bound of the stack being unwound
+ *   sp     - In/out stack pointer, advanced past the exception frame
+ *   lr     - The EXC_RETURN value
+ *   pc_out - Receives the interrupted PC
+ *   lr_out - Receives the interrupted LR
+ *
+ * Returned Value:
+ *   true when an exception frame was consumed
+ *
+ ****************************************************************************/
+
+nosanitize_address
+static bool step_exc_frame(unsigned long top, unsigned long *sp,
+                           unsigned long lr, unsigned long *pc_out,
+                           unsigned long *lr_out)
+{
+  unsigned long sp_val = *sp;
+  unsigned long *frame = (unsigned long *)sp_val;
+  unsigned long frame_size;
+  unsigned long xpsr;
+
+  if (!is_exc_return(lr))
+    {
+      return false;
+    }
+
+  frame_size = (lr & EXC_RETURN_STD_CONTEXT) ?
+               4 * HW_INT_REGS : 4 * HW_XCPT_REGS;
+
+  if (sp_val + 4 * HW_INT_REGS > top)
+    {
+      return false;
+    }
+
+  /* The hardware may have inserted four bytes of padding to realign the
+   * stack.  That is flagged in the stacked xPSR.
+   */
+
+  xpsr = frame[REG_XPSR - SW_XCPT_REGS];
+  if (xpsr & ARM_XPSR_SPREALIGN)
+    {
+      frame_size += 4;
+    }
+
+  if (sp_val + frame_size > top)
+    {
+      return false;
+    }
+
+  *pc_out = frame[REG_R15 - SW_XCPT_REGS];
+  *lr_out = frame[REG_R14 - SW_XCPT_REGS];
+  *sp     = sp_val + frame_size;
+
+  return true;
+}
+#endif /* CONFIG_ARCH_ARM_M */
+
 /****************************************************************************
  * Name: analyze_prologue_reverse
  *
@@ -861,7 +949,9 @@ static unsigned long prologue_start(unsigned long lr_push)
  *   info - Receives the recovered frame
  *
  * Returned Value:
- *   true when a frame holding a validated return address was recovered
+ *   true when a frame was recovered.  info->site is then the call that
+ *   produced the return address, or zero when that address is an
+ *   EXC_RETURN rather than a call return.
  *
  ****************************************************************************/
 
@@ -908,6 +998,19 @@ static bool analyze_prologue_reverse(unsigned long pc, unsigned long sp,
         }
 
       info->lr = *(unsigned long *)lr_addr;
+
+#ifdef CONFIG_ARCH_ARM_M
+      /* An exception handler stacks EXC_RETURN as its LR.  Do not treat that
+       * as a broken chain, the caller parses the hardware frame instead.
+       */
+
+      if (is_exc_return(info->lr))
+        {
+          info->site = 0;
+          return true;
+        }
+#endif
+
       if (in_code_region(info->lr) &&
           validate_bl_site(info->lr, &info->site))
         {
@@ -980,18 +1083,19 @@ static int backtrace_branch(unsigned long top, unsigned long sp,
  * Name: backtrace_stack
  *
  * Description:
- *  Unwind one stack frame by frame, decoding the prologue of the function
- *  that the PC belongs to and reading the saved LR out of the frame it
- *  describes.  Whatever the walk cannot resolve is handed to the word by
- *  word branch scan, which is the whole of the walk when prologue decoding
- *  is off.
+ *  Unwind one stack frame by frame.  Each iteration first checks for a
+ *  hardware exception frame, then decodes the prologue of the function that
+ *  the PC belongs to and reads the saved LR out of the frame.  Whatever the
+ *  walk cannot resolve is handed to the word by word branch scan, which is
+ *  the whole of the walk when prologue decoding is off.
  *
  ****************************************************************************/
 
 nosanitize_address
 static int backtrace_stack(unsigned long base, unsigned long top,
                            unsigned long sp, unsigned long pc,
-                           void **buffer, int size, int *skip)
+                           unsigned long lr, void **buffer, int size,
+                           int *skip)
 {
 #ifdef CONFIG_ARM_UNWINDER_STACK_POINTER_INSTRUCTION_CHECK
   struct frame_info_s fi;
@@ -1013,15 +1117,54 @@ static int backtrace_stack(unsigned long base, unsigned long top,
   flags = up_irq_save();
 
 #ifdef CONFIG_ARM_UNWINDER_STACK_POINTER_INSTRUCTION_CHECK
-  while (i < size && sp < top && analyze_prologue_reverse(pc, sp, top, &fi))
+  while (i < size && sp < top)
     {
-      if ((*skip)-- <= 0)
+#ifdef CONFIG_ARCH_ARM_M
+      unsigned long next_pc;
+      unsigned long next_lr;
+
+      /* Stage 1: an exception frame is on the stack right here */
+
+      if (step_exc_frame(top, &sp, lr, &next_pc, &next_lr))
         {
-          buffer[i++] = (void *)fi.site;
+          pc = next_pc;
+          lr = next_lr;
+
+          if (in_code_region(pc) && (*skip)-- <= 0)
+            {
+              buffer[i++] = (void *)(pc & ~1ul);
+            }
+
+          continue;
+        }
+#endif
+
+      /* Stage 2: decode the prologue of the current function and read the
+       * return address out of the frame it describes.
+       */
+
+      if (!analyze_prologue_reverse(pc, sp, top, &fi))
+        {
+          break;
+        }
+
+      /* A zero site means the recovered LR is an EXC_RETURN rather than a
+       * return address: there is nothing to report and the PC stays put,
+       * the next iteration parses the hardware frame it stands for.
+       */
+
+      if (fi.site != 0)
+        {
+          if ((*skip)-- <= 0)
+            {
+              buffer[i++] = (void *)fi.site;
+            }
+
+          pc = fi.lr;
         }
 
       sp += fi.frame_size * 4;
-      pc  = fi.lr;
+      lr  = fi.lr;
     }
 #endif
 
@@ -1148,18 +1291,21 @@ int up_backtrace(struct tcb_s *tcb,
           uint32_t *regs = (uint32_t *)running_regs();
           unsigned long usp = up_getusrsp(regs);
           unsigned long upc = up_getusrpc(regs);
+          unsigned long lr = regs != NULL ?
+                             (unsigned long)regs[REG_LR] : 0;
 
 #if CONFIG_ARCH_INTERRUPTSTACK > 7
           ret = backtrace_stack(up_get_intstackbase(this_cpu()),
                                 up_get_intstackbase(this_cpu()) +
-                                INTSTACK_SIZE, sp, pc, buffer, size,
-                                &skip);
+                                INTSTACK_SIZE, sp, pc, 0, buffer,
+                                size, &skip);
 #else
           /* Without a dedicated interrupt stack the handler runs on the
            * interrupted task's stack.
            */
 
-          ret = backtrace_stack(base, top, sp, pc, buffer, size, &skip);
+          ret = backtrace_stack(base, top, sp, pc, 0, buffer, size,
+                                &skip);
 #endif
           if (ret < size && usp != 0)
             {
@@ -1177,14 +1323,15 @@ int up_backtrace(struct tcb_s *tcb,
 
               if (ret < size)
                 {
-                  ret += backtrace_stack(base, top, usp, upc,
+                  ret += backtrace_stack(base, top, usp, upc, lr,
                                          &buffer[ret], size - ret, &skip);
                 }
             }
         }
       else
         {
-          ret = backtrace_stack(base, top, sp, pc, buffer, size, &skip);
+          ret = backtrace_stack(base, top, sp, pc, 0, buffer, size,
+                                &skip);
         }
     }
   else
@@ -1206,8 +1353,8 @@ int up_backtrace(struct tcb_s *tcb,
           buffer[ret++] = (void *)pc;
         }
 
-      ret += backtrace_stack(base, top, sp, pc, &buffer[ret],
-                             size - ret, &skip);
+      ret += backtrace_stack(base, top, sp, pc, regs[REG_LR],
+                             &buffer[ret], size - ret, &skip);
     }
 
   return ret;
