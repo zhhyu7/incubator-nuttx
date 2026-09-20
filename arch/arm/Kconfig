@@ -1584,12 +1584,13 @@ config ARM_UNWINDER_STACK_POINTER_INSTRUCTION_CHECK
 	---help---
 		This option lets the unwinder read the code regions as data: it
 		validates candidate return addresses against the call instruction
-		that produced them, and on Thumb targets it also decodes function
-		prologues to recover the frame layout instead of guessing which
-		stack words are return addresses. Enable it only after all
-		executable code regions are configured and can be safely read as
-		data. Leave it disabled to fall back to reporting every stack word
-		that lies inside a code region, which needs no code access.
+		that produced them, and it decodes function prologues to recover
+		the frame layout instead of guessing which stack words are return
+		addresses. Both Thumb and ARM instruction sets are supported.
+		Enable it only after all executable code regions are configured
+		and can be safely read as data. Leave it disabled to fall back to
+		reporting every stack word that lies inside a code region, which
+		needs no code access.
 
 config ARM_UNWINDER_STACK_POINTER_PROLOGUE_WINDOW
 	hex "Prologue search window in bytes"

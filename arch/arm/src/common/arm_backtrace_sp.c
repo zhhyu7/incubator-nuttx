@@ -34,6 +34,8 @@
 #ifdef CONFIG_ARCH_ARM_M
 #  include "exc_return.h"
 #  include "psr.h"
+#else
+#  include "arm.h"
 #endif
 
 /****************************************************************************
@@ -54,11 +56,60 @@
 #define IMASK_T_BL          0xf800      /* bl/blx <imm> first halfword */
 #define IOP_T_BL            0xf000
 
-/* The prologue guided unwinder decodes Thumb/Thumb-2 function prologues to
- * recover the frame layout.  Doing so means reading the code region as data,
- * so it shares the ARM_UNWINDER_STACK_POINTER_INSTRUCTION_CHECK switch with
- * the call site validation.  Like that validation, it assumes Thumb code.
+/* The prologue guided unwinder decodes function prologues to recover the
+ * frame layout.  Doing so means reading the code region as data, which is
+ * what ARM_UNWINDER_STACK_POINTER_INSTRUCTION_CHECK governs, so it is gated
+ * on that.  Both instruction sets are supported; only the primitives at the
+ * bottom differ between them, everything above is shared.
  */
+
+/* The instruction set the image was built for.  Only the plain stack scan
+ * depends on it: that scan may not read code, so it cannot tell which set a
+ * candidate belongs to and has to assume the majority one.
+ */
+
+#ifdef CONFIG_ARM_THUMB
+#  define INSN_STEP         2       /* Reverse scan granularity, in bytes */
+#  define INSN_ALIGN        (~1ul)  /* Also clears the Thumb bit          */
+#else
+#  define INSN_STEP         4
+#  define INSN_ALIGN        (~3ul)
+#endif
+
+/* A Thumb build is taken to be pure Thumb, so only that decoder is built
+ * and every frame uses it.  An ARM build still links the Thumb libgcc
+ * helpers, so both decoders are built there and selected per frame.
+ *
+ * Which one a frame needs is read out of bit 0 of its PC, the same encoding
+ * an interworking branch target carries.  BL and BLX establish it in
+ * hardware when they write LR: from ARM state the return address is word
+ * aligned, so bit 0 is clear, and from Thumb state the architecture forces
+ * bit 0 set so that a later BX LR resumes in Thumb.  Either way the bit
+ * describes the instruction set of the caller, which is the function the
+ * unwinder has to decode, and PUSH {..., LR} carries it onto the stack.
+ *
+ * A PC that did not come from BL/BLX has no such bit: the exception entry LR
+ * and the hardware exception frame both stack a plain address and keep the
+ * state in CPSR/xPSR instead, and so does a context saved by a switch.
+ * ISA_REGS_THUMB() reads that flag and ISA_TAG() applies the tag before such
+ * a PC reaches the decoder.  The tag is internal: it is masked off again
+ * before the address is used or reported.
+ */
+
+#ifndef CONFIG_ARM_THUMB
+#  define ISA_IS_THUMB(pc)    (((pc) & 1) != 0)
+#  define ISA_CALL(thumb, fn, ...) \
+     ((thumb) ? thumb_##fn(__VA_ARGS__) : arm_##fn(__VA_ARGS__))
+#  define ISA_TAG(pc, thumb)  (((pc) & ~1ul) | ((thumb) ? 1ul : 0ul))
+#  define ISA_REGS_THUMB(regs) \
+     ((regs) != NULL && \
+      (((uint32_t *)(regs))[REG_CPSR] & PSR_T_BIT) != 0)
+#else
+#  define ISA_IS_THUMB(pc)    true
+#  define ISA_CALL(thumb, fn, ...) thumb_##fn(__VA_ARGS__)
+#  define ISA_TAG(pc, thumb)  (pc)
+#  define ISA_REGS_THUMB(regs) true
+#endif
 
 #ifdef CONFIG_ARM_UNWINDER_STACK_POINTER_INSTRUCTION_CHECK
 
@@ -116,6 +167,57 @@
 
 #define T2_PUSH_REGS        0x1fff
 #define T2_PUSH_LR          0x4000
+
+#ifndef CONFIG_ARM_THUMB
+
+/* ARM mode prologue and call encodings.  Every instruction is one aligned
+ * word, and a prologue is always unconditional, which makes the condition
+ * field a useful discriminator against data.
+ *
+ *   PUSH {..., LR}      STMDB SP!, {reglist}   0xe92d0000 | reglist
+ *   PUSH {LR}           STR LR, [SP, #-imm]!   0xe52de000 | imm12
+ *   STRD Rt, [SP,#-i]!                         0xe16d00f0 | ...
+ *   SUB SP, SP, #imm                           0xe24dd000 | modimm12
+ *   VPUSH {list}        VSTMDB SP!, {list}     0xed2d0a00 / 0xed2d0b00
+ *   MOV FP, SP                                 0xe1a0b00d
+ *   ADD FP, SP, #imm                           0xe28db000 | modimm12
+ */
+
+#define ARM_INSN_STMDB_SP        0xe92d0000  /* mask 0xffff0000 */
+#define ARM_INSN_STMDB_MASK      0xffff0000
+#define ARM_INSN_STMDB_LR        (1 << 14)
+
+#define ARM_INSN_STR_LR_PRE      0xe52de000  /* mask 0xfffff000 */
+#define ARM_INSN_STR_LR_MASK     0xfffff000
+
+#define ARM_INSN_STRD_SP_PRE     0xe16d00f0  /* mask 0xffff00f0 */
+#define ARM_INSN_STRD_SP_MASK    0xffff00f0
+
+#define ARM_INSN_SUB_SP          0xe24dd000  /* mask 0xfffff000 */
+#define ARM_INSN_ADD_SP          0xe28dd000  /* stack release, terminator     */
+#define ARM_INSN_ADD_FP          0xe28db000
+#define ARM_INSN_DPI_MASK        0xfffff000
+
+#define ARM_INSN_MOV_FP_SP       0xe1a0b00d
+
+#define ARM_INSN_VSTMDB_SP       0xed2d0a00  /* mask 0xffff0e00, 0xa/0xb      */
+#define ARM_INSN_VSTMDB_MASK     0xffff0e00
+
+#define ARM_INSN_LDMIA_SP        0xe8bd0000  /* POP, mask 0xffff0000          */
+#define ARM_INSN_LDMIA_MASK      0xffff0000
+
+#define ARM_INSN_BRANCH          0x0a000000  /* B/BL any condition,
+                                         * mask 0x0e000000              */
+#define ARM_INSN_BRANCH_MASK     0x0e000000
+#define ARM_INSN_BL              0x0b000000  /* mask 0x0f000000               */
+#define ARM_INSN_BL_MASK         0x0f000000
+#define ARM_INSN_BLX_IMM         0xfa000000  /* mask 0xfe000000               */
+#define ARM_INSN_BLX_IMM_MASK    0xfe000000
+#define ARM_INSN_BX_REG          0x012fff10  /* mask 0x0ffffff0               */
+#define ARM_INSN_BLX_REG         0x012fff30
+#define ARM_INSN_BXREG_MASK      0x0ffffff0
+
+#endif /* !CONFIG_ARM_THUMB */
 
 /****************************************************************************
  * Private Types
@@ -278,7 +380,7 @@ static inline unsigned long code_region_floor(unsigned long pc)
 }
 
 /****************************************************************************
- * Name: validate_bl_site
+ * Name: thumb_validate_bl_site
  *
  * Description:
  *  Check that a candidate return address was really produced by a call
@@ -295,7 +397,8 @@ static inline unsigned long code_region_floor(unsigned long pc)
  ****************************************************************************/
 
 nosanitize_address
-static bool validate_bl_site(unsigned long candidate, unsigned long *site)
+static bool thumb_validate_bl_site(unsigned long candidate,
+                                   unsigned long *site)
 {
   unsigned long addr = (candidate & ~1ul) - 2;
   uint16_t ins1;
@@ -344,6 +447,70 @@ static bool validate_bl_site(unsigned long candidate, unsigned long *site)
     }
 
   return false;
+}
+
+#ifndef CONFIG_ARM_THUMB
+
+/****************************************************************************
+ * Name: arm_validate_bl_site
+ *
+ * Description:
+ *  The ARM mode counterpart of thumb_validate_bl_site(): the word just below
+ *  the candidate has to decode as BL <imm>, BLX <imm> or BLX Rm.
+ *
+ ****************************************************************************/
+
+nosanitize_address
+static bool arm_validate_bl_site(unsigned long candidate,
+                                 unsigned long *site)
+{
+  unsigned long addr = (candidate & ~3ul) - 4;
+  uint32_t ins;
+
+  if (candidate < 4 || !in_code_region(addr))
+    {
+      return false;
+    }
+
+  ins = *(uint32_t *)addr;
+
+  /* BL <imm24> with any condition, BLX <imm>, or BLX Rm */
+
+  if ((ins & ARM_INSN_BL_MASK) == ARM_INSN_BL ||
+      (ins & ARM_INSN_BLX_IMM_MASK) == ARM_INSN_BLX_IMM ||
+      (ins & ARM_INSN_BXREG_MASK) == ARM_INSN_BLX_REG)
+    {
+      *site = addr;
+      return true;
+    }
+
+  return false;
+}
+#endif /* !CONFIG_ARM_THUMB */
+
+/****************************************************************************
+ * Name: validate_bl_site
+ *
+ * Description:
+ *  Check that a candidate return address was really produced by a call
+ *  instruction, decoding it as the instruction set bit 0 of the candidate
+ *  selects.
+ *
+ * Input Parameters:
+ *   candidate - Candidate return address read from the stack
+ *   site      - Receives the address of the branch instruction
+ *
+ * Returned Value:
+ *   true when the candidate is preceded by a call instruction
+ *
+ ****************************************************************************/
+
+nosanitize_address
+static inline bool validate_bl_site(unsigned long candidate,
+                                    unsigned long *site)
+{
+  return ISA_CALL(ISA_IS_THUMB(candidate), validate_bl_site,
+                  candidate, site);
 }
 
 /****************************************************************************
@@ -456,13 +623,14 @@ static inline int decode_sub_sp_w(uint16_t ins1, uint16_t ins2)
  * Name: thumb_insn_len
  *
  * Description:
- *  Length in bytes of the Thumb instruction that starts with this halfword.
+ *  Length in bytes of the Thumb instruction at addr.
  *
  ****************************************************************************/
 
-static inline unsigned long thumb_insn_len(uint16_t ins1)
+nosanitize_address
+static inline unsigned long thumb_insn_len(unsigned long addr)
 {
-  switch (ins1 & 0xf800)
+  switch (*(uint16_t *)addr & 0xf800)
     {
       case 0xe800:
       case 0xf000:
@@ -475,7 +643,7 @@ static inline unsigned long thumb_insn_len(uint16_t ins1)
 }
 
 /****************************************************************************
- * Name: ends_prologue
+ * Name: thumb_ends_prologue
  *
  * Description:
  *  Check whether an instruction ends the prologue region.  A prologue always
@@ -486,7 +654,7 @@ static inline unsigned long thumb_insn_len(uint16_t ins1)
  ****************************************************************************/
 
 nosanitize_address
-static inline bool ends_prologue(unsigned long addr)
+static inline bool thumb_ends_prologue(unsigned long addr)
 {
   uint16_t ins1 = *(uint16_t *)addr;
 
@@ -505,7 +673,7 @@ static inline bool ends_prologue(unsigned long addr)
       return true;
     }
 
-  if (thumb_insn_len(ins1) == 2 || !in_code_region(addr + 2))
+  if (thumb_insn_len(addr) == 2 || !in_code_region(addr + 2))
     {
       return false;
     }
@@ -528,7 +696,7 @@ static inline bool ends_prologue(unsigned long addr)
 }
 
 /****************************************************************************
- * Name: prologue_step
+ * Name: thumb_prologue_step
  *
  * Description:
  *  Decode one instruction of a function prologue.
@@ -547,8 +715,8 @@ static inline bool ends_prologue(unsigned long addr)
  ****************************************************************************/
 
 nosanitize_address
-static int prologue_step(unsigned long addr, int *frame_size,
-                         int *lr_from_cfa, bool *has_fp)
+static int thumb_prologue_step(unsigned long addr, int *frame_size,
+                               int *lr_from_cfa, bool *has_fp)
 {
   uint16_t ins1 = *(uint16_t *)addr;
   uint16_t ins2;
@@ -674,71 +842,7 @@ static int prologue_step(unsigned long addr, int *frame_size,
 }
 
 /****************************************************************************
- * Name: decode_prologue_forward
- *
- * Description:
- *  Replay a prologue forward from its first stack allocation, accumulating
- *  every allocation until the function transfers control or the PC is
- *  reached.  Instructions that are not stack allocations are stepped over,
- *  because the compiler freely interleaves them with the prologue.
- *
- * Input Parameters:
- *   start - Address of the first prologue instruction
- *   pc    - Program counter the unwinder is standing on.  Instructions at or
- *           above it have not executed yet and must not be accounted for.
- *   info  - Receives the recovered frame layout
- *
- * Returned Value:
- *   true when a consistent frame with a stacked LR was recovered
- *
- ****************************************************************************/
-
-nosanitize_address
-static bool decode_prologue_forward(unsigned long start, unsigned long pc,
-                                    struct frame_info_s *info)
-{
-  unsigned long addr = start;
-  unsigned long len;
-  int lr_from_cfa = -1;
-  int frame_size = 0;
-  bool has_fp = false;
-
-  while (addr < pc)
-    {
-      len = prologue_step(addr, &frame_size, &lr_from_cfa, &has_fp);
-      if (len == 0)
-        {
-          if (ends_prologue(addr))
-            {
-              break;
-            }
-
-          len = thumb_insn_len(*(uint16_t *)addr);
-        }
-
-      addr += len;
-    }
-
-  /* The prologue must have spilled LR, and the slot has to sit inside the
-   * frame it belongs to.  lr_from_cfa counts words below the CFA, so only
-   * 1..frame_size is valid: zero would place LR at the CFA, above the
-   * frame, which is what a malformed STRD decodes to.
-   */
-
-  if (lr_from_cfa <= 0 || frame_size < lr_from_cfa)
-    {
-      return false;
-    }
-
-  info->frame_size = frame_size;
-  info->lr_offset  = frame_size - lr_from_cfa;
-  info->has_fp     = has_fp;
-
-  return true;
-}
-
-/****************************************************************************
- * Name: is_lr_spill
+ * Name: thumb_is_lr_spill
  *
  * Description:
  *  Check whether the instruction at addr is one of the forms the compiler
@@ -747,7 +851,7 @@ static bool decode_prologue_forward(unsigned long start, unsigned long pc,
  ****************************************************************************/
 
 nosanitize_address
-static inline bool is_lr_spill(unsigned long addr)
+static inline bool thumb_is_lr_spill(unsigned long addr)
 {
   uint16_t ins1 = *(uint16_t *)addr;
   uint16_t ins2;
@@ -759,7 +863,7 @@ static inline bool is_lr_spill(unsigned long addr)
       return true;
     }
 
-  if (thumb_insn_len(ins1) == 2 || !in_code_region(addr + 2))
+  if (thumb_insn_len(addr) == 2 || !in_code_region(addr + 2))
     {
       return false;
     }
@@ -792,7 +896,7 @@ static inline bool is_lr_spill(unsigned long addr)
 }
 
 /****************************************************************************
- * Name: prologue_start
+ * Name: thumb_prologue_start
  *
  * Description:
  *  Step backwards over the register spills that the compiler emits before
@@ -809,7 +913,7 @@ static inline bool is_lr_spill(unsigned long addr)
  ****************************************************************************/
 
 nosanitize_address
-static unsigned long prologue_start(unsigned long lr_push)
+static unsigned long thumb_prologue_start(unsigned long lr_push)
 {
   unsigned long addr = lr_push;
   int i;
@@ -844,6 +948,314 @@ static unsigned long prologue_start(unsigned long lr_push)
     }
 
   return addr;
+}
+
+#ifndef CONFIG_ARM_THUMB
+
+/****************************************************************************
+ * Name: arm_expand_imm
+ *
+ * Description:
+ *  Expand an ARM data processing modified immediate: an 8 bit value rotated
+ *  right by twice the 4 bit rotate field.
+ *
+ ****************************************************************************/
+
+static inline unsigned int arm_expand_imm(uint32_t imm12)
+{
+  unsigned int imm8 = imm12 & 0xff;
+  unsigned int rot = ((imm12 >> 8) & 0xf) * 2;
+
+  if (rot == 0)
+    {
+      return imm8;
+    }
+
+  return (imm8 >> rot) | (imm8 << (32 - rot));
+}
+
+/****************************************************************************
+ * Name: arm_insn_len
+ *
+ * Description:
+ *  Length of the instruction at addr.  ARM instructions are always one word.
+ *
+ ****************************************************************************/
+
+static inline unsigned long arm_insn_len(unsigned long addr)
+{
+  UNUSED(addr);
+  return 4;
+}
+
+/****************************************************************************
+ * Name: arm_ends_prologue
+ *
+ * Description:
+ *  Check whether the instruction at addr ends the prologue region: any
+ *  branch, or any instruction that releases stack.
+ *
+ ****************************************************************************/
+
+nosanitize_address
+static inline bool arm_ends_prologue(unsigned long addr)
+{
+  uint32_t ins = *(uint32_t *)addr;
+
+  /* B and BL with any condition, and BLX with an immediate */
+
+  if ((ins & ARM_INSN_BRANCH_MASK) == ARM_INSN_BRANCH ||
+      (ins & ARM_INSN_BLX_IMM_MASK) == ARM_INSN_BLX_IMM)
+    {
+      return true;
+    }
+
+  /* BX and BLX with a register operand */
+
+  if ((ins & ARM_INSN_BXREG_MASK) == ARM_INSN_BX_REG ||
+      (ins & ARM_INSN_BXREG_MASK) == ARM_INSN_BLX_REG)
+    {
+      return true;
+    }
+
+  /* Epilogue: POP, VPOP and ADD SP, SP, #imm */
+
+  if ((ins & ARM_INSN_LDMIA_MASK) == ARM_INSN_LDMIA_SP ||
+      (ins & ARM_INSN_DPI_MASK) == ARM_INSN_ADD_SP)
+    {
+      return true;
+    }
+
+  return false;
+}
+
+/****************************************************************************
+ * Name: arm_prologue_step
+ *
+ * Description:
+ *  Decode one instruction of an ARM mode function prologue.  See the Thumb
+ *  version for the meaning of the arguments.
+ *
+ ****************************************************************************/
+
+nosanitize_address
+static int arm_prologue_step(unsigned long addr, int *frame_size,
+                             int *lr_from_cfa, bool *has_fp)
+{
+  uint32_t ins = *(uint32_t *)addr;
+  unsigned int bytes;
+
+  /* STMDB SP!, {reglist}.  Registers go to ascending addresses, so LR, the
+   * highest numbered register that may appear, lands on top of the block.
+   */
+
+  if ((ins & ARM_INSN_STMDB_MASK) == ARM_INSN_STMDB_SP)
+    {
+      if (ins & ARM_INSN_STMDB_LR)
+        {
+          *lr_from_cfa = *frame_size + 1;
+        }
+
+      *frame_size += popcount(ins & 0xffff);
+      return 4;
+    }
+
+  /* STR LR, [SP, #-imm]!  This is what a single register push becomes.  LR
+   * ends up at the new bottom of the stack.
+   */
+
+  if ((ins & ARM_INSN_STR_LR_MASK) == ARM_INSN_STR_LR_PRE)
+    {
+      bytes = ins & 0xfff;
+      if (bytes == 0 || (bytes & 3) != 0)
+        {
+          return 0;
+        }
+
+      *frame_size += bytes >> 2;
+      *lr_from_cfa = *frame_size;
+      return 4;
+    }
+
+  /* STRD Rt, Rt2, [SP, #-imm]!  Rt must be even and Rt2 is Rt + 1, so LR
+   * can never be spilled this way; it only allocates stack.
+   */
+
+  if ((ins & ARM_INSN_STRD_SP_MASK) == ARM_INSN_STRD_SP_PRE)
+    {
+      bytes = ((ins >> 4) & 0xf0) | (ins & 0xf);
+      if (bytes == 0 || (bytes & 3) != 0)
+        {
+          return 0;
+        }
+
+      *frame_size += bytes >> 2;
+      return 4;
+    }
+
+  /* SUB SP, SP, #imm */
+
+  if ((ins & ARM_INSN_DPI_MASK) == ARM_INSN_SUB_SP)
+    {
+      bytes = arm_expand_imm(ins & 0xfff);
+      if ((bytes & 3) != 0)
+        {
+          return 0;
+        }
+
+      *frame_size += bytes >> 2;
+      return 4;
+    }
+
+  /* VSTMDB SP!, {slist}: the block is imm8 words long */
+
+  if ((ins & ARM_INSN_VSTMDB_MASK) == ARM_INSN_VSTMDB_SP)
+    {
+      *frame_size += ins & 0xff;
+      return 4;
+    }
+
+  /* Frame pointer setup */
+
+  if (ins == ARM_INSN_MOV_FP_SP ||
+      (ins & ARM_INSN_DPI_MASK) == ARM_INSN_ADD_FP)
+    {
+      *has_fp = true;
+      return 4;
+    }
+
+  return 0;
+}
+
+/****************************************************************************
+ * Name: arm_is_lr_spill
+ *
+ * Description:
+ *  Check whether the instruction at addr spills LR onto the stack.
+ *
+ ****************************************************************************/
+
+nosanitize_address
+static inline bool arm_is_lr_spill(unsigned long addr)
+{
+  uint32_t ins = *(uint32_t *)addr;
+
+  if ((ins & ARM_INSN_STMDB_MASK) == ARM_INSN_STMDB_SP &&
+      (ins & ARM_INSN_STMDB_LR))
+    {
+      return true;
+    }
+
+  return (ins & ARM_INSN_STR_LR_MASK) == ARM_INSN_STR_LR_PRE;
+}
+
+/****************************************************************************
+ * Name: arm_prologue_start
+ *
+ * Description:
+ *  Step backwards over the stack allocations the compiler emits before the
+ *  instruction that saved LR.
+ *
+ ****************************************************************************/
+
+nosanitize_address
+static unsigned long arm_prologue_start(unsigned long lr_push)
+{
+  unsigned long addr = lr_push;
+  uint32_t ins;
+  int i;
+
+  for (i = 0; i < 4; i++)
+    {
+      if (!in_code_region(addr - 4))
+        {
+          break;
+        }
+
+      ins = *(uint32_t *)(addr - 4);
+
+      /* STMDB without LR, or SUB SP */
+
+      if (((ins & ARM_INSN_STMDB_MASK) == ARM_INSN_STMDB_SP &&
+           !(ins & ARM_INSN_STMDB_LR)) ||
+          (ins & ARM_INSN_DPI_MASK) == ARM_INSN_SUB_SP)
+        {
+          addr -= 4;
+          continue;
+        }
+
+      break;
+    }
+
+  return addr;
+}
+
+#endif /* !CONFIG_ARM_THUMB */
+
+/****************************************************************************
+ * Name: decode_prologue_forward
+ *
+ * Description:
+ *  Replay a prologue forward from its first stack allocation, accumulating
+ *  every allocation until the function transfers control or the PC is
+ *  reached.  Instructions that are not stack allocations are stepped over,
+ *  because the compiler freely interleaves them with the prologue.
+ *
+ * Input Parameters:
+ *   start - Address of the first prologue instruction
+ *   pc    - Program counter the unwinder is standing on.  Instructions at or
+ *           above it have not executed yet and must not be accounted for.
+ *   info  - Receives the recovered frame layout
+ *   thumb - Instruction set to decode
+ *
+ * Returned Value:
+ *   true when a consistent frame with a stacked LR was recovered
+ *
+ ****************************************************************************/
+
+nosanitize_address
+static bool decode_prologue_forward(unsigned long start, unsigned long pc,
+                                    struct frame_info_s *info, bool thumb)
+{
+  unsigned long addr = start;
+  unsigned long len;
+  int lr_from_cfa = -1;
+  int frame_size = 0;
+  bool has_fp = false;
+
+  while (addr < pc)
+    {
+      len = ISA_CALL(thumb, prologue_step, addr, &frame_size, &lr_from_cfa,
+                     &has_fp);
+      if (len == 0)
+        {
+          if (ISA_CALL(thumb, ends_prologue, addr))
+            {
+              break;
+            }
+
+          len = ISA_CALL(thumb, insn_len, addr);
+        }
+
+      addr += len;
+    }
+
+  /* The prologue must have spilled LR, and the slot has to sit inside the
+   * frame it belongs to.  lr_from_cfa counts words below the CFA, so only
+   * 1..frame_size is valid: zero would place LR at the CFA, above the
+   * frame, which is what a malformed STRD decodes to.
+   */
+
+  if (lr_from_cfa <= 0 || frame_size < lr_from_cfa)
+    {
+      return false;
+    }
+
+  info->frame_size = frame_size;
+  info->lr_offset  = frame_size - lr_from_cfa;
+  info->has_fp     = has_fp;
+
+  return true;
 }
 
 #ifdef CONFIG_ARCH_ARM_M
@@ -940,10 +1352,11 @@ static bool step_exc_frame(unsigned long top, unsigned long *sp,
  *  Literal pools and jump tables live inside the code region, so a data word
  *  can easily look like a PUSH {..., LR}.  A candidate whose LR slot does
  *  not hold a validated return address is therefore discarded and the scan
- *  resumes at the next halfword.
+ *  resumes at the next instruction.
  *
  * Input Parameters:
- *   pc   - A program counter inside the function body
+ *   pc   - A program counter inside the function body.  Bit 0 selects the
+ *          instruction set to decode.
  *   sp   - Stack pointer of the frame the PC belongs to
  *   top  - First address past the end of that stack
  *   info - Receives the recovered frame
@@ -960,12 +1373,14 @@ static bool analyze_prologue_reverse(unsigned long pc, unsigned long sp,
                                      unsigned long top,
                                      struct frame_info_s *info)
 {
+  bool thumb = ISA_IS_THUMB(pc);
+  int step = thumb ? 2 : 4;
   unsigned long floor;
   unsigned long lr_addr;
   unsigned long addr;
   int offset;
 
-  pc &= ~1ul;
+  pc &= thumb ? ~1ul : ~3ul;
 
   /* The scan only ever moves down within the region holding the PC, so its
    * lower bound is fixed for the whole loop.
@@ -977,7 +1392,7 @@ static bool analyze_prologue_reverse(unsigned long pc, unsigned long sp,
       return false;
     }
 
-  for (offset = 2; offset <= PROLOGUE_WINDOW; offset += 2)
+  for (offset = step; offset <= PROLOGUE_WINDOW; offset += step)
     {
       addr = pc - offset;
       if (addr < floor)
@@ -985,8 +1400,9 @@ static bool analyze_prologue_reverse(unsigned long pc, unsigned long sp,
           break;
         }
 
-      if (!is_lr_spill(addr) ||
-          !decode_prologue_forward(prologue_start(addr), pc, info))
+      if (!ISA_CALL(thumb, is_lr_spill, addr) ||
+          !decode_prologue_forward(ISA_CALL(thumb, prologue_start, addr),
+                                   pc, info, thumb))
         {
           continue;
         }
@@ -1063,7 +1479,7 @@ static int backtrace_branch(unsigned long top, unsigned long sp,
           buffer[i++] = (void *)site;
         }
 #else
-      addr = (addr & ~1ul) - 2;
+      addr = (addr & INSN_ALIGN) - INSN_STEP;
       if (!in_code_region(addr))
         {
           continue;
@@ -1284,13 +1700,23 @@ int up_backtrace(struct tcb_s *tcb,
   if (tcb == rtcb)
     {
       sp = up_getsp();
-      pc = up_getpc();
+
+      /* up_getpc() reads the PC of this C code, so it is in the instruction
+       * set the image was built for.
+       */
+
+#ifdef CONFIG_ARM_THUMB
+      pc = ISA_TAG(up_getpc(), true);
+#else
+      pc = ISA_TAG(up_getpc(), false);
+#endif
 
       if (up_interrupt_context())
         {
           uint32_t *regs = (uint32_t *)running_regs();
           unsigned long usp = up_getusrsp(regs);
           unsigned long upc = up_getusrpc(regs);
+          unsigned long tpc = ISA_TAG(upc, ISA_REGS_THUMB(regs));
           unsigned long lr = regs != NULL ?
                              (unsigned long)regs[REG_LR] : 0;
 
@@ -1323,7 +1749,7 @@ int up_backtrace(struct tcb_s *tcb,
 
               if (ret < size)
                 {
-                  ret += backtrace_stack(base, top, usp, upc, lr,
+                  ret += backtrace_stack(base, top, usp, tpc, lr,
                                          &buffer[ret], size - ret, &skip);
                 }
             }
@@ -1353,8 +1779,10 @@ int up_backtrace(struct tcb_s *tcb,
           buffer[ret++] = (void *)pc;
         }
 
-      ret += backtrace_stack(base, top, sp, pc, regs[REG_LR],
-                             &buffer[ret], size - ret, &skip);
+      ret += backtrace_stack(base, top, sp,
+                             ISA_TAG(pc, ISA_REGS_THUMB(regs)),
+                             regs[REG_LR], &buffer[ret],
+                             size - ret, &skip);
     }
 
   return ret;
