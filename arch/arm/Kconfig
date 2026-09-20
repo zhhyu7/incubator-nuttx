@@ -1582,10 +1582,33 @@ config ARM_UNWINDER_STACK_POINTER_INSTRUCTION_CHECK
 	default n
 	depends on ARM_UNWINDER_STACK_POINTER
 	---help---
-		This option validates candidate return addresses by reading Thumb
-		instructions from code regions. Enable it only after all executable
-		code regions are configured and can be safely read as data. Leave it
-		disabled to avoid memory faults while probing code addresses.
+		This option lets the unwinder read the code regions as data: it
+		validates candidate return addresses against the call instruction
+		that produced them, and on Thumb targets it also decodes function
+		prologues to recover the frame layout instead of guessing which
+		stack words are return addresses. Enable it only after all
+		executable code regions are configured and can be safely read as
+		data. Leave it disabled to fall back to reporting every stack word
+		that lies inside a code region, which needs no code access.
+
+config ARM_UNWINDER_STACK_POINTER_PROLOGUE_WINDOW
+	hex "Prologue search window in bytes"
+	default 0x800
+	depends on ARM_UNWINDER_STACK_POINTER_INSTRUCTION_CHECK
+	---help---
+		A function prologue is the instruction sequence at the entry of a
+		function that reserves its stack frame and saves LR.  The
+		unwinder locates it by searching backwards from the PC, and this
+		is how far back, in bytes, it is willing to look.
+
+		Without CONFIG_ALLSYMS there is no function boundary information,
+		so a PC further than this from its function entry cannot be
+		resolved and that frame falls back to the plain stack scan.
+
+		The window therefore has to cover the largest function the PC may
+		land in.  Lowering it reduces the cost of a backtrace and raises
+		the number of frames that fall back; raising it beyond the size of
+		the largest function buys nothing.
 
 config ARM_STACKCHECK
 	bool "Check for stack overflow on each function call"
