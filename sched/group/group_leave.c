@@ -239,6 +239,11 @@ void group_drop(FAR struct task_group_s *group)
 
       group_heap_uninitialize(group->tg_heap);
 #endif
+#ifdef CONFIG_SIGNAL_FD
+      /* Free the lazily-allocated signalfd poll waiter array, if any. */
+
+      kmm_free(group->tg_sigfds);
+#endif
       kmm_free(group);
     }
 }

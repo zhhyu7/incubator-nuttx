@@ -38,6 +38,7 @@
 #include <nuttx/irq.h>
 #include <nuttx/arch.h>
 #include <nuttx/signal.h>
+#include <nuttx/signalfd.h>
 #include <nuttx/queue.h>
 
 #include "sched/sched.h"
@@ -331,24 +332,6 @@ nxsig_find_pendingsignal(FAR struct task_group_s *group, int signo,
 }
 
 /****************************************************************************
- * Name: nxsig_dispatch_kernel_action
- ****************************************************************************/
-
-static void nxsig_dispatch_kernel_action(FAR struct tcb_s *stcb,
-                                         FAR siginfo_t *info)
-{
-  FAR struct task_group_s *group = stcb->group;
-  FAR sigactq_t *sigact;
-
-  sigact = nxsig_find_action(group, info->si_signo);
-  if (sigact && (sigact->act.sa_flags & SA_KERNELHAND))
-    {
-      info->si_user = sigact->act.sa_user;
-      (sigact->act.sa_sigaction)(info->si_signo, info, NULL);
-    }
-}
-
-/****************************************************************************
  * Name: nxsig_add_pendingsignal
  *
  * Description:
@@ -577,12 +560,15 @@ int nxsig_tcbdispatch(FAR struct tcb_s *stcb, siginfo_t *info,
 
               /* The pending entry may be released as soon as the critical
                * section is left (see nxsig_unmask_pendingsignal()), so the
-               * kernel action must run while it is still owned.
+               * signalfd poll waiters must be notified while it is still
+               * owned.  The waiters are anchored on the task group, so this
+               * never touches an fd-scoped device a concurrent close may
+               * free.
                */
 
               if (sigpend != NULL)
                 {
-                  nxsig_dispatch_kernel_action(stcb, &sigpend->info);
+                  signalfd_notify(stcb->group, sigpend->info.si_signo);
                 }
             }
 #endif

@@ -33,8 +33,12 @@
 
 #include <debug.h>
 
+#include <nuttx/irq.h>
+#include <nuttx/kmalloc.h>
 #include <nuttx/mutex.h>
+#include <nuttx/sched.h>
 #include <nuttx/signal.h>
+#include <nuttx/signalfd.h>
 
 #include <sys/signalfd.h>
 
@@ -56,7 +60,6 @@ struct signalfd_priv_s
   sigset_t      sigmask; /* The set of signals caller wishes */
   mutex_t       mutex;   /* Enforces device exclusive access */
   uint8_t       crefs;   /* References counts on signalfd (max: 255) */
-  FAR struct pollfd *fds[CONFIG_SIGNAL_FD_NPOLLWAITERS];
 };
 
 /****************************************************************************
@@ -103,17 +106,6 @@ static DEFINE_PER_CPU_BMP(struct inode, g_signalfd_inode) =
  * Private Functions
  ****************************************************************************/
 
-static void signalfd_action(int signo, FAR siginfo_t *info,
-                            FAR void *ucontext)
-{
-  FAR struct signalfd_priv_s *dev = info->si_user;
-
-  if (sigismember(&dev->sigmask, signo) > 0)
-    {
-      poll_notify(dev->fds, CONFIG_SIGNAL_FD_NPOLLWAITERS, POLLIN);
-    }
-}
-
 static int signalfd_file_open(FAR struct file *filep)
 {
   FAR struct signalfd_priv_s *dev = filep->f_priv;
@@ -137,7 +129,6 @@ static int signalfd_file_open(FAR struct file *filep)
 static int signalfd_file_close(FAR struct file *filep)
 {
   FAR struct signalfd_priv_s *dev = filep->f_priv;
-  int signo;
 
   nxmutex_lock(&dev->mutex);
   if (dev->crefs > 1)
@@ -145,14 +136,6 @@ static int signalfd_file_close(FAR struct file *filep)
       dev->crefs--;
       nxmutex_unlock(&dev->mutex);
       return OK;
-    }
-
-  for (signo = MIN_SIGNO; signo <= MAX_SIGNO; signo++)
-    {
-      if (nxsig_ismember(&dev->sigmask, signo))
-        {
-          signal(signo, SIG_DFL);
-        }
     }
 
   nxmutex_unlock(&dev->mutex);
@@ -226,38 +209,82 @@ static int signalfd_file_poll(FAR struct file *filep,
                               FAR struct pollfd *fds, bool setup)
 {
   FAR struct signalfd_priv_s *dev = filep->f_priv;
+  FAR struct task_group_s *group = nxsched_self()->group;
+  FAR struct pollfd **cand = NULL;
+  irqstate_t flags;
   sigset_t mask;
   int ret = 0;
   int i;
 
-  nxmutex_lock(&dev->mutex);
+  /* The waiter array is allocated lazily so a group that never polls a
+   * signalfd carries only a NULL pointer.  Allocate the candidate outside
+   * the critical section (allocation must not run under
+   * enter_critical_section); it is installed under the lock and freed here
+   * if another concurrent poll setup won the race.  tg_sigfds only ever
+   * transitions NULL->set (freed at group teardown), so the unlocked
+   * pre-check is a safe hint.
+   */
+
+  if (setup && group->tg_sigfds == NULL)
+    {
+      cand = kmm_zalloc(CONFIG_SIGNAL_FD_NPOLLWAITERS * sizeof(*cand));
+      if (cand == NULL)
+        {
+          return -ENOMEM;
+        }
+    }
+
+  /* The poll waiters are anchored on the task group and are notified from
+   * the signal dispatch path, which may run in interrupt context.  Use
+   * enter_critical_section() (switch-aware, so poll_notify()'s nxsem_post()
+   * may switch out safely) rather than the device mutex, which the dispatch
+   * path could not take.
+   */
+
+  flags = enter_critical_section();
   if (!setup)
     {
-      /* This is a request to tear down the poll. */
+      /* This is a request to tear down the poll.  Locate our slot in the
+       * group anchor by pointer and clear it.
+       */
 
-      FAR struct pollfd **slot = (FAR struct pollfd **)fds->priv;
+      if (group->tg_sigfds != NULL)
+        {
+          for (i = 0; i < CONFIG_SIGNAL_FD_NPOLLWAITERS; i++)
+            {
+              if (group->tg_sigfds[i] == fds)
+                {
+                  group->tg_sigfds[i] = NULL;
+                  break;
+                }
+            }
+        }
 
-      /* Remove all memory of the poll setup */
-
-      *slot     = NULL;
       fds->priv = NULL;
       goto out;
     }
 
-  /* This is a request to set up the poll. Find an available
-   * slot for the poll structure reference
+  /* Install the lazily-allocated array if it is still missing. */
+
+  if (group->tg_sigfds == NULL)
+    {
+      group->tg_sigfds = cand;
+      cand             = NULL;
+    }
+
+  /* This is a request to set up the poll. Find an available slot in the
+   * group anchor and bind the poll structure to it.  The device pointer is
+   * stashed in fds->priv so signalfd_notify() can filter by this fd's mask;
+   * this is safe because an occupied slot implies poll_setup() holds a file
+   * reference, so the device cannot be closed/freed while bound.
    */
 
   for (i = 0; i < CONFIG_SIGNAL_FD_NPOLLWAITERS; i++)
     {
-      /* Find an available slot */
-
-      if (!dev->fds[i])
+      if (!group->tg_sigfds[i])
         {
-          /* Bind the poll structure and this slot */
-
-          dev->fds[i] = fds;
-          fds->priv   = &dev->fds[i];
+          group->tg_sigfds[i] = fds;
+          fds->priv           = dev;
           break;
         }
     }
@@ -268,7 +295,7 @@ static int signalfd_file_poll(FAR struct file *filep,
       goto out;
     }
 
-  /* Notify the POLLIN event if the counter is not zero */
+  /* Notify the POLLIN event if a subscribed signal is already pending */
 
   mask = nxsig_pendingset(NULL);
   sigandset(&mask, &mask, &dev->sigmask);
@@ -278,13 +305,70 @@ static int signalfd_file_poll(FAR struct file *filep,
     }
 
 out:
-  nxmutex_unlock(&dev->mutex);
+  leave_critical_section(flags);
+
+  /* Free the candidate array if another poll setup installed one first. */
+
+  if (cand != NULL)
+    {
+      kmm_free(cand);
+    }
+
   return ret;
 }
 
 /****************************************************************************
  * Public Functions
  ****************************************************************************/
+
+/****************************************************************************
+ * Name: signalfd_notify
+ *
+ * Description:
+ *   Notify the signalfd poll waiters of a task group that signo has been
+ *   delivered.  Called from the signal dispatch path, which may run in
+ *   interrupt context; enter_critical_section() serializes against
+ *   signalfd_file_poll() setup/teardown and is switch-aware, so the
+ *   nxsem_post() inside poll_notify() may switch out safely.
+ *
+ *   Only the fds whose device mask contains signo are notified, so that
+ *   several signalfd fds sharing one poll loop do not get spurious POLLIN
+ *   for signals they did not subscribe to.  An occupied slot implies
+ *   poll_setup() holds a file reference on that fd, so fds->priv (the
+ *   device) is guaranteed live for the duration of this walk.
+ *
+ ****************************************************************************/
+
+void signalfd_notify(FAR struct task_group_s *group, int signo)
+{
+  irqstate_t flags;
+  int i;
+
+  /* A group that never set up a signalfd poll has no waiter array. */
+
+  if (group->tg_sigfds == NULL)
+    {
+      return;
+    }
+
+  flags = enter_critical_section();
+  for (i = 0; i < CONFIG_SIGNAL_FD_NPOLLWAITERS; i++)
+    {
+      FAR struct pollfd *fds = group->tg_sigfds[i];
+
+      if (fds != NULL)
+        {
+          FAR struct signalfd_priv_s *dev = fds->priv;
+
+          if (sigismember(&dev->sigmask, signo) > 0)
+            {
+              poll_notify(&fds, 1, POLLIN);
+            }
+        }
+    }
+
+  leave_critical_section(flags);
+}
 
 /****************************************************************************
  * Name: signalfd
@@ -332,9 +416,7 @@ int signalfd(int fd, FAR const sigset_t *mask, int flags)
 {
   FAR struct signalfd_priv_s *dev;
   FAR struct file *filep = NULL;
-  struct sigaction act;
   int ret = EINVAL;
-  int signo;
 
   if (flags & ~(SFD_CLOEXEC | SFD_NONBLOCK))
     {
@@ -377,28 +459,16 @@ int signalfd(int fd, FAR const sigset_t *mask, int flags)
         }
 
       dev = filep->f_priv;
-      for (signo = MIN_SIGNO; signo <= MAX_SIGNO; signo++)
-        {
-          if (nxsig_ismember(&dev->sigmask, signo))
-            {
-              signal(signo, SIG_DFL);
-            }
-        }
     }
+
+  /* Update the subscribed signal set.  signalfd_notify() reads dev->sigmask
+   * live when filtering, so a replaced mask takes effect immediately with no
+   * per-signal action to (un)register.
+   */
 
   dev->sigmask = *mask;
   nxsig_delset(&dev->sigmask, SIGKILL);
   nxsig_delset(&dev->sigmask, SIGSTOP);
-  act.sa_sigaction = signalfd_action;
-  act.sa_flags = SA_KERNELHAND | SA_SIGINFO;
-  act.sa_user = dev;
-  for (signo = MIN_SIGNO; signo <= MAX_SIGNO; signo++)
-    {
-      if (nxsig_ismember(&dev->sigmask, signo))
-        {
-          nxsig_action(signo, &act, NULL, false);
-        }
-    }
 
   if (filep != NULL)
     {
