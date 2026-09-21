@@ -60,11 +60,9 @@ void _exit(int status)
 
   sinfo("TCB=%p exiting\n", tcb);
 
-  /* Update scheduler parameters */
-
-  sched_suspend_scheduler(tcb);
-
-  /* Destroy the task at the head of the ready to run list. */
+  /* Destroy the task at the head of the ready to run list.  This
+   * internally calls nxsched_suspend_scheduler() for the exiting task.
+   */
 
   nxtask_exit();
 
@@ -73,10 +71,6 @@ void _exit(int status)
    */
 
   tcb = this_task();
-
-  /* Reset scheduler parameters */
-
-  sched_resume_scheduler(tcb);
 
   g_running_task = tcb;
 
