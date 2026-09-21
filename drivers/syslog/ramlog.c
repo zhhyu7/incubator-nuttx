@@ -411,7 +411,8 @@ static void ramlog_pollnotify(FAR struct ramlog_dev_s *priv,
  * Description:
  *   Write data to the ramlog using ring.h MPMC APIs.
  *   Overwrite mode uses ring_mpmc_overwrite.
- *   Non-overwrite mode uses ring_mpmc_enqueue (non-blocking).
+ *   Non-overwrite mode uses ring_mpmc_enqueue_bulk (non-blocking, all or
+ *   nothing) so that a partially written message never lands in the ring.
  *
  ****************************************************************************/
 
@@ -428,9 +429,11 @@ static ssize_t ramlog_addbuf(FAR struct ramlog_dev_s *priv,
 
 #ifdef CONFIG_RAMLOG_NOOVERWRITE
 
-  /* Non-overwrite mode: enqueue as much as possible, discard the rest */
+  /* Non-overwrite mode: take the whole message or none of it, so a
+   * truncated line is never published to readers.
+   */
 
-  written = ring_mpmc_enqueue(r, buffer, len);
+  written = ring_mpmc_enqueue_bulk(r, buffer, len, NULL);
 #else
   /* Overwrite mode: always succeeds, discards oldest data */
 
