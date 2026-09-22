@@ -1300,6 +1300,15 @@ static int fatfs_unbind(FAR void *handle, FAR struct inode **driver,
    * be mid-flight, still holding fs->lock, when we destroy the mutex and
    * free fs below; its nxmutex_unlock() would then touch freed memory
    * (use-after-free, e.g. during a force-unmount on reboot).
+   *
+   * On the success path fs->lock is held until nxmutex_destroy(): destroy
+   * sets NXSEM_MBLOCKING_BIT so the lock-free fast paths in nxmutex_wait()/
+   * nxmutex_post() cannot complete their cmpxchg and fall through to the
+   * slow path, which rejects a destroyed mutex with -EINVAL.  A concurrent
+   * operation that blocked on nxmutex_lock() while we held the lock is
+   * thus turned away before fs_heap_free() runs, instead of acquiring the
+   * lock in the window between unlock and free and then touching freed
+   * memory from its own nxmutex_unlock().
    */
 
   ret = nxmutex_lock(&fs->lock);
@@ -1309,7 +1318,6 @@ static int fatfs_unbind(FAR void *handle, FAR struct inode **driver,
     }
 
   ret = fatfs_convert_result(f_unmount(path));
-  nxmutex_unlock(&fs->lock);
 
   if (ret >= 0)
     {
@@ -1325,10 +1333,17 @@ static int fatfs_unbind(FAR void *handle, FAR struct inode **driver,
           (*driver)->u.i_bops->close(*driver);
         }
 
-      /* Release the mountpoint private data */
+      /* Release the mountpoint private data.  Destroy the mutex while it
+       * is still held so concurrent waiters are rejected by the destroyed
+       * flag rather than racing into the freed object.
+       */
 
       nxmutex_destroy(&fs->lock);
       fs_heap_free(fs);
+    }
+  else
+    {
+      nxmutex_unlock(&fs->lock);
     }
 
   return ret;
