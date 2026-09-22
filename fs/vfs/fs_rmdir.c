@@ -139,7 +139,7 @@ int rmdir(FAR const char *pathname)
    * operations) then rmdir should remove the node.
    */
 
-  if (!inode->u.i_ops)
+  if (INODE_IS_PSEUDODIR(inode))
     {
       /* If the directory inode has children, however, then it cannot be
        * removed.
