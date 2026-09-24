@@ -144,7 +144,9 @@ int task_init_info(FAR struct task_group_s *group)
       info->ta_heap = group->tg_heap;
 #endif
 
+#if defined(CONFIG_SYSLOG) || defined(CONFIG_BINARY_SYSLOG)
       info->ta_syslog_mask = g_syslog_mask[NXTAG_GLOBAL];
+#endif
 
 #ifdef CONFIG_LIBC_HOSTNAME
       strlcpy(info->ta_hostname, CONFIG_LIBC_HOSTNAME,
