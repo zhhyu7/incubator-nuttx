@@ -264,8 +264,6 @@ __start:
 
 	mov		r1, #0xff
 	strb		r1, [r2, #(0xf10 + GIC_CPU_CALL)]
-#else
-	wfe
 #endif
 
 	mov		fp, #0			/* Clear frame pointer */

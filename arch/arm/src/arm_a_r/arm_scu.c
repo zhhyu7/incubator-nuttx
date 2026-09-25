@@ -83,10 +83,6 @@ void arm_enable_smp(int cpu)
       regval  = getreg32(SCU_CTRL);
       regval |= SCU_CTRL_ENABLE;
       putreg32(regval, SCU_CTRL);
-
-      /* Initialize done, kick other cpus which waiting on __start */
-
-      UP_SEV();
     }
 
   /* Actions for other CPUs */
