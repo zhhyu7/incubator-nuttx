@@ -12,6 +12,12 @@
 #include <nuttx/config.h>
 #include <nuttx/compiler.h>
 
+// libcxx requires __BYTE_ORDER__ (since llvm18) TASKING doesn't predefine,
+// use sys/endian.h to provide
+#ifndef __BYTE_ORDER__
+#  include <sys/endian.h>
+#endif
+
 #define _LIBCPP_ABI_VERSION 1
 #define _LIBCPP_ABI_NAMESPACE __1
 #define _LIBCPP_NO_ABI_TAG
