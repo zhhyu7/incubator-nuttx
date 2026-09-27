@@ -18,6 +18,14 @@
 #  include <sys/endian.h>
 #endif
 
+#if defined(__TASKING__)
+// Reuse the GCC classification so the type traits take their portable
+// implementations. _LIBCPP_GCC_VER stays undefined, so it reads as 0
+// where the headers compare it against the version that introduced
+// those builtins, which is what keeps the portable side.
+#  define _LIBCPP_COMPILER_GCC
+#endif
+
 #define _LIBCPP_ABI_VERSION 1
 #define _LIBCPP_ABI_NAMESPACE __1
 #define _LIBCPP_NO_ABI_TAG
