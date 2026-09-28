@@ -45,12 +45,22 @@
 namespace LIBC_NAMESPACE {
 
 // ===== Utility =============================================================
+// The shift amount is kept in range for count == 0 as well, so the value can
+// be formed without if constexpr.
+template <typename T, size_t count, bool = (count == 0)>
+struct mask_trailing_ones_impl {
+  static const T value = T(T(-1) >> (sizeof(T) * CHAR_BIT - count));
+};
+
 template <typename T, size_t count>
-constexpr std::enable_if_t<std::is_unsigned_v<T>, T> mask_trailing_ones() {
-  static_assert(count <= sizeof(T) * CHAR_BIT);
-  if constexpr (count == 0) return 0;
-  else if constexpr (count == sizeof(T) * CHAR_BIT) return T(-1);
-  else return T(T(-1) >> (sizeof(T) * CHAR_BIT - count));
+struct mask_trailing_ones_impl<T, count, true> {
+  static const T value = T(0);
+};
+
+template <typename T, size_t count>
+constexpr std::enable_if_t<std::is_unsigned<T>::value, T> mask_trailing_ones() {
+  static_assert(count <= sizeof(T) * CHAR_BIT, "count exceeds the width of T");
+  return mask_trailing_ones_impl<T, count>::value;
 }
 
 // ===== FPBits<T> ===========================================================
@@ -238,10 +248,10 @@ decimal_exp_to_float(ExpandedFloat<T> init_num, bool /*truncated*/,
   errno = 0;
 
   T val;
-  if constexpr (std::is_same_v<T, float>)
-    val = guard.strtof_c(buf, &end);
+  if (std::is_same<T, float>::value)
+    val = static_cast<T>(guard.strtof_c(buf, &end));
   else
-    val = guard.strtod_c(buf, &end);
+    val = static_cast<T>(guard.strtod_c(buf, &end));
 
   if (errno == ERANGE) output.error = ERANGE;
 
@@ -264,10 +274,10 @@ binary_exp_to_float(ExpandedFloat<T> init_num, bool /*truncated*/,
   errno = 0;
 
   T val;
-  if constexpr (std::is_same_v<T, float>)
-    val = guard.strtof_c(buf, &end);
+  if (std::is_same<T, float>::value)
+    val = static_cast<T>(guard.strtof_c(buf, &end));
   else
-    val = guard.strtod_c(buf, &end);
+    val = static_cast<T>(guard.strtod_c(buf, &end));
 
   if (errno == ERANGE) output.error = ERANGE;
 
