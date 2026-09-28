@@ -406,8 +406,12 @@ int up_debugpoint_add(int type, void *addr, size_t size,
 
       default:
         {
-          _err("unsuported debugpoint type %d\n", type);
-          PANIC();
+          /* DR7 has no read-only breakpoint condition; let the caller
+           * fall back instead of taking the whole system down.
+           */
+
+          _err("unsupported debugpoint type %d\n", type);
+          return -ENOSYS;
         }
     }
 
