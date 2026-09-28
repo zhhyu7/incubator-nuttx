@@ -591,7 +591,7 @@ static void dump_tasks(void)
 #ifdef CONFIG_ARCH_DEADLOCKDUMP
 static void dump_lockholder(pid_t tid)
 {
-  char buf[BACKTRACE_BUFFER_SIZE(CONFIG_LIBC_BACKTRACE_DEPTH)];
+  char buf[BACKTRACE_BUFFER_SIZE(CONFIG_LIBC_BACKTRACE_DEPTH)] = "";
   FAR struct tcb_s *tcb;
   FAR void **stack = NULL;
   int depth = 0;
