@@ -61,3 +61,39 @@ mcount:
    movq   (%rsp),  %rax
    addq   $56,     %rsp
    ret
+
+  .globl  __fentry__
+  .type   __fentry__, @function
+
+/* __fentry__ is called before the prologue, so the instrumented function's
+ * return address is 8(%rsp) and its own entry pc is the return address
+ * of this call, (%rsp).  Unlike mcount there is no push of %rbp before
+ * the call, so the frame is 64 bytes (56 would leave %rsp misaligned by
+ * 8 at the call to mcount_internal).
+ */
+
+__fentry__:
+
+   subq   $64,    %rsp
+   movq   %rax,   (%rsp)
+   movq   %rcx,   8(%rsp)
+   movq   %rdx,   16(%rsp)
+   movq   %rsi,   24(%rsp)
+   movq   %rdi,   32(%rsp)
+   movq   %r8,    40(%rsp)
+   movq   %r9,    48(%rsp)
+
+   movq   64(%rsp),%rsi
+   movq   72(%rsp),%rdi
+
+   call   mcount_internal
+
+   movq   48(%rsp),%r9
+   movq   40(%rsp),%r8
+   movq   32(%rsp),%rdi
+   movq   24(%rsp),%rsi
+   movq   16(%rsp),%rdx
+   movq   8(%rsp), %rcx
+   movq   (%rsp),  %rax
+   addq   $64,     %rsp
+   ret

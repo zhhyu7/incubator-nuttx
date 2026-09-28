@@ -758,6 +758,7 @@ static inline_function uint32_t up_getgs(void)
 
 /* Get the current FLAGS register contents */
 
+noinstrument_function
 static inline_function irqstate_t irqflags(void)
 {
   irqstate_t flags;
@@ -776,11 +777,13 @@ static inline_function irqstate_t irqflags(void)
  * if the X86_FLAGS_IF is set by sti, then interrupts are enable.
  */
 
+noinstrument_function
 static inline_function bool up_irq_disabled(irqstate_t flags)
 {
   return ((flags & X86_64_RFLAGS_IF) == 0);
 }
 
+noinstrument_function
 static inline_function bool up_irq_enabled(irqstate_t flags)
 {
   return ((flags & X86_64_RFLAGS_IF) != 0);
@@ -788,6 +791,7 @@ static inline_function bool up_irq_enabled(irqstate_t flags)
 
 /* Disable interrupts unconditionally */
 
+noinstrument_function
 static inline_function void up_irq_disable(void)
 {
   __asm__ volatile("cli": : :"memory");
@@ -795,6 +799,7 @@ static inline_function void up_irq_disable(void)
 
 /* Enable interrupts unconditionally */
 
+noinstrument_function
 static inline_function void up_irq_enable(void)
 {
   __asm__ volatile("sti": : :"memory");
