@@ -33,6 +33,7 @@
 #include <debug.h>
 
 #include <nuttx/fs/fs.h>
+#include <nuttx/lib/lib.h>
 
 #include "inode/inode.h"
 #include "vfs.h"
@@ -100,7 +101,26 @@ int file_truncate(FAR struct file *filep, off_t length)
       return -ENOSYS;
     }
 
-  /* Yes, then tell the file system to truncate this file */
+  /* Truncate may free blocks referenced by a cached snapshot.  Drop the
+   * file's cache entry before entering the file system.
+   */
+
+#ifdef CONFIG_FS_PATHCACHE
+  if (INODE_IS_PATHCACHE(inode))
+    {
+      FAR char *path = lib_get_tempbuffer(PATH_MAX);
+
+      if (path != NULL)
+        {
+          if (file_fcntl(filep, F_GETPATH, path) >= 0)
+            {
+              pathcache_remove(path, PATHCACHE_SELF);
+            }
+
+          lib_put_tempbuffer(path);
+        }
+    }
+#endif
 
   return inode->u.i_ops->truncate(filep, length);
 }

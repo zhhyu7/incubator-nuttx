@@ -384,10 +384,14 @@ int pathcache_open(FAR struct file *filep, FAR const char *relpath,
 
       inode->u.i_mops->dup(cached_file, filep);
 
-      /* Put the cache entry every time we have finished using it */
+      /* Put the cache entry every time we have finished using it.  Drop the
+       * cached snapshot before a writable open or O_TRUNC changes the state
+       * it describes.  O_TRUNC is independent of the access mode.
+       */
 
       pathcache_put(cached_file);
-      if ((oflags & O_ACCMODE) != O_RDONLY)
+      if ((oflags & O_ACCMODE) != O_RDONLY ||
+          (oflags & O_TRUNC) != 0)
         {
           lru_cache_remove(&g_pathcache, abspath, strlen(abspath) + 1);
         }

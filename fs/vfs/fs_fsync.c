@@ -35,8 +35,10 @@
 #include <nuttx/cancelpt.h>
 #include <nuttx/fs/fs.h>
 #include <nuttx/fs/ioctl.h>
+#include <nuttx/lib/lib.h>
 
 #include "inode/inode.h"
+#include "vfs.h"
 
 /****************************************************************************
  * Public Functions
@@ -70,7 +72,26 @@ int file_fsync(FAR struct file *filep)
         {
           if (inode->u.i_mops && inode->u.i_mops->sync)
             {
-              /* Yes, then tell the mountpoint to sync this file */
+              /* Sync may make a cached snapshot stale.  Drop the file's
+               * cache entry before entering the file system.
+               */
+
+#ifdef CONFIG_FS_PATHCACHE
+              if (INODE_IS_PATHCACHE(inode))
+                {
+                  FAR char *path = lib_get_tempbuffer(PATH_MAX);
+
+                  if (path != NULL)
+                    {
+                      if (file_fcntl(filep, F_GETPATH, path) >= 0)
+                        {
+                          pathcache_remove(path, PATHCACHE_SELF);
+                        }
+
+                      lib_put_tempbuffer(path);
+                    }
+                }
+#endif
 
               return inode->u.i_mops->sync(filep);
             }
