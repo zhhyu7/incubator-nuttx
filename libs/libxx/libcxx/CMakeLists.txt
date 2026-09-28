@@ -143,12 +143,14 @@ if(CONFIG_LIBCXX)
     list(REMOVE_ITEM SRCS ${SRCSTMP})
   endif()
 
+  # Options that GCC and Clang share.
   if(NOT CONFIG_TRICORE_TOOLCHAIN_TASKING)
     set(FLAGS -Wno-attributes -Wno-deprecated-declarations -Wno-shadow
               -Wno-sign-compare -Wno-cpp)
   endif()
 
-  if(GCCVER GREATER_EQUAL 12)
+  # GCC only diagnostics; Clang does not know them.
+  if(CONFIG_ARCH_TOOLCHAIN_GCC)
     list(APPEND FLAGS -Wno-maybe-uninitialized -Wno-alloc-size-larger-than)
   endif()
 

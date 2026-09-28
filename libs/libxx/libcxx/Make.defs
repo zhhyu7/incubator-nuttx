@@ -65,7 +65,8 @@ endif
 CXXFLAGS += -Wno-shadow -Wno-sign-compare -Wno-cpp
 CXXFLAGS += -Wno-attributes -Wno-deprecated-declarations
 
-ifeq ($(shell expr "$(GCCVER)" \>= 12), 1)
+# GCC only diagnostics; Clang does not know them.
+ifeq ($(CONFIG_ARCH_TOOLCHAIN_GCC),y)
   CXXFLAGS += -Wno-maybe-uninitialized -Wno-alloc-size-larger-than
 endif
 
