@@ -1583,29 +1583,6 @@
  * Public Function Prototypes
  ****************************************************************************/
 
-/* overloaded version of builtin functions c++ needed */
-
-#if defined(__cplusplus) && defined(__TASKING__)
-
-extern "C++"
-{
-  int __builtin_isinf(float x);
-  int __builtin_isinf(double x);
-  int __builtin_isinf(long double x);
-  int __builtin_isfinite(float x);
-  int __builtin_isfinite(double x);
-  int __builtin_isfinite(long double x);
-  bool __builtin_signbit(float x);
-  bool __builtin_signbit(double x);
-  bool __builtin_signbit(long double x);
-}
-
-#endif  // __cplusplus
-
-/****************************************************************************
- * Public Function Prototypes
- ****************************************************************************/
-
 #ifdef __cplusplus
 #define EXTERN extern "C"
 extern "C"
@@ -1674,6 +1651,33 @@ int __builtin_isnan(double x);
 int __builtin_isnanf(float x);
 int __builtin_isnanl(long double x);
 int __builtin_fpclassify(int __class, ...);
+
+/* libm entry points backing the C++ isnormal overloads at the end of this
+ * file.  There is no __builtin_isnormal, and the compiler's own isnormal()
+ * resolves to these as well.
+ */
+
+int _isnormal(double x);
+int _isnormalf(float x);
+int _isnormall(long double x);
+int _isgreater(double x, double y);
+int _isgreaterf(float x, float y);
+int _isgreaterl(long double x, long double y);
+int _isgreaterequal(double x, double y);
+int _isgreaterequalf(float x, float y);
+int _isgreaterequall(long double x, long double y);
+int _isless(double x, double y);
+int _islessf(float x, float y);
+int _islessl(long double x, long double y);
+int _islessequal(double x, double y);
+int _islessequalf(float x, float y);
+int _islessequall(long double x, long double y);
+int _islessgreater(double x, double y);
+int _islessgreaterf(float x, float y);
+int _islessgreaterl(long double x, long double y);
+int _isunordered(double x, double y);
+int _isunorderedf(float x, float y);
+int _isunorderedl(long double x, long double y);
 
 /* Math builtins mapped to TASKING libm.a */
 
@@ -1824,5 +1828,135 @@ long double __builtin_tgammal(long double x);
 #ifdef __cplusplus
 }
 #endif
+
+/* overloaded version of builtin functions c++ needed */
+
+#if defined(__cplusplus) && defined(__TASKING__)
+
+extern "C++"
+{
+  int __builtin_isinf(float x);
+  int __builtin_isinf(double x);
+  int __builtin_isinf(long double x);
+  int __builtin_isfinite(float x);
+  int __builtin_isfinite(double x);
+  int __builtin_isfinite(long double x);
+  bool __builtin_signbit(float x);
+  bool __builtin_signbit(double x);
+  bool __builtin_signbit(long double x);
+
+  inline bool __builtin_isnormal(float x)
+  {
+    return _isnormalf(x) != 0;
+  }
+
+  inline bool __builtin_isnormal(double x)
+  {
+    return _isnormal(x) != 0;
+  }
+
+  inline bool __builtin_isnormal(long double x)
+  {
+    return _isnormall(x) != 0;
+  }
+
+  /* The ordered comparison builtins take two arguments of the same type,
+   * so they are selected by argument type as well.  They must not raise an
+   * exception for a NaN operand, which is why libm carries them rather
+   * than the plain relational operators being used here.
+   */
+
+  inline bool __builtin_isgreater(float x, float y)
+  {
+    return _isgreaterf(x, y) != 0;
+  }
+
+  inline bool __builtin_isgreater(double x, double y)
+  {
+    return _isgreater(x, y) != 0;
+  }
+
+  inline bool __builtin_isgreater(long double x, long double y)
+  {
+    return _isgreaterl(x, y) != 0;
+  }
+
+  inline bool __builtin_isgreaterequal(float x, float y)
+  {
+    return _isgreaterequalf(x, y) != 0;
+  }
+
+  inline bool __builtin_isgreaterequal(double x, double y)
+  {
+    return _isgreaterequal(x, y) != 0;
+  }
+
+  inline bool __builtin_isgreaterequal(long double x, long double y)
+  {
+    return _isgreaterequall(x, y) != 0;
+  }
+
+  inline bool __builtin_isless(float x, float y)
+  {
+    return _islessf(x, y) != 0;
+  }
+
+  inline bool __builtin_isless(double x, double y)
+  {
+    return _isless(x, y) != 0;
+  }
+
+  inline bool __builtin_isless(long double x, long double y)
+  {
+    return _islessl(x, y) != 0;
+  }
+
+  inline bool __builtin_islessequal(float x, float y)
+  {
+    return _islessequalf(x, y) != 0;
+  }
+
+  inline bool __builtin_islessequal(double x, double y)
+  {
+    return _islessequal(x, y) != 0;
+  }
+
+  inline bool __builtin_islessequal(long double x, long double y)
+  {
+    return _islessequall(x, y) != 0;
+  }
+
+  inline bool __builtin_islessgreater(float x, float y)
+  {
+    return _islessgreaterf(x, y) != 0;
+  }
+
+  inline bool __builtin_islessgreater(double x, double y)
+  {
+    return _islessgreater(x, y) != 0;
+  }
+
+  inline bool __builtin_islessgreater(long double x, long double y)
+  {
+    return _islessgreaterl(x, y) != 0;
+  }
+
+  inline bool __builtin_isunordered(float x, float y)
+  {
+    return _isunorderedf(x, y) != 0;
+  }
+
+  inline bool __builtin_isunordered(double x, double y)
+  {
+    return _isunordered(x, y) != 0;
+  }
+
+  inline bool __builtin_isunordered(long double x, long double y)
+  {
+    return _isunorderedl(x, y) != 0;
+  }
+}
+
+#endif  // __cplusplus
 
 #endif /* __INCLUDE_NUTTX_COMPILER_H */
