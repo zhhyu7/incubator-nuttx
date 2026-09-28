@@ -27,6 +27,7 @@
 #include <nuttx/arch.h>
 #include <debug.h>
 #include <stdint.h>
+#include <string.h>
 
 #include <arch/acpi.h>
 #include <nuttx/kmalloc.h>
@@ -111,8 +112,12 @@ static void acpi_map_rsdt(void)
 
   while (tp32 < end32)
     {
-      acpi_map_region((uintptr_t)*tp32,
-                      sizeof(struct acpi_sdt_s));
+      uintptr_t addr = 0;
+
+      /* The firmware does not align the table, so copy the entry out. */
+
+      memcpy(&addr, tp32, sizeof(*tp32));
+      acpi_map_region(addr, sizeof(struct acpi_sdt_s));
 
       /* Next table */
 
@@ -140,8 +145,10 @@ static void acpi_map_xsdt(void)
 
   while (tp64 < end64)
     {
-      acpi_map_region((uintptr_t)*tp64,
-                      sizeof(struct acpi_sdt_s));
+      uintptr_t addr = 0;
+
+      memcpy(&addr, tp64, sizeof(*tp64));
+      acpi_map_region(addr, sizeof(struct acpi_sdt_s));
 
       /* Next table */
 
@@ -329,9 +336,12 @@ static int acpi_table64_find(const char *sig, struct acpi_sdt_s **sdt)
 
   while (tp < end)
     {
+      uintptr_t addr = 0;
+
       /* Compare signature */
 
-      tmp = (struct acpi_sdt_s *)(uintptr_t)*tp;
+      memcpy(&addr, tp, sizeof(*tp));
+      tmp = (struct acpi_sdt_s *)addr;
       if (strncmp(tmp->signature, sig, 4) == 0)
         {
           *sdt = tmp;
@@ -366,9 +376,12 @@ static int acpi_table32_find(const char *sig, struct acpi_sdt_s **sdt)
 
   while (tp < end)
     {
+      uintptr_t addr = 0;
+
       /* Compare signature */
 
-      tmp = (struct acpi_sdt_s *)(uintptr_t)*tp;
+      memcpy(&addr, tp, sizeof(*tp));
+      tmp = (struct acpi_sdt_s *)addr;
       if (strncmp(tmp->signature, sig, 4) == 0)
         {
           *sdt = tmp;
@@ -663,11 +676,14 @@ int acpi_poweroff_param_get(uint32_t *pm1a_cnt, uint32_t *pm1b_cnt,
 
   while (tp32 < end32)
     {
-      sdt = (struct acpi_sdt_s *)(uintptr_t)*tp32;
+      uintptr_t addr = 0;
+
+      memcpy(&addr, tp32, sizeof(*tp32));
+      sdt = (struct acpi_sdt_s *)addr;
 
       if (strncmp(sdt->signature, ACPI_SIG_FACP, 4) == 0)
         {
-          facp = (struct acpi_facp_s *)(uintptr_t)*tp32;
+          facp = (struct acpi_facp_s *)addr;
           dsdt_h = (struct acpi_sdt_s *)(uintptr_t)facp->dsdt;
           acpi_map_region((uintptr_t)dsdt_h, sizeof(struct acpi_sdt_s));
 
@@ -784,7 +800,10 @@ void acpi_dump(void)
 
       while (tp64 < end64)
         {
-          acpi_sdt_dump((struct acpi_sdt_s *)(uintptr_t)*tp64);
+          uintptr_t addr = 0;
+
+          memcpy(&addr, tp64, sizeof(*tp64));
+          acpi_sdt_dump((struct acpi_sdt_s *)addr);
 
           /* Next table */
 
@@ -803,7 +822,10 @@ void acpi_dump(void)
 
       while (tp32 < end32)
         {
-          acpi_sdt_dump((struct acpi_sdt_s *)(uintptr_t)*tp32);
+          uintptr_t addr = 0;
+
+          memcpy(&addr, tp32, sizeof(*tp32));
+          acpi_sdt_dump((struct acpi_sdt_s *)addr);
 
           /* Next table */
 
