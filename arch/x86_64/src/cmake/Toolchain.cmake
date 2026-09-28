@@ -273,6 +273,14 @@ if(NOT CONFIG_LIBCXXTOOLCHAIN)
   add_compile_options($<$<COMPILE_LANGUAGE:CXX>:-nostdinc++>)
 endif()
 
+if(CONFIG_MM_UBSAN_ALL)
+  add_compile_options(${CONFIG_MM_UBSAN_OPTION})
+endif()
+
+if(CONFIG_MM_UBSAN_TRAP_ON_ERROR)
+  add_compile_options(-fsanitize-undefined-trap-on-error)
+endif()
+
 if(CONFIG_MM_KASAN_INSTRUMENT_ALL)
   add_compile_options(-fsanitize=kernel-address)
 endif()

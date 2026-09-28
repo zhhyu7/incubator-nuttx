@@ -165,6 +165,14 @@ ifeq ($(CONFIG_LIBCXX),y)
   CXXFLAGS += -D_LIBCPP_DISABLE_AVAILABILITY
 endif
 
+ifeq ($(CONFIG_MM_UBSAN_ALL),y)
+  ARCHOPTIMIZATION += $(CONFIG_MM_UBSAN_OPTION)
+endif
+
+ifeq ($(CONFIG_MM_UBSAN_TRAP_ON_ERROR),y)
+  ARCHOPTIMIZATION += -fsanitize-undefined-trap-on-error
+endif
+
 ifeq ($(CONFIG_MM_KASAN_INSTRUMENT_ALL),y)
   ARCHOPTIMIZATION += -fsanitize=kernel-address
   KASAN_PARAM += asan-stack=0
