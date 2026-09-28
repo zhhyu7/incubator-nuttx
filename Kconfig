@@ -2631,10 +2631,12 @@ config STACK_COLORATION
 
 config STACKCHECK_MARGIN
 	int "Stack overflow check size (bytes)"
-	depends on DEBUG_ASSERTIONS && !SIM_ASAN
+	depends on DEBUG_ASSERTIONS && STACK_COLORATION && !SIM_ASAN
 	default -1
 	---help---
 		Specifies the number of bytes at the end of the stack to check for overflow.
+		The check reads the stack coloration pattern, so it requires
+		STACK_COLORATION.
 
 		A value of -1 disables additional checking.
 		If the value is equal to 0, this will only check the SP is in tcb's stack range.
