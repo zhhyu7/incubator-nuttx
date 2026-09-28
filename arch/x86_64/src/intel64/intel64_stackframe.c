@@ -71,6 +71,11 @@
 
 void *up_stack_frame(struct tcb_s *tcb, size_t frame_size)
 {
+#ifdef CONFIG_STACK_CANARIES
+  uintptr_t guard;
+  uintptr_t start;
+  uintptr_t end;
+#endif
   void *ret;
 
   /* Align the frame_size */
@@ -85,7 +90,27 @@ void *up_stack_frame(struct tcb_s *tcb, size_t frame_size)
     }
 
   ret = tcb->stack_base_ptr;
-  memset(ret, 0, frame_size);
+
+#ifdef CONFIG_STACK_CANARIES
+  /* Clearing the frame of the running thread must not clear its own
+   * canary guard, or every caller still on the stack fails its check.
+   */
+
+  guard = x86_64_tp_addr(tcb) + ARCH_TP_GUARD;
+  start = (uintptr_t)ret;
+  end   = start + frame_size;
+
+  if (guard >= start && guard + sizeof(uintptr_t) <= end)
+    {
+      memset(ret, 0, guard - start);
+      memset((FAR void *)(guard + sizeof(uintptr_t)), 0,
+             end - guard - sizeof(uintptr_t));
+    }
+  else
+#endif
+    {
+      memset(ret, 0, frame_size);
+    }
 
 #ifdef CONFIG_SCHED_THREAD_LOCAL
   /* Arch specific tls init hook would be ideal but it is dropped.

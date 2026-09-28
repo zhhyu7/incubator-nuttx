@@ -31,8 +31,6 @@
  * Pre-processor Definitions
  ****************************************************************************/
 
-#define X86_64_RED_ZONE 256
-
 /****************************************************************************
  * Public Functions
  ****************************************************************************/
@@ -70,8 +68,12 @@ size_t x86_64_stack_check(void *stackbase, size_t nbytes)
 
   /* Take extra care that we do not check outside the stack boundaries */
 
-  start = STACKFRAME_ALIGN_UP((uintptr_t)stackbase + X86_64_RED_ZONE);
+  start = STACKFRAME_ALIGN_UP((uintptr_t)stackbase);
   end   = STACKFRAME_ALIGN_DOWN((uintptr_t)stackbase + nbytes);
+  if (end <= start)
+    {
+      return 0;
+    }
 
   /* Get the adjusted size based on the top and bottom of the stack */
 
@@ -109,8 +111,7 @@ void x86_64_stack_color(void *stackbase, size_t nbytes)
 
   /* Take extra care that we do not write outside the stack boundaries */
 
-  stkptr = (uint32_t *)STACKFRAME_ALIGN_UP(
-    (uintptr_t)(stackbase + X86_64_RED_ZONE));
+  stkptr = (uint32_t *)STACKFRAME_ALIGN_UP((uintptr_t)stackbase);
 
   if (nbytes == 0) /* 0: colorize the running stack */
     {

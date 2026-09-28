@@ -336,6 +336,18 @@ static inline_function uintptr_t x86_64_tp_addr(struct tcb_s *tcb)
   return (uintptr_t)(tcb->stack_alloc_ptr + x86_64_tp_offset());
 }
 
+#ifdef CONFIG_STACK_CANARIES
+extern FAR const void *const __stack_chk_guard;
+
+nostackprotect_function
+static inline_function void x86_64_tp_guard_init(uintptr_t tp)
+{
+  *(uintptr_t *)(tp + ARCH_TP_GUARD) = (uintptr_t)__stack_chk_guard;
+}
+#else
+#  define x86_64_tp_guard_init(tp)
+#endif
+
 /* TCB specific thread local zone initialization */
 
 static inline_function void x86_64_tp_init(struct tcb_s *tcb)
@@ -345,6 +357,7 @@ static inline_function void x86_64_tp_init(struct tcb_s *tcb)
   if (!*tp)  /* Do only once */
     {
       *tp = (uintptr_t)tp;
+      x86_64_tp_guard_init((uintptr_t)tp);
     }
 }
 
@@ -358,6 +371,7 @@ static inline_function void x86_64_tp_boot(int cpu)
 
   fsbase += x86_64_tp_offset();
   *(uintptr_t *)fsbase = fsbase;
+  x86_64_tp_guard_init(fsbase);
   write_fsbase(fsbase);
 }
 #endif

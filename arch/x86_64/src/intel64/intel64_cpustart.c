@@ -183,7 +183,12 @@ void x86_64_ap_boot(void)
    * water marks.
    */
 
-  x86_64_stack_color(tcb->stack_alloc_ptr, 0);
+  /* The TLS block at the stack bottom is already live (thread pointer
+   * and canary guard), so colour only the part above it.
+   */
+
+  x86_64_stack_color((FAR uint8_t *)tcb->stack_alloc_ptr +
+                     STACKFRAME_ALIGN_UP(tls_size()), 0);
 #endif
 
   intel64_timer_secondary_init();

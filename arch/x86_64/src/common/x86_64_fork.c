@@ -202,8 +202,8 @@ pid_t x86_64_fork(const struct fork_s *context)
 #endif
 
 #ifdef CONFIG_STACK_CANARIES
-  *(uintptr_t *)(x86_64_tp_addr(child) + 0x28) =
-                *(uintptr_t *)(__builtin_thread_pointer() + 0x28);
+  *(uintptr_t *)(x86_64_tp_addr(child) + ARCH_TP_GUARD) =
+                *(uintptr_t *)(__builtin_thread_pointer() + ARCH_TP_GUARD);
 #endif
 
   /* And, finally, start the child task.  On a failure, nxtask_start_fork()

@@ -61,7 +61,17 @@
 #define ARCH_SPGTS          (ARCH_PGT_MAX_LEVELS - 1)
 
 #define ARCH_TP_OFFSET      (0 * sizeof(uintptr_t))
-#define ARCH_TP_PADDING     (1 * sizeof(uintptr_t))
+
+/* GCC reads the stack protector guard from %fs:0x28, so the padding after
+ * the self-pointing thread pointer must reach that word.
+ */
+
+#ifdef CONFIG_STACK_CANARIES
+#  define ARCH_TP_PADDING   (6 * sizeof(uintptr_t))
+#  define ARCH_TP_GUARD     (5 * sizeof(uintptr_t))
+#else
+#  define ARCH_TP_PADDING   (1 * sizeof(uintptr_t))
+#endif
 
 /****************************************************************************
  * Inline functions
