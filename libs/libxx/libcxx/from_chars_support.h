@@ -29,11 +29,13 @@
 #include <limits>
 #include <type_traits>
 
-// POSIX locale isolation
-#if __has_include(<xlocale.h>)
-#include <xlocale.h>
-#elif __has_include(<locale.h>)
+// POSIX locale isolation.  <locale.h> is tried first: NuttX declares locale_t
+// and the LC_*_MASK values there, while the TASKING compatibility <xlocale.h>
+// that sits on the include path declares both again with different values.
+#if __has_include(<locale.h>)
 #include <locale.h>
+#elif __has_include(<xlocale.h>)
+#include <xlocale.h>
 #endif
 
 #ifndef LIBC_NAMESPACE
