@@ -1634,7 +1634,13 @@ noreturn_function static inline void code_unreachable(void)
 
 extern void up_exit(int status);
 #define __builtin_abort()             up_exit(1)
-void __builtin_unreachable(void);
+
+/* No equivalent exists.  code_unreachable() above already falls back to a
+ * static inline with an endless loop when the compiler offers nothing
+ * better, so reuse it rather than expand to nothing.
+ */
+
+#define __builtin_unreachable()       code_unreachable()
 
 int __builtin_strcmp(const char *s1, const char *s2);
 void *__builtin_memchr(const void *s, int c, unsigned int n);
@@ -1645,21 +1651,42 @@ void *__builtin_memmove(void *dest, void *src, unsigned int n);
 #define __builtin_memmove(x, y, z) __builtin_memmove(x, (FAR void*)y, z)
 #define __builtin_memcpy __builtin_memmove
 
-long long __builtin_llabs(long long x);
+long long llabs(long long x);
+#define __builtin_llabs(x)            llabs(x)
 
-int __builtin_isnan(double x);
-int __builtin_isnanf(float x);
-int __builtin_isnanl(long double x);
-int __builtin_fpclassify(int __class, ...);
-
-/* libm entry points backing the C++ isnormal overloads at the end of this
- * file.  There is no __builtin_isnormal, and the compiler's own isnormal()
- * resolves to these as well.
+/* isnan carries the width in its name at the call site, so it can be a
+ * macro like the plain math functions below.
  */
 
+int _isnan(double x);
+#define __builtin_isnan(x)            _isnan(x)
+int _isnanf(float x);
+#define __builtin_isnanf(x)           _isnanf(x)
+int _isnanl(long double x);
+#define __builtin_isnanl(x)           _isnanl(x)
+
+/* The remaining classification builtins carry no width in their name: the
+ * call site selects them by argument type, so they have to be overloads.
+ * Only the libm entry points are declared here; the overloads are in the
+ * extern "C++" block at the end of this file.  These are also what the
+ * compiler's own isinf(), isnormal() and friends resolve to.
+ */
+
+int _isinf(double x);
+int _isinff(float x);
+int _isinfl(long double x);
+int _isfinite(double x);
+int _isfinitef(float x);
+int _isfinitel(long double x);
+int _signbit(double x);
+int _signbitf(float x);
+int _signbitl(long double x);
 int _isnormal(double x);
 int _isnormalf(float x);
 int _isnormall(long double x);
+int _fpclassify(double x);
+int _fpclassifyf(float x);
+int _fpclassifyl(long double x);
 int _isgreater(double x, double y);
 int _isgreaterf(float x, float y);
 int _isgreaterl(long double x, long double y);
@@ -1679,63 +1706,157 @@ int _isunordered(double x, double y);
 int _isunorderedf(float x, float y);
 int _isunorderedl(long double x, long double y);
 
-/* Math builtins mapped to TASKING libm.a */
+/* Math builtins mapped to TASKING libm.a
+ *
+ * TASKING has none of the GCC __builtin_ math names, and declaring
+ * them would only move the failure to link time: no TASKING library
+ * exports a symbol under a __builtin_ name.  Declare the libm entry
+ * point instead and map the builtin onto it.
+ */
 
 /* Trigonometric */
 
-float __builtin_acosf(float x);
-long double __builtin_acosl(long double x);
-float __builtin_asinf(float x);
-long double __builtin_asinl(long double x);
-float __builtin_atanf(float x);
-long double __builtin_atanl(long double x);
-float __builtin_atan2f(float y, float x);
-long double __builtin_atan2l(long double y, long double x);
-float __builtin_cosf(float x);
-long double __builtin_cosl(long double x);
-float __builtin_sinf(float x);
-long double __builtin_sinl(long double x);
-float __builtin_tanf(float x);
-long double __builtin_tanl(long double x);
+float acosf(float x);
+#  define __builtin_acosf(x) acosf(x)
+double acos(double x);
+#  define __builtin_acos(x) acos(x)
+long double acosl(long double x);
+#  define __builtin_acosl(x) acosl(x)
+float asinf(float x);
+#  define __builtin_asinf(x) asinf(x)
+double asin(double x);
+#  define __builtin_asin(x) asin(x)
+long double asinl(long double x);
+#  define __builtin_asinl(x) asinl(x)
+float atanf(float x);
+#  define __builtin_atanf(x) atanf(x)
+double atan(double x);
+#  define __builtin_atan(x) atan(x)
+long double atanl(long double x);
+#  define __builtin_atanl(x) atanl(x)
+float atan2f(float y, float x);
+#  define __builtin_atan2f(y, x) atan2f(y, x)
+double atan2(double y, double x);
+#  define __builtin_atan2(y, x) atan2(y, x)
+long double atan2l(long double y, long double x);
+#  define __builtin_atan2l(y, x) atan2l(y, x)
+float cosf(float x);
+#  define __builtin_cosf(x) cosf(x)
+double cos(double x);
+#  define __builtin_cos(x) cos(x)
+long double cosl(long double x);
+#  define __builtin_cosl(x) cosl(x)
+float sinf(float x);
+#  define __builtin_sinf(x) sinf(x)
+double sin(double x);
+#  define __builtin_sin(x) sin(x)
+long double sinl(long double x);
+#  define __builtin_sinl(x) sinl(x)
+float tanf(float x);
+#  define __builtin_tanf(x) tanf(x)
+double tan(double x);
+#  define __builtin_tan(x) tan(x)
+long double tanl(long double x);
+#  define __builtin_tanl(x) tanl(x)
 
 /* Hyperbolic */
 
-float __builtin_acoshf(float x);
-long double __builtin_acoshl(long double x);
-float __builtin_asinhf(float x);
-long double __builtin_asinhl(long double x);
-float __builtin_atanhf(float x);
-long double __builtin_atanhl(long double x);
-float __builtin_coshf(float x);
-long double __builtin_coshl(long double x);
-float __builtin_sinhf(float x);
-long double __builtin_sinhl(long double x);
-float __builtin_tanhf(float x);
-long double __builtin_tanhl(long double x);
+float acoshf(float x);
+#  define __builtin_acoshf(x) acoshf(x)
+double acosh(double x);
+#  define __builtin_acosh(x) acosh(x)
+long double acoshl(long double x);
+#  define __builtin_acoshl(x) acoshl(x)
+float asinhf(float x);
+#  define __builtin_asinhf(x) asinhf(x)
+double asinh(double x);
+#  define __builtin_asinh(x) asinh(x)
+long double asinhl(long double x);
+#  define __builtin_asinhl(x) asinhl(x)
+float atanhf(float x);
+#  define __builtin_atanhf(x) atanhf(x)
+double atanh(double x);
+#  define __builtin_atanh(x) atanh(x)
+long double atanhl(long double x);
+#  define __builtin_atanhl(x) atanhl(x)
+float coshf(float x);
+#  define __builtin_coshf(x) coshf(x)
+double cosh(double x);
+#  define __builtin_cosh(x) cosh(x)
+long double coshl(long double x);
+#  define __builtin_coshl(x) coshl(x)
+float sinhf(float x);
+#  define __builtin_sinhf(x) sinhf(x)
+double sinh(double x);
+#  define __builtin_sinh(x) sinh(x)
+long double sinhl(long double x);
+#  define __builtin_sinhl(x) sinhl(x)
+float tanhf(float x);
+#  define __builtin_tanhf(x) tanhf(x)
+double tanh(double x);
+#  define __builtin_tanh(x) tanh(x)
+long double tanhl(long double x);
+#  define __builtin_tanhl(x) tanhl(x)
 
 /* Exponential and logarithmic */
 
-float __builtin_expf(float x);
-long double __builtin_expl(long double x);
-float __builtin_expm1f(float x);
-long double __builtin_expm1l(long double x);
-float __builtin_frexpf(float x, int *exp);
-long double __builtin_frexpl(long double x, int *exp);
-float __builtin_ldexpf(float x, int exp);
-long double __builtin_ldexpl(long double x, int exp);
-float __builtin_logf(float x);
-long double __builtin_logl(long double x);
-float __builtin_log10f(float x);
-long double __builtin_log10l(long double x);
-float __builtin_log2f(float x);
-long double __builtin_log2l(long double x);
+float expf(float x);
+#  define __builtin_expf(x) expf(x)
+double exp(double x);
+#  define __builtin_exp(x) exp(x)
+long double expl(long double x);
+#  define __builtin_expl(x) expl(x)
+float expm1f(float x);
+#  define __builtin_expm1f(x) expm1f(x)
+double expm1(double x);
+#  define __builtin_expm1(x) expm1(x)
+long double expm1l(long double x);
+#  define __builtin_expm1l(x) expm1l(x)
+float frexpf(float x, int *exp);
+#  define __builtin_frexpf(x, exp) frexpf(x, exp)
+double frexp(double x, int *exp);
+#  define __builtin_frexp(x, exp) frexp(x, exp)
+long double frexpl(long double x, int *exp);
+#  define __builtin_frexpl(x, exp) frexpl(x, exp)
+float ldexpf(float x, int exp);
+#  define __builtin_ldexpf(x, exp) ldexpf(x, exp)
+double ldexp(double x, int exp);
+#  define __builtin_ldexp(x, exp) ldexp(x, exp)
+long double ldexpl(long double x, int exp);
+#  define __builtin_ldexpl(x, exp) ldexpl(x, exp)
+float logf(float x);
+#  define __builtin_logf(x) logf(x)
+double log(double x);
+#  define __builtin_log(x) log(x)
+long double logl(long double x);
+#  define __builtin_logl(x) logl(x)
+float log10f(float x);
+#  define __builtin_log10f(x) log10f(x)
+double log10(double x);
+#  define __builtin_log10(x) log10(x)
+long double log10l(long double x);
+#  define __builtin_log10l(x) log10l(x)
+float log2f(float x);
+#  define __builtin_log2f(x) log2f(x)
+double log2(double x);
+#  define __builtin_log2(x) log2(x)
+long double log2l(long double x);
+#  define __builtin_log2l(x) log2l(x)
 
 /* Power and root */
 
-float __builtin_powf(float x, float y);
-long double __builtin_powl(long double x, long double y);
-float __builtin_sqrtf(float x);
-long double __builtin_sqrtl(long double x);
+float powf(float x, float y);
+#  define __builtin_powf(x, y) powf(x, y)
+double pow(double x, double y);
+#  define __builtin_pow(x, y) pow(x, y)
+long double powl(long double x, long double y);
+#  define __builtin_powl(x, y) powl(x, y)
+float sqrtf(float x);
+#  define __builtin_sqrtf(x) sqrtf(x)
+double sqrt(double x);
+#  define __builtin_sqrt(x) sqrt(x)
+long double sqrtl(long double x);
+#  define __builtin_sqrtl(x) sqrtl(x)
 
 /* Rounding and remainder */
 
@@ -1743,82 +1864,199 @@ extern float ceilf(float);
 #define __builtin_ceilf(x)            ceilf(x)
 extern long double ceill(long double);
 #define __builtin_ceill(x)            ceill(x)
-float __builtin_floorf(float x);
-long double __builtin_floorl(long double x);
-float __builtin_fmodf(float x, float y);
-long double __builtin_fmodl(long double x, long double y);
-float __builtin_modff(float x, float *iptr);
-long double __builtin_modfl(long double x, long double *iptr);
-float __builtin_rintf(float x);
-long double __builtin_rintl(long double x);
-double __builtin_round(double x);
-long double __builtin_roundl(long double x);
-double __builtin_trunc(double x);
-long double __builtin_truncl(long double x);
-long long __builtin_llroundf(float x);
-long long __builtin_llroundl(long double x);
-long __builtin_lroundf(float x);
-long __builtin_lroundl(long double x);
-float __builtin_scalbnf(float x, int n);
-long double __builtin_scalbnl(long double x, int n);
+float floorf(float x);
+#  define __builtin_floorf(x) floorf(x)
+double floor(double x);
+#  define __builtin_floor(x) floor(x)
+long double floorl(long double x);
+#  define __builtin_floorl(x) floorl(x)
+float fmodf(float x, float y);
+#  define __builtin_fmodf(x, y) fmodf(x, y)
+double fmod(double x, double y);
+#  define __builtin_fmod(x, y) fmod(x, y)
+long double fmodl(long double x, long double y);
+#  define __builtin_fmodl(x, y) fmodl(x, y)
+float modff(float x, float *iptr);
+#  define __builtin_modff(x, iptr) modff(x, iptr)
+double modf(double x, double *iptr);
+#  define __builtin_modf(x, iptr) modf(x, iptr)
+long double modfl(long double x, long double *iptr);
+#  define __builtin_modfl(x, iptr) modfl(x, iptr)
+float rintf(float x);
+#  define __builtin_rintf(x) rintf(x)
+double rint(double x);
+#  define __builtin_rint(x) rint(x)
+long double rintl(long double x);
+#  define __builtin_rintl(x) rintl(x)
+float roundf(float x);
+#  define __builtin_roundf(x) roundf(x)
+double round(double x);
+#  define __builtin_round(x) round(x)
+long double roundl(long double x);
+#  define __builtin_roundl(x) roundl(x)
+float truncf(float x);
+#  define __builtin_truncf(x) truncf(x)
+double trunc(double x);
+#  define __builtin_trunc(x) trunc(x)
+long double truncl(long double x);
+#  define __builtin_truncl(x) truncl(x)
+long long llroundf(float x);
+#  define __builtin_llroundf(x) llroundf(x)
+long long llroundl(long double x);
+#  define __builtin_llroundl(x) llroundl(x)
+long lroundf(float x);
+#  define __builtin_lroundf(x) lroundf(x)
+long lroundl(long double x);
+#  define __builtin_lroundl(x) lroundl(x)
+float scalbnf(float x, int n);
+#  define __builtin_scalbnf(x, n) scalbnf(x, n)
+double scalbn(double x, int n);
+#  define __builtin_scalbn(x, n) scalbn(x, n)
+long double scalbnl(long double x, int n);
+#  define __builtin_scalbnl(x, n) scalbnl(x, n)
 
 /* Absolute value, sign, min/max */
 
-long double __builtin_fabsl(long double x);
-float __builtin_copysignf(float x, float y);
-long double __builtin_copysignl(long double x, long double y);
-double __builtin_copysign(double x, double y);
-float __builtin_fmaxf(float x, float y);
-long double __builtin_fmaxl(long double x, long double y);
-double __builtin_fmax(double x, double y);
-float __builtin_fminf(float x, float y);
-long double __builtin_fminl(long double x, long double y);
+long double fabsl(long double x);
+#  define __builtin_fabsl(x) fabsl(x)
+float copysignf(float x, float y);
+#  define __builtin_copysignf(x, y) copysignf(x, y)
+long double copysignl(long double x, long double y);
+#  define __builtin_copysignl(x, y) copysignl(x, y)
+double copysign(double x, double y);
+#  define __builtin_copysign(x, y) copysign(x, y)
+float fmaxf(float x, float y);
+#  define __builtin_fmaxf(x, y) fmaxf(x, y)
+long double fmaxl(long double x, long double y);
+#  define __builtin_fmaxl(x, y) fmaxl(x, y)
+double fmax(double x, double y);
+#  define __builtin_fmax(x, y) fmax(x, y)
+float fminf(float x, float y);
+#  define __builtin_fminf(x, y) fminf(x, y)
+double fmin(double x, double y);
+#  define __builtin_fmin(x, y) fmin(x, y)
+long double fminl(long double x, long double y);
+#  define __builtin_fminl(x, y) fminl(x, y)
 
 /* Error function */
 
-float __builtin_erff(float x);
-long double __builtin_erfl(long double x);
-float __builtin_erfcf(float x);
-long double __builtin_erfcl(long double x);
+float erff(float x);
+#  define __builtin_erff(x) erff(x)
+double erf(double x);
+#  define __builtin_erf(x) erf(x)
+long double erfl(long double x);
+#  define __builtin_erfl(x) erfl(x)
+float erfcf(float x);
+#  define __builtin_erfcf(x) erfcf(x)
+double erfc(double x);
+#  define __builtin_erfc(x) erfc(x)
+long double erfcl(long double x);
+#  define __builtin_erfcl(x) erfcl(x)
 
-/* Additional math builtins (also in TASKING libm.a) */
+/* Added by C99 */
 
-float __builtin_cbrtf(float x);
-long double __builtin_cbrtl(long double x);
-float __builtin_exp2f(float x);
-long double __builtin_exp2l(long double x);
-float __builtin_fdimf(float x, float y);
-long double __builtin_fdiml(long double x, long double y);
-float __builtin_fmaf(float x, float y, float z);
-long double __builtin_fmal(long double x, long double y, long double z);
-float __builtin_hypotf(float x, float y);
-long double __builtin_hypotl(long double x, long double y);
-int __builtin_ilogbf(float x);
-int __builtin_ilogbl(long double x);
-float __builtin_lgammaf(float x);
-long double __builtin_lgammal(long double x);
-long long __builtin_llrintf(float x);
-long long __builtin_llrintl(long double x);
-float __builtin_log1pf(float x);
-long double __builtin_log1pl(long double x);
-float __builtin_logbf(float x);
-long double __builtin_logbl(long double x);
-long __builtin_lrintf(float x);
-long __builtin_lrintl(long double x);
-float __builtin_nearbyintf(float x);
-long double __builtin_nearbyintl(long double x);
-float __builtin_nextafterf(float x, float y);
-long double __builtin_nextafterl(long double x, long double y);
-float __builtin_nexttowardf(float x, long double y);
-long double __builtin_nexttowardl(long double x, long double y);
-float __builtin_remainderf(float x, float y);
-long double __builtin_remainderl(long double x, long double y);
-float __builtin_remquof(float x, float y, int *quo);
-long double __builtin_remquol(long double x, long double y, int *quo);
-float __builtin_scalblnf(float x, long int n);
-long double __builtin_scalblnl(long double x, long int n);
-float __builtin_tgammaf(float x);
-long double __builtin_tgammal(long double x);
+float cbrtf(float x);
+#  define __builtin_cbrtf(x) cbrtf(x)
+double cbrt(double x);
+#  define __builtin_cbrt(x) cbrt(x)
+long double cbrtl(long double x);
+#  define __builtin_cbrtl(x) cbrtl(x)
+float exp2f(float x);
+#  define __builtin_exp2f(x) exp2f(x)
+double exp2(double x);
+#  define __builtin_exp2(x) exp2(x)
+long double exp2l(long double x);
+#  define __builtin_exp2l(x) exp2l(x)
+float fdimf(float x, float y);
+#  define __builtin_fdimf(x, y) fdimf(x, y)
+double fdim(double x, double y);
+#  define __builtin_fdim(x, y) fdim(x, y)
+long double fdiml(long double x, long double y);
+#  define __builtin_fdiml(x, y) fdiml(x, y)
+float fmaf(float x, float y, float z);
+#  define __builtin_fmaf(x, y, z) fmaf(x, y, z)
+double fma(double x, double y, double z);
+#  define __builtin_fma(x, y, z) fma(x, y, z)
+long double fmal(long double x, long double y, long double z);
+#  define __builtin_fmal(x, y, z) fmal(x, y, z)
+float hypotf(float x, float y);
+#  define __builtin_hypotf(x, y) hypotf(x, y)
+double hypot(double x, double y);
+#  define __builtin_hypot(x, y) hypot(x, y)
+long double hypotl(long double x, long double y);
+#  define __builtin_hypotl(x, y) hypotl(x, y)
+int ilogbf(float x);
+#  define __builtin_ilogbf(x) ilogbf(x)
+int ilogbl(long double x);
+#  define __builtin_ilogbl(x) ilogbl(x)
+float lgammaf(float x);
+#  define __builtin_lgammaf(x) lgammaf(x)
+double lgamma(double x);
+#  define __builtin_lgamma(x) lgamma(x)
+long double lgammal(long double x);
+#  define __builtin_lgammal(x) lgammal(x)
+long long llrintf(float x);
+#  define __builtin_llrintf(x) llrintf(x)
+long long llrintl(long double x);
+#  define __builtin_llrintl(x) llrintl(x)
+float log1pf(float x);
+#  define __builtin_log1pf(x) log1pf(x)
+double log1p(double x);
+#  define __builtin_log1p(x) log1p(x)
+long double log1pl(long double x);
+#  define __builtin_log1pl(x) log1pl(x)
+float logbf(float x);
+#  define __builtin_logbf(x) logbf(x)
+double logb(double x);
+#  define __builtin_logb(x) logb(x)
+long double logbl(long double x);
+#  define __builtin_logbl(x) logbl(x)
+long lrintf(float x);
+#  define __builtin_lrintf(x) lrintf(x)
+long lrintl(long double x);
+#  define __builtin_lrintl(x) lrintl(x)
+float nearbyintf(float x);
+#  define __builtin_nearbyintf(x) nearbyintf(x)
+double nearbyint(double x);
+#  define __builtin_nearbyint(x) nearbyint(x)
+long double nearbyintl(long double x);
+#  define __builtin_nearbyintl(x) nearbyintl(x)
+float nextafterf(float x, float y);
+#  define __builtin_nextafterf(x, y) nextafterf(x, y)
+double nextafter(double x, double y);
+#  define __builtin_nextafter(x, y) nextafter(x, y)
+long double nextafterl(long double x, long double y);
+#  define __builtin_nextafterl(x, y) nextafterl(x, y)
+float nexttowardf(float x, long double y);
+#  define __builtin_nexttowardf(x, y) nexttowardf(x, y)
+double nexttoward(double x, long double y);
+#  define __builtin_nexttoward(x, y) nexttoward(x, y)
+long double nexttowardl(long double x, long double y);
+#  define __builtin_nexttowardl(x, y) nexttowardl(x, y)
+float remainderf(float x, float y);
+#  define __builtin_remainderf(x, y) remainderf(x, y)
+double remainder(double x, double y);
+#  define __builtin_remainder(x, y) remainder(x, y)
+long double remainderl(long double x, long double y);
+#  define __builtin_remainderl(x, y) remainderl(x, y)
+float remquof(float x, float y, int *quo);
+#  define __builtin_remquof(x, y, quo) remquof(x, y, quo)
+double remquo(double x, double y, int *quo);
+#  define __builtin_remquo(x, y, quo) remquo(x, y, quo)
+long double remquol(long double x, long double y, int *quo);
+#  define __builtin_remquol(x, y, quo) remquol(x, y, quo)
+float scalblnf(float x, long int n);
+#  define __builtin_scalblnf(x, n) scalblnf(x, n)
+double scalbln(double x, long int n);
+#  define __builtin_scalbln(x, n) scalbln(x, n)
+long double scalblnl(long double x, long int n);
+#  define __builtin_scalblnl(x, n) scalblnl(x, n)
+float tgammaf(float x);
+#  define __builtin_tgammaf(x) tgammaf(x)
+double tgamma(double x);
+#  define __builtin_tgamma(x) tgamma(x)
+long double tgammal(long double x);
+#  define __builtin_tgammal(x) tgammal(x)
 
 #endif  // __ASSEMBLY__
 
@@ -1835,15 +2073,72 @@ long double __builtin_tgammal(long double x);
 
 extern "C++"
 {
-  int __builtin_isinf(float x);
-  int __builtin_isinf(double x);
-  int __builtin_isinf(long double x);
-  int __builtin_isfinite(float x);
-  int __builtin_isfinite(double x);
-  int __builtin_isfinite(long double x);
-  bool __builtin_signbit(float x);
-  bool __builtin_signbit(double x);
-  bool __builtin_signbit(long double x);
+  inline int __builtin_isinf(float x)
+  {
+    return _isinff(x);
+  }
+
+  inline int __builtin_isinf(double x)
+  {
+    return _isinf(x);
+  }
+
+  inline int __builtin_isinf(long double x)
+  {
+    return _isinfl(x);
+  }
+
+  inline int __builtin_isfinite(float x)
+  {
+    return _isfinitef(x);
+  }
+
+  inline int __builtin_isfinite(double x)
+  {
+    return _isfinite(x);
+  }
+
+  inline int __builtin_isfinite(long double x)
+  {
+    return _isfinitel(x);
+  }
+
+  inline bool __builtin_signbit(float x)
+  {
+    return _signbitf(x) != 0;
+  }
+
+  inline bool __builtin_signbit(double x)
+  {
+    return _signbit(x) != 0;
+  }
+
+  inline bool __builtin_signbit(long double x)
+  {
+    return _signbitl(x) != 0;
+  }
+
+  /* __builtin_fpclassify picks whichever of its five code arguments
+   * matches the class of x.  _fpclassify already returns the FP_ codes,
+   * and those are what libc++ passes in, so hand its result back
+   * unchanged.  The codes cannot be compared here because <math.h>
+   * defines them and this header cannot include it.
+   */
+
+  inline int __builtin_fpclassify(int, int, int, int, int, float x)
+  {
+    return _fpclassifyf(x);
+  }
+
+  inline int __builtin_fpclassify(int, int, int, int, int, double x)
+  {
+    return _fpclassify(x);
+  }
+
+  inline int __builtin_fpclassify(int, int, int, int, int, long double x)
+  {
+    return _fpclassifyl(x);
+  }
 
   inline bool __builtin_isnormal(float x)
   {
