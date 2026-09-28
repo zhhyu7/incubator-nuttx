@@ -152,11 +152,6 @@ if(CONFIG_LIBCXX)
     list(APPEND FLAGS -Wno-maybe-uninitialized -Wno-alloc-size-larger-than)
   endif()
 
-  # Suppress C++20 keyword(e.g. constinit macro) for -std=c++17
-  if(${CPP_STD_VER} LESS 20)
-    list(APPEND FLAGS -Wno-c++20-compat)
-  endif()
-
   nuttx_add_system_library(libcxx)
   target_sources(libcxx PRIVATE ${SRCS})
 

@@ -113,5 +113,4 @@ endif
 # Map C++20 keyword constinit to compiler attribute for C++17 builds
 ifeq ($(shell [ $(CPP_STD_VER) -lt 20 ] && echo true),true)
   CXXFLAGS += ${DEFINE_PREFIX}constinit=__attribute__\(\(__require_constant_initialization__\)\)
-  CXXFLAGS += -Wno-c++20-compat
 endif

@@ -145,7 +145,6 @@ if(CONFIG_LIBCXXABI)
     target_compile_definitions(
       libcxxabi
       PRIVATE "constinit=__attribute__((__require_constant_initialization__))")
-    target_compile_options(libcxxabi PRIVATE -Wno-c++20-compat)
   endif()
 
   target_sources(libcxxabi PRIVATE ${TARGET_SRCS})
