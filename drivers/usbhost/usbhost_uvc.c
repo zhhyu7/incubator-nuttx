@@ -1423,7 +1423,17 @@ static bool uvc_deliver_frame(FAR struct uvc_dev_s *dev,
               return false;
             }
 
-          /* Must end with JPEG EOI (FF D9) */
+          /* The device pads the last payload to an even length with a zero
+           * byte, so a JPEG body of odd length ends in FF D9 00.  UVC
+           * carries no length field to tell the pad from data, which leaves
+           * the EOI as the only completeness signal available here.
+           */
+
+          if (sz >= 5 && data[sz - 1] == 0x00 &&
+              data[sz - 3] == 0xff && data[sz - 2] == 0xd9)
+            {
+              sz--;
+            }
 
           if (sz < 4 || data[sz - 2] != 0xff || data[sz - 1] != 0xd9)
             {
