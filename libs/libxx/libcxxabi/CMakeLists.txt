@@ -78,9 +78,14 @@ if(CONFIG_LIBCXXABI)
     cxa_demangle.cpp
     cxa_guard.cpp
     cxa_handlers.cpp
-    cxa_thread_atexit.cpp
     cxa_vector.cpp
     cxa_virtual.cpp)
+
+  # TASKING rejects __thread
+  if(NOT CONFIG_ARCH_TOOLCHAIN_TASKING)
+    list(APPEND SRCS cxa_thread_atexit.cpp)
+  endif()
+
   add_compile_definitions(_LIBCPP_BUILDING_LIBRARY)
   add_compile_definitions(LIBCXXABI_BAREMETAL)
 
