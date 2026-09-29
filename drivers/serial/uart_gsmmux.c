@@ -545,35 +545,6 @@ static ssize_t gsmmux_uart_write(FAR struct gsmmux_s *gsmmux,
    */
 
   flags = uart_spinlock(gsmmux->uart, true);
-  if (up_interrupt_context() || sched_idletask() || OSINIT_IS_PANIC())
-    {
-      size_t j;
-
-      for (i = 0; i < iovcnt; i++)
-        {
-          if (gsmmux->uart->ops->sendbuf)
-            {
-              ssize_t ret = uart_sendbuf(gsmmux->uart, iov[i].iov_base,
-                                         iov[i].iov_len);
-              if (ret > 0)
-                {
-                  written += ret;
-                }
-            }
-          else
-            {
-              for (j = 0; j < iov[i].iov_len; j++)
-                {
-                  int ch = ((FAR const char *)iov[i].iov_base)[j];
-                  uart_send(gsmmux->uart, ch);
-                  written++;
-                }
-            }
-        }
-
-      uart_spinunlock(gsmmux->uart, true, flags);
-      return written;
-    }
 
   available = gsmmux_uart_txavailable(txbuf);
 
@@ -1084,7 +1055,12 @@ static void gsmmux_tty_dmasend(FAR struct uart_dev_s *dev)
 
   ret = gsmmux_send_data(channel, dev->dmatx.buffer,
                          dev->dmatx.length);
-  if (ret > 0 && dev->dmatx.nlength > 0)
+
+  /* seg1 must fully send before seg2, else newer post-wrap bytes overtake
+   * the unsent tail and xmitchars_done advances past the gap.
+   */
+
+  if (ret == dev->dmatx.length && dev->dmatx.nlength > 0)
     {
       ssize_t ret2 = gsmmux_send_data(channel, dev->dmatx.nbuffer,
                                       dev->dmatx.nlength);
