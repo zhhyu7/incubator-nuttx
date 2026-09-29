@@ -599,10 +599,6 @@ rptun_create_heap(FAR struct rptun_priv_s *priv, FAR const char *name,
  *   manage.  Where the table leaves every device on the vhost side, none of
  *   this runs and the memory stays the peer's.
  *
- *   The pool is published once, by the master: both sides read the same
- *   table, so a slave building its own heap over it would alias the
- *   master's allocations.  A slave device needs a carveout of its own.
- *
  ****************************************************************************/
 
 static FAR struct rptun_carveout_s *
@@ -611,16 +607,6 @@ rptun_create_carveout(FAR struct rptun_priv_s *priv, unsigned int index)
   FAR struct rptun_carveout_s *carv;
   FAR struct fw_rsc_carveout *rsc;
   char name[RPROC_MAX_NAME_LEN];
-
-  if (priv->heap == NULL && RPTUN_IS_MASTER(priv->dev))
-    {
-      rsc = rptun_find_carveout(priv->rproc.rsc_table, "vdevbuffer");
-      if (rsc != NULL)
-        {
-          priv->heap = rptun_create_heap(priv, (FAR const char *)rsc->name,
-                                         rsc->da, NULL, rsc->len);
-        }
-    }
 
   carv = kmm_zalloc(sizeof(struct rptun_carveout_s));
   if (carv != NULL)
@@ -1047,12 +1033,6 @@ static void rptun_remove_devices(FAR struct rptun_priv_s *priv)
     }
 
   metal_mutex_release(&rproc->lock);
-
-  if (priv->heap != NULL)
-    {
-      mm_uninitialize(priv->heap);
-      priv->heap = NULL;
-    }
 }
 
 /****************************************************************************
@@ -1439,7 +1419,27 @@ static int rptun_start_thread(int argc, FAR char *argv[])
   ret = rptun_do_start(&priv->rproc);
   if (ret >= 0)
     {
+      FAR struct fw_rsc_carveout *rsc;
+      FAR const char *name;
       unsigned int retry = 0;
+
+      /* Build the pool the devices without a region of their own allocate
+       * from.  Each side gets its own carveout, because both read the same
+       * table: two heaps over one region would hand out the same memory
+       * twice.  The master takes "vdevbuffer" and the slave "hdevbuffer".
+       */
+
+      if (priv->heap == NULL)
+        {
+          name = RPTUN_IS_MASTER(priv->dev) ? "vdevbuffer" : "hdevbuffer";
+          rsc = rptun_find_carveout(priv->rproc.rsc_table, name);
+          if (rsc != NULL)
+            {
+              priv->heap = rptun_create_heap(priv,
+                                             (FAR const char *)rsc->name,
+                                             rsc->da, NULL, rsc->len);
+            }
+        }
 
       while (!priv->stop)
         {
@@ -1530,6 +1530,13 @@ static int rptun_dev_stop(FAR struct remoteproc *rproc)
         }
 
       rptun_remove_devices(priv);
+
+      if (priv->heap != NULL)
+        {
+          mm_uninitialize(priv->heap);
+          priv->heap = NULL;
+        }
+
       RPTUN_UNREGISTER_CALLBACK(priv->dev);
 #ifdef CONFIG_COREDUMP
       rptun_update_coredump_regions(priv, false);
