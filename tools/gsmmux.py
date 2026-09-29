@@ -1145,6 +1145,13 @@ class GSMMultiplexer:
                 timeout=0.1,
                 write_timeout=1.0,
             )
+            # Flush the kernel RX flip buffer at once rather than on the ~1ms
+            # timer, so the single reader keeps up with 921600 USB-CDC bursts.
+            # Some USB-CDC ACM drivers lack TIOCSSERIAL, so failure is benign.
+            try:
+                self.serial_port.set_low_latency_mode(True)
+            except (ValueError, OSError, NotImplementedError) as e:
+                print(f"Warning: low-latency mode unavailable: {e}")
         print(f"Opened serial port: {self.device_path} @ {self.baudrate} baud")
 
         # Open raw data log file
@@ -1364,8 +1371,11 @@ class GSMMultiplexer:
 
                 for fd in readable:
                     if fd == serial_fd:
+                        # One-shot large read relies on the low-latency flush
+                        # (open_serial) to keep the kernel RX from overflowing
+                        # on 921600 bursts, so one thread never loses bytes.
                         try:
-                            data = os.read(serial_fd, 8192)
+                            data = os.read(serial_fd, 65536)
                         except BlockingIOError:
                             continue
                         if data:
