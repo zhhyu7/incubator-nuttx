@@ -373,6 +373,6 @@ void tricore_trapinit(void)
 {
 #ifdef CONFIG_COREDUMP
   coredump_add_memory_region(&g_trapinfo, sizeof(struct tricore_trap_s),
-                             PF_REGISTER);
+                             PF_REGISTER | PF_COREDUMP_CURRENT);
 #endif
 }

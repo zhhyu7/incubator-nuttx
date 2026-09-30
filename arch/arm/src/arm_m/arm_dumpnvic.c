@@ -50,7 +50,7 @@ void arm_coredump_add_region(void)
 {
   coredump_add_memory_region((uint32_t *)ARM_NVIC_BASE,
                              NVIC_CID3 + 4 - ARM_NVIC_BASE,
-                             PF_REGISTER);
+                             PF_REGISTER | PF_COREDUMP_CURRENT);
 }
 
 #endif /* CONFIG_ARM_COREDUMP_REGION */
