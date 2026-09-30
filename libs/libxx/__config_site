@@ -86,4 +86,10 @@
 
 #define _SYS_REENT_H_
 
+// Alias TASKING '__is_same_as' as '__is_same', which could benefit for other compilers,
+// so we don't guard with __TASKING__
+#if !__has_builtin(__is_same) && __has_builtin(__is_same_as)
+#  define __is_same(_Tp, _Up) __is_same_as(_Tp, _Up)
+#endif
+
 #endif // _LIBCPP___CONFIG_SITE
