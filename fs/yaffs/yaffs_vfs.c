@@ -1422,6 +1422,7 @@ static int yaffs_check_block_bad_fn(FAR struct yaffs_dev *dev, int block_no)
 static int yaffs_vfs_bind(FAR struct inode *driver, FAR const void *data,
                           FAR void **handle)
 {
+  bool forceformat = data && strstr(data, "forceformat");
   FAR struct yaffs_mountpt_s *fs;
   FAR struct yaffs_dev *dev;
   FAR struct yaffs_param *p;
@@ -1517,7 +1518,7 @@ static int yaffs_vfs_bind(FAR struct inode *driver, FAR const void *data,
 
   /* Force format the device if -o forceformat */
 
-  if (data && strstr(data, "forceformat"))
+  if (forceformat)
     {
       ret = yaffs_format_reldev(dev, 1, 1, 0);
       if (ret < 0)
@@ -1528,6 +1529,7 @@ static int yaffs_vfs_bind(FAR struct inode *driver, FAR const void *data,
 
   ret = yaffs_mount3_reldev(dev,
                            (data && strstr(data, "ro")),
+                           forceformat ||
                            (data && strstr(data, "skip_chkpt")));
   if (ret < 0)
     {
