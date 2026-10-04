@@ -32,6 +32,7 @@
 #include <sys/param.h>
 
 #include <nuttx/fs/fs.h>
+#include <nuttx/fs/uio.h>
 #include <nuttx/nuttx.h>
 
 #include "fs_heap.h"
@@ -76,10 +77,8 @@ struct fuse_dev_s
 
 static int     fuse_dev_open(FAR struct file *filep);
 static int     fuse_dev_close(FAR struct file *filep);
-static ssize_t fuse_dev_read(FAR struct file *filep, FAR char *buffer,
-                             size_t buflen);
-static ssize_t fuse_dev_write(FAR struct file *filep,
-                              FAR const char *buffer, size_t buflen);
+static ssize_t fuse_dev_readv(FAR struct file *filep, FAR struct uio *uio);
+static ssize_t fuse_dev_writev(FAR struct file *filep, FAR struct uio *uio);
 static int     fuse_dev_poll(FAR struct file *filep, FAR struct pollfd *fds,
                              bool setup);
 
@@ -95,12 +94,14 @@ static const struct file_operations g_fuse_dev_fops =
 {
   fuse_dev_open,   /* open */
   fuse_dev_close,  /* close */
-  fuse_dev_read,   /* read */
-  fuse_dev_write,  /* write */
+  NULL,            /* read */
+  NULL,            /* write */
   NULL,            /* seek */
   NULL,            /* ioctl */
   NULL,            /* truncate */
-  fuse_dev_poll    /* poll */
+  fuse_dev_poll,   /* poll */
+  fuse_dev_readv,  /* readv */
+  fuse_dev_writev, /* writev */
 };
 
 static const struct fuse_transport_ops_s g_fuse_dev_transport =
@@ -239,7 +240,7 @@ static int fuse_dev_close(FAR struct file *filep)
 }
 
 /****************************************************************************
- * Name: fuse_dev_read
+ * Name: fuse_dev_readv
  *
  * Description:
  *   The server reads one FUSE request (fuse_in_header followed by the
@@ -247,13 +248,12 @@ static int fuse_dev_close(FAR struct file *filep)
  *
  ****************************************************************************/
 
-static ssize_t fuse_dev_read(FAR struct file *filep, FAR char *buffer,
-                             size_t buflen)
+static ssize_t fuse_dev_readv(FAR struct file *filep, FAR struct uio *uio)
 {
   FAR struct fuse_dev_s *dev = filep->f_priv;
-  FAR struct fuse_req_s *req = NULL;
+  FAR struct fuse_req_s *req;
   FAR sq_entry_t *entry;
-  size_t off;
+  size_t resid;
   size_t i;
   int ret;
 
@@ -270,9 +270,21 @@ static ssize_t fuse_dev_read(FAR struct file *filep, FAR char *buffer,
       if (entry != NULL)
         {
           req = container_of(entry, struct fuse_req_s, entry);
-          sq_addlast(&req->entry, &dev->processing);
+          if (uio->uio_resid >= req->hin.len)
+            {
+              sq_addlast(&req->entry, &dev->processing);
+              nxmutex_unlock(&dev->lock);
+              break;
+            }
+
+          /* Fail the request like Linux does and tell the server that its
+           * read buffer is too small.
+           */
+
           nxmutex_unlock(&dev->lock);
-          break;
+          req->hout.error = -EIO;
+          nxsem_post(&req->wait);
+          continue;
         }
 
       nxmutex_unlock(&dev->lock);
@@ -289,36 +301,21 @@ static ssize_t fuse_dev_read(FAR struct file *filep, FAR char *buffer,
         }
     }
 
-  /* The buffer must be large enough for the whole request */
-
-  if (buflen < req->hin.len)
-    {
-      /* Fail the request like Linux does and tell the server that its
-       * read buffer is too small.
-       */
-
-      nxmutex_lock(&dev->lock);
-      sq_rem(&req->entry, &dev->processing);
-      nxmutex_unlock(&dev->lock);
-      req->hout.error = -EIO;
-      nxsem_post(&req->wait);
-      return -EINVAL;
-    }
-
-  memcpy(buffer, &req->hin, sizeof(req->hin));
-  off = sizeof(req->hin);
+  resid = uio->uio_resid;
+  uio_copyfrom(uio, 0, &req->hin, sizeof(req->hin));
+  uio_advance(uio, sizeof(req->hin));
 
   for (i = 0; i < req->vin_cnt; i++)
     {
-      memcpy(buffer + off, req->vin[i].iov_base, req->vin[i].iov_len);
-      off += req->vin[i].iov_len;
+      uio_copyfrom(uio, 0, req->vin[i].iov_base, req->vin[i].iov_len);
+      uio_advance(uio, req->vin[i].iov_len);
     }
 
-  return off;
+  return resid - uio->uio_resid;
 }
 
 /****************************************************************************
- * Name: fuse_dev_write
+ * Name: fuse_dev_writev
  *
  * Description:
  *   The server writes one FUSE reply (fuse_out_header followed by the reply
@@ -326,19 +323,27 @@ static ssize_t fuse_dev_read(FAR struct file *filep, FAR char *buffer,
  *
  ****************************************************************************/
 
-static ssize_t fuse_dev_write(FAR struct file *filep,
-                              FAR const char *buffer, size_t buflen)
+static ssize_t fuse_dev_writev(FAR struct file *filep, FAR struct uio *uio)
 {
-  FAR const struct fuse_out_header *hout =
-    (FAR const struct fuse_out_header *)buffer;
   FAR struct fuse_dev_s *dev = filep->f_priv;
   FAR struct fuse_req_s *req = NULL;
+  struct fuse_out_header hout;
   FAR sq_entry_t *entry;
   size_t datalen;
-  size_t off;
+  size_t resid;
   size_t i;
 
-  if (buflen < sizeof(*hout))
+  resid = uio->uio_resid;
+  if (resid < sizeof(hout))
+    {
+      return -EINVAL;
+    }
+
+  uio_copyto(uio, 0, &hout, sizeof(hout));
+  uio_advance(uio, sizeof(hout));
+
+  datalen = hout.len - sizeof(hout);
+  if (hout.len < sizeof(hout) || datalen > uio->uio_resid)
     {
       return -EINVAL;
     }
@@ -350,10 +355,11 @@ static ssize_t fuse_dev_write(FAR struct file *filep,
     {
       FAR struct fuse_req_s *tmp = container_of(entry, struct fuse_req_s,
                                                 entry);
-      if (tmp->hin.unique == hout->unique)
+
+      if (tmp->hin.unique == hout.unique)
         {
+          sq_rem(&tmp->entry, &dev->processing);
           req = tmp;
-          sq_rem(&req->entry, &dev->processing);
           break;
         }
     }
@@ -365,27 +371,21 @@ static ssize_t fuse_dev_write(FAR struct file *filep,
       return -ENOENT;
     }
 
-  memcpy(&req->hout, hout, sizeof(*hout));
+  memcpy(&req->hout, &hout, sizeof(hout));
 
   /* Scatter the reply payload into the request reply buffers */
 
-  datalen = hout->len > sizeof(*hout) ? hout->len - sizeof(*hout) : 0;
-  if (datalen > buflen - sizeof(*hout))
-    {
-      datalen = buflen - sizeof(*hout);
-    }
-
-  off = sizeof(*hout);
   for (i = 0; i < req->vout_cnt && datalen > 0; i++)
     {
       size_t chunk = MIN(req->vout[i].iov_len, datalen);
-      memcpy(req->vout[i].iov_base, buffer + off, chunk);
-      off     += chunk;
+
+      uio_copyto(uio, 0, req->vout[i].iov_base, chunk);
+      uio_advance(uio, chunk);
       datalen -= chunk;
     }
 
   nxsem_post(&req->wait);
-  return buflen;
+  return resid - uio->uio_resid;
 }
 
 /****************************************************************************
