@@ -191,6 +191,15 @@ const struct mountpt_operations g_fuse_operations =
  ****************************************************************************/
 
 /****************************************************************************
+ * Name: fuse_is_root
+ ****************************************************************************/
+
+static inline bool fuse_is_root(FAR const char *relpath)
+{
+  return relpath[0] == '\0' || (relpath[0] == '/' && relpath[1] == '\0');
+}
+
+/****************************************************************************
  * Name: fuse_attr_to_stat
  ****************************************************************************/
 
@@ -249,6 +258,43 @@ static int fuse_lookup(FAR struct fuse_conn_s *conn, uint64_t parent,
   vout[0].iov_len  = sizeof(*entry);
 
   return fuse_request(conn, &req, vin, 2, vout, 1);
+}
+
+/****************************************************************************
+ * Name: fuse_getattr
+ *
+ * Description:
+ *   Get node attributes, optionally using an open file handle.
+ ****************************************************************************/
+
+static int fuse_getattr(FAR struct fuse_conn_s *conn,
+                        uint64_t nodeid, FAR const uint64_t *fh,
+                        FAR struct fuse_attr_out *aout)
+{
+  struct fuse_getattr_in gin;
+  struct fuse_req_s req;
+  struct iovec vout[1];
+  struct iovec vin[1];
+
+  memset(&req, 0, sizeof(req));
+  memset(&gin, 0, sizeof(gin));
+
+  req.hin.opcode = FUSE_GETATTR;
+  req.hin.nodeid = nodeid;
+
+  if (fh != NULL)
+    {
+      gin.getattr_flags = FUSE_GETATTR_FH;
+      gin.fh            = *fh;
+    }
+
+  vin[0].iov_base = &gin;
+  vin[0].iov_len  = sizeof(gin);
+
+  vout[0].iov_base = aout;
+  vout[0].iov_len  = sizeof(*aout);
+
+  return fuse_request(conn, &req, vin, 1, vout, 1);
 }
 
 /****************************************************************************
@@ -514,29 +560,13 @@ static int fuse_lookup_path(FAR struct fuse_conn_s *conn,
   uint64_t parent;
   int ret;
 
-  if (relpath[0] == '\0' || (relpath[0] == '/' && relpath[1] == '\0'))
+  if (fuse_is_root(relpath))
     {
-      struct fuse_getattr_in gin;
       struct fuse_attr_out aout;
-      struct fuse_req_s req;
-      struct iovec vout[1];
-      struct iovec vin[1];
 
       /* Root inode: use GETATTR instead of LOOKUP */
 
-      memset(&req, 0, sizeof(req));
-      memset(&gin, 0, sizeof(gin));
-
-      req.hin.opcode = FUSE_GETATTR;
-      req.hin.nodeid = FUSE_ROOT_ID;
-
-      vin[0].iov_base = &gin;
-      vin[0].iov_len  = sizeof(gin);
-
-      vout[0].iov_base = &aout;
-      vout[0].iov_len  = sizeof(aout);
-
-      ret = fuse_request(conn, &req, vin, 1, vout, 1);
+      ret = fuse_getattr(conn, FUSE_ROOT_ID, NULL, &aout);
       if (ret < 0)
         {
           return ret;
@@ -1480,29 +1510,10 @@ static int fuse_fstat(FAR const struct file *filep, FAR struct stat *buf)
   FAR struct inode *inode = filep->f_inode;
   FAR struct fuse_conn_s *conn = inode->i_private;
   FAR struct fuse_file_s *fp = filep->f_priv;
-  struct fuse_getattr_in gin;
   struct fuse_attr_out aout;
-  struct fuse_req_s req;
-  struct iovec vout[1];
-  struct iovec vin[1];
   int ret;
 
-  memset(&req, 0, sizeof(req));
-  memset(&gin, 0, sizeof(gin));
-
-  req.hin.opcode = FUSE_GETATTR;
-  req.hin.nodeid = fp->nodeid;
-
-  gin.getattr_flags = FUSE_GETATTR_FH;
-  gin.fh            = fp->fh;
-
-  vin[0].iov_base = &gin;
-  vin[0].iov_len  = sizeof(gin);
-
-  vout[0].iov_base = &aout;
-  vout[0].iov_len  = sizeof(aout);
-
-  ret = fuse_request(conn, &req, vin, 1, vout, 1);
+  ret = fuse_getattr(conn, fp->nodeid, &fp->fh, &aout);
   if (ret < 0)
     {
       return ret;
@@ -1543,7 +1554,7 @@ static int fuse_opendir(FAR struct inode *mountpt, FAR const char *relpath,
   uint64_t nodeid;
   int ret;
 
-  if (relpath[0] == '\0' || (relpath[0] == '/' && relpath[1] == '\0'))
+  if (fuse_is_root(relpath))
     {
       nodeid = FUSE_ROOT_ID;
     }
