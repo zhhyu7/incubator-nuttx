@@ -252,6 +252,89 @@ static int fuse_lookup(FAR struct fuse_conn_s *conn, uint64_t parent,
 }
 
 /****************************************************************************
+ * Name: fuse_setattr
+ *
+ * Description:
+ *   Set node attributes, optionally using an open file handle.
+ ****************************************************************************/
+
+static int fuse_setattr(FAR struct fuse_conn_s *conn,
+                        uint64_t nodeid, FAR const uint64_t *fh,
+                        FAR const struct stat *buf, int flags)
+{
+  struct fuse_setattr_in sin;
+  struct fuse_attr_out aout;
+  struct fuse_req_s req;
+  struct iovec vout[1];
+  struct iovec vin[1];
+
+  memset(&req, 0, sizeof(req));
+  memset(&sin, 0, sizeof(sin));
+
+  req.hin.opcode = FUSE_SETATTR;
+  req.hin.nodeid = nodeid;
+
+  if (fh != NULL)
+    {
+      sin.valid |= FATTR_FH;
+      sin.fh     = *fh;
+    }
+
+  if (flags & CH_STAT_MODE)
+    {
+      sin.valid |= FATTR_MODE;
+      sin.mode   = buf->st_mode;
+    }
+
+  if (flags & CH_STAT_UID)
+    {
+      sin.valid |= FATTR_UID;
+      sin.uid    = buf->st_uid;
+    }
+
+  if (flags & CH_STAT_GID)
+    {
+      sin.valid |= FATTR_GID;
+      sin.gid    = buf->st_gid;
+    }
+
+  if (flags & CH_STAT_SIZE)
+    {
+      sin.valid |= FATTR_SIZE;
+      sin.size   = buf->st_size;
+    }
+
+  if (flags & CH_STAT_ATIME)
+    {
+      sin.valid    |= FATTR_ATIME;
+      sin.atime     = buf->st_atim.tv_sec;
+      sin.atimensec = buf->st_atim.tv_nsec;
+    }
+
+  if (flags & CH_STAT_MTIME)
+    {
+      sin.valid    |= FATTR_MTIME;
+      sin.mtime     = buf->st_mtim.tv_sec;
+      sin.mtimensec = buf->st_mtim.tv_nsec;
+    }
+
+  if (flags & CH_STAT_CTIME)
+    {
+      sin.valid    |= FATTR_CTIME;
+      sin.ctime     = buf->st_ctim.tv_sec;
+      sin.ctimensec = buf->st_ctim.tv_nsec;
+    }
+
+  vin[0].iov_base = &sin;
+  vin[0].iov_len  = sizeof(sin);
+
+  vout[0].iov_base = &aout;
+  vout[0].iov_len  = sizeof(aout);
+
+  return fuse_request(conn, &req, vin, 1, vout, 1);
+}
+
+/****************************************************************************
  * Name: fuse_readlink_node
  ****************************************************************************/
 
@@ -1336,32 +1419,10 @@ static int fuse_ioctl(FAR struct file *filep, int cmd, unsigned long arg)
 
 static int fuse_truncate(FAR struct file *filep, off_t length)
 {
-  FAR struct inode *inode = filep->f_inode;
-  FAR struct fuse_conn_s *conn = inode->i_private;
-  FAR struct fuse_file_s *fp = filep->f_priv;
-  struct fuse_setattr_in sin;
-  struct fuse_attr_out aout;
-  struct fuse_req_s req;
-  struct iovec vout[1];
-  struct iovec vin[1];
+  struct stat buf;
 
-  memset(&req, 0, sizeof(req));
-  memset(&sin, 0, sizeof(sin));
-
-  req.hin.opcode = FUSE_SETATTR;
-  req.hin.nodeid = fp->nodeid;
-
-  sin.valid = FATTR_SIZE | FATTR_FH;
-  sin.size  = length;
-  sin.fh    = fp->fh;
-
-  vin[0].iov_base = &sin;
-  vin[0].iov_len  = sizeof(sin);
-
-  vout[0].iov_base = &aout;
-  vout[0].iov_len  = sizeof(aout);
-
-  return fuse_request(conn, &req, vin, 1, vout, 1);
+  buf.st_size = length;
+  return fuse_fchstat(filep, &buf, CH_STAT_SIZE);
 }
 
 /****************************************************************************
@@ -1461,73 +1522,8 @@ static int fuse_fchstat(FAR const struct file *filep,
   FAR struct inode *inode = filep->f_inode;
   FAR struct fuse_conn_s *conn = inode->i_private;
   FAR struct fuse_file_s *fp = filep->f_priv;
-  struct fuse_setattr_in sin;
-  struct fuse_attr_out aout;
-  struct fuse_req_s req;
-  struct iovec vout[1];
-  struct iovec vin[1];
 
-  memset(&req, 0, sizeof(req));
-  memset(&sin, 0, sizeof(sin));
-
-  req.hin.opcode = FUSE_SETATTR;
-  req.hin.nodeid = fp->nodeid;
-
-  sin.valid = FATTR_FH;
-  sin.fh    = fp->fh;
-
-  if (flags & CH_STAT_MODE)
-    {
-      sin.valid |= FATTR_MODE;
-      sin.mode   = buf->st_mode;
-    }
-
-  if (flags & CH_STAT_UID)
-    {
-      sin.valid |= FATTR_UID;
-      sin.uid    = buf->st_uid;
-    }
-
-  if (flags & CH_STAT_GID)
-    {
-      sin.valid |= FATTR_GID;
-      sin.gid    = buf->st_gid;
-    }
-
-  if (flags & CH_STAT_SIZE)
-    {
-      sin.valid |= FATTR_SIZE;
-      sin.size   = buf->st_size;
-    }
-
-  if (flags & CH_STAT_ATIME)
-    {
-      sin.valid    |= FATTR_ATIME;
-      sin.atime     = buf->st_atim.tv_sec;
-      sin.atimensec = buf->st_atim.tv_nsec;
-    }
-
-  if (flags & CH_STAT_MTIME)
-    {
-      sin.valid    |= FATTR_MTIME;
-      sin.mtime     = buf->st_mtim.tv_sec;
-      sin.mtimensec = buf->st_mtim.tv_nsec;
-    }
-
-  if (flags & CH_STAT_CTIME)
-    {
-      sin.valid    |= FATTR_CTIME;
-      sin.ctime     = buf->st_ctim.tv_sec;
-      sin.ctimensec = buf->st_ctim.tv_nsec;
-    }
-
-  vin[0].iov_base = &sin;
-  vin[0].iov_len  = sizeof(sin);
-
-  vout[0].iov_base = &aout;
-  vout[0].iov_len  = sizeof(aout);
-
-  return fuse_request(conn, &req, vin, 1, vout, 1);
+  return fuse_setattr(conn, fp->nodeid, &fp->fh, buf, flags);
 }
 
 /****************************************************************************
@@ -2016,11 +2012,6 @@ static int fuse_chstat(FAR struct inode *mountpt, FAR const char *relpath,
 {
   FAR struct fuse_conn_s *conn = mountpt->i_private;
   struct fuse_entry_out entry;
-  struct fuse_setattr_in sin;
-  struct fuse_attr_out aout;
-  struct fuse_req_s req;
-  struct iovec vout[1];
-  struct iovec vin[1];
   int ret;
 
   ret = fuse_lookup_path(conn, relpath, &entry, true);
@@ -2029,64 +2020,7 @@ static int fuse_chstat(FAR struct inode *mountpt, FAR const char *relpath,
       return ret;
     }
 
-  memset(&req, 0, sizeof(req));
-  memset(&sin, 0, sizeof(sin));
-
-  req.hin.opcode = FUSE_SETATTR;
-  req.hin.nodeid = entry.nodeid;
-
-  if (flags & CH_STAT_MODE)
-    {
-      sin.valid |= FATTR_MODE;
-      sin.mode   = buf->st_mode;
-    }
-
-  if (flags & CH_STAT_UID)
-    {
-      sin.valid |= FATTR_UID;
-      sin.uid    = buf->st_uid;
-    }
-
-  if (flags & CH_STAT_GID)
-    {
-      sin.valid |= FATTR_GID;
-      sin.gid    = buf->st_gid;
-    }
-
-  if (flags & CH_STAT_SIZE)
-    {
-      sin.valid |= FATTR_SIZE;
-      sin.size   = buf->st_size;
-    }
-
-  if (flags & CH_STAT_ATIME)
-    {
-      sin.valid    |= FATTR_ATIME;
-      sin.atime     = buf->st_atim.tv_sec;
-      sin.atimensec = buf->st_atim.tv_nsec;
-    }
-
-  if (flags & CH_STAT_MTIME)
-    {
-      sin.valid    |= FATTR_MTIME;
-      sin.mtime     = buf->st_mtim.tv_sec;
-      sin.mtimensec = buf->st_mtim.tv_nsec;
-    }
-
-  if (flags & CH_STAT_CTIME)
-    {
-      sin.valid    |= FATTR_CTIME;
-      sin.ctime     = buf->st_ctim.tv_sec;
-      sin.ctimensec = buf->st_ctim.tv_nsec;
-    }
-
-  vin[0].iov_base = &sin;
-  vin[0].iov_len  = sizeof(sin);
-
-  vout[0].iov_base = &aout;
-  vout[0].iov_len  = sizeof(aout);
-
-  return fuse_request(conn, &req, vin, 1, vout, 1);
+  return fuse_setattr(conn, entry.nodeid, NULL, buf, flags);
 }
 
 /****************************************************************************
