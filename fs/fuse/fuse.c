@@ -231,7 +231,6 @@ static int fuse_lookup(FAR struct fuse_conn_s *conn, uint64_t parent,
   char nul = '\0';
 
   memset(&req, 0, sizeof(req));
-  memset(entry, 0, sizeof(*entry));
 
   req.hin.opcode = FUSE_LOOKUP;
   req.hin.nodeid = parent;
@@ -444,7 +443,6 @@ static int fuse_lookup_path(FAR struct fuse_conn_s *conn,
 
       memset(&req, 0, sizeof(req));
       memset(&gin, 0, sizeof(gin));
-      memset(&aout, 0, sizeof(aout));
 
       req.hin.opcode = FUSE_GETATTR;
       req.hin.nodeid = FUSE_ROOT_ID;
@@ -517,7 +515,6 @@ static int fuse_init(FAR struct fuse_conn_s *conn)
 
   memset(&req, 0, sizeof(req));
   memset(&fin, 0, sizeof(fin));
-  memset(&fout, 0, sizeof(fout));
 
   req.hin.opcode = FUSE_INIT;
   req.hin.nodeid = FUSE_ROOT_ID;
@@ -567,7 +564,6 @@ static int fuse_open(FAR struct file *filep, FAR const char *relpath,
   int ret;
 
   memset(&req, 0, sizeof(req));
-  memset(&oout, 0, sizeof(oout));
 
   /* Record the relative path so that FIOC_FILEPATH can report it later:
    * FUSE has no reverse (nodeid to name) query.
@@ -594,7 +590,6 @@ static int fuse_open(FAR struct file *filep, FAR const char *relpath,
         }
 
       memset(&cin, 0, sizeof(cin));
-      memset(&entry, 0, sizeof(entry));
 
       req.hin.opcode = FUSE_CREATE;
       req.hin.nodeid = parent;
@@ -688,7 +683,6 @@ static int fuse_close(FAR struct file *filep)
       vin[0].iov_len  = sizeof(rin);
 
       fuse_request(conn, &req, vin, 1, NULL, 0);
-
       fs_heap_free(fp);
     }
 
@@ -893,7 +887,6 @@ static ssize_t fuse_writev(FAR struct file *filep, FAR struct uio *uio)
 
       memset(&req, 0, sizeof(req));
       memset(&win, 0, sizeof(win));
-      memset(&wout, 0, sizeof(wout));
 
       req.hin.opcode = FUSE_WRITE;
       req.hin.nodeid = fp->nodeid;
@@ -954,7 +947,6 @@ static off_t fuse_seek(FAR struct file *filep, off_t offset, int whence)
 
   memset(&req, 0, sizeof(req));
   memset(&lin, 0, sizeof(lin));
-  memset(&lout, 0, sizeof(lout));
 
   req.hin.opcode = FUSE_LSEEK;
   req.hin.nodeid = fp->nodeid;
@@ -1112,7 +1104,6 @@ static int fuse_filelock(FAR struct file *filep, int cmd,
 
   memset(&req, 0, sizeof(req));
   memset(&lin, 0, sizeof(lin));
-  memset(&lout, 0, sizeof(lout));
 
   req.hin.opcode = cmd == FIOC_GETLK ? FUSE_GETLK :
                    cmd == FIOC_SETLK ? FUSE_SETLK : FUSE_SETLKW;
@@ -1356,7 +1347,6 @@ static int fuse_truncate(FAR struct file *filep, off_t length)
 
   memset(&req, 0, sizeof(req));
   memset(&sin, 0, sizeof(sin));
-  memset(&aout, 0, sizeof(aout));
 
   req.hin.opcode = FUSE_SETATTR;
   req.hin.nodeid = fp->nodeid;
@@ -1438,7 +1428,6 @@ static int fuse_fstat(FAR const struct file *filep, FAR struct stat *buf)
 
   memset(&req, 0, sizeof(req));
   memset(&gin, 0, sizeof(gin));
-  memset(&aout, 0, sizeof(aout));
 
   req.hin.opcode = FUSE_GETATTR;
   req.hin.nodeid = fp->nodeid;
@@ -1480,7 +1469,6 @@ static int fuse_fchstat(FAR const struct file *filep,
 
   memset(&req, 0, sizeof(req));
   memset(&sin, 0, sizeof(sin));
-  memset(&aout, 0, sizeof(aout));
 
   req.hin.opcode = FUSE_SETATTR;
   req.hin.nodeid = fp->nodeid;
@@ -1551,7 +1539,6 @@ static int fuse_opendir(FAR struct inode *mountpt, FAR const char *relpath,
 {
   FAR struct fuse_conn_s *conn = mountpt->i_private;
   FAR struct fuse_dir_s *fdir;
-  struct fuse_entry_out entry;
   struct fuse_open_out oout;
   struct fuse_open_in oin;
   struct fuse_req_s req;
@@ -1566,6 +1553,8 @@ static int fuse_opendir(FAR struct inode *mountpt, FAR const char *relpath,
     }
   else
     {
+      struct fuse_entry_out entry;
+
       ret = fuse_lookup_path(conn, relpath, &entry, true);
       if (ret < 0)
         {
@@ -1583,7 +1572,6 @@ static int fuse_opendir(FAR struct inode *mountpt, FAR const char *relpath,
 
   memset(&req, 0, sizeof(req));
   memset(&oin, 0, sizeof(oin));
-  memset(&oout, 0, sizeof(oout));
 
   req.hin.opcode = FUSE_OPENDIR;
   req.hin.nodeid = nodeid;
@@ -1820,7 +1808,6 @@ static int fuse_statfs(FAR struct inode *mountpt, FAR struct statfs *buf)
   int ret;
 
   memset(&req, 0, sizeof(req));
-  memset(&sout, 0, sizeof(sout));
 
   req.hin.opcode = FUSE_STATFS;
   req.hin.nodeid = FUSE_ROOT_ID;
@@ -1903,7 +1890,6 @@ static int fuse_mkdir(FAR struct inode *mountpt, FAR const char *relpath,
 
   memset(&req, 0, sizeof(req));
   memset(&min, 0, sizeof(min));
-  memset(&eout, 0, sizeof(eout));
 
   req.hin.opcode = FUSE_MKDIR;
   req.hin.nodeid = parent;
@@ -2045,7 +2031,6 @@ static int fuse_chstat(FAR struct inode *mountpt, FAR const char *relpath,
 
   memset(&req, 0, sizeof(req));
   memset(&sin, 0, sizeof(sin));
-  memset(&aout, 0, sizeof(aout));
 
   req.hin.opcode = FUSE_SETATTR;
   req.hin.nodeid = entry.nodeid;
@@ -2197,7 +2182,6 @@ static int fuse_symlink(FAR struct inode *mountpt, FAR const char *relpath1,
     }
 
   memset(&req, 0, sizeof(req));
-  memset(&entry, 0, sizeof(entry));
 
   req.hin.opcode = FUSE_SYMLINK;
   req.hin.nodeid = parent;
