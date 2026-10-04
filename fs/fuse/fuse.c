@@ -2030,8 +2030,8 @@ static int fuse_link(FAR struct inode *mountpt, FAR const char *relpath1,
   vin[1].iov_base = (FAR void *)name;
   vin[1].iov_len  = strlen(name) + 1;
 
-  vin[0].iov_base = &entry;
-  vin[0].iov_len  = sizeof(entry);
+  vout[0].iov_base = &entry;
+  vout[0].iov_len  = sizeof(entry);
 
   return fuse_request(conn, &req, vin, 2, vout, 1);
 }
