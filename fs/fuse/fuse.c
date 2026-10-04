@@ -299,41 +299,48 @@ static int fuse_follow_link(FAR struct fuse_conn_s *conn,
                             FAR struct fuse_entry_out *entry,
                             int depth)
 {
-  char target[PATH_MAX];
-  FAR const char *path = target;
-  ssize_t len;
+  FAR const char *path;
+  FAR char *target;
+  int ret;
 
   if (depth >= SYMLOOP_MAX)
     {
       return -ELOOP;
     }
 
-  len = fuse_readlink_node(conn, entry->nodeid, target,
-                           sizeof(target) - 1);
-  if (len < 0)
+  target = lib_get_tempbuffer(PATH_MAX);
+  if (target == NULL)
     {
-      return len;
+      return -ENOMEM;
     }
-  else if (len >= sizeof(target))
+
+  ret = fuse_readlink_node(conn, entry->nodeid, target, PATH_MAX);
+  if (ret < 0)
     {
-      return -ENAMETOOLONG;
+      goto out;
+    }
+  else if (ret >= PATH_MAX)
+    {
+      ret = -ENAMETOOLONG;
+      goto out;
     }
   else if (*target == '/')
     {
-      return -ENOTSUP;
+      ret = -ENOTSUP;
+      goto out;
     }
 
-  target[len] = '\0';
+  target[ret] = '\0';
+  path = target;
 
   for (; ; )
     {
       FAR const char *slash = strchrnul(path, '/');
-      int ret;
 
       ret = fuse_lookup(conn, *parent, path, slash - path, entry);
       if (ret < 0)
         {
-          return ret;
+          break;
         }
 
       /* Resolve a nested link before deciding how to continue */
@@ -343,18 +350,22 @@ static int fuse_follow_link(FAR struct fuse_conn_s *conn,
           ret = fuse_follow_link(conn, parent, entry, depth + 1);
           if (ret < 0)
             {
-              return ret;
+              break;
             }
         }
 
       if (slash[0] == '\0' || slash[1] == '\0')
         {
-          return 0;
+          break;
         }
 
       *parent = entry->nodeid;
       path = slash + 1;
     }
+
+out:
+  lib_put_tempbuffer(target);
+  return ret;
 }
 
 /****************************************************************************
