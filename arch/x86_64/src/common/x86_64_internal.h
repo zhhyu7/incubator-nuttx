@@ -273,7 +273,8 @@ static inline_function unsigned long read_msr(unsigned int msr)
   return low | ((unsigned long)high << 32);
 }
 
-static inline_function void write_msr(unsigned int msr, unsigned long val)
+static inline_function noinstrument_function
+void write_msr(unsigned int msr, unsigned long val)
 {
   __asm__ volatile("wrmsr"
                    : /* no output */

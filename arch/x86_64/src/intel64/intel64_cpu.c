@@ -366,6 +366,7 @@ bool x86_64_cpu_ready_get(uint8_t cpu)
  *
  ****************************************************************************/
 
+noinstrument_function
 uint8_t x86_64_cpu_count_get(void)
 {
   return g_cpu_count;
@@ -379,6 +380,7 @@ uint8_t x86_64_cpu_count_get(void)
  *
  ****************************************************************************/
 
+noinstrument_function
 void x86_64_cpu_priv_set(uint8_t cpu)
 {
   /* Store private data pointer to GSBASE */

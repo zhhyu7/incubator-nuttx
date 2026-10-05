@@ -127,7 +127,7 @@ extern "C"
  ****************************************************************************/
 
 #ifdef CONFIG_ARCH_HAVE_MULTICPU
-static inline_function int up_cpu_index(void)
+static inline_function noinstrument_function int up_cpu_index(void)
 {
   int cpu;
 

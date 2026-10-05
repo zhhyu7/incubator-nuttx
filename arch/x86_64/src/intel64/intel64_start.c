@@ -141,11 +141,19 @@ static void x86_64_mb2_config(void)
  *
  ****************************************************************************/
 
+noinstrument_function
 void __nxstart(void)
 {
   uint64_t *dest = NULL;
 
   /* This is only for BSP core. AP cores are handled by x86_64_ap_boot() */
+
+  /* Load the CPU private pointer before anything else: up_cpu_index()
+   * reads it, and every C function may reach it through syslog or an
+   * instrumentation hook.
+   */
+
+  x86_64_cpu_priv_set(0);
 
   /* Do some checking on CPU compatibilities at the top of this function.
    * BSS cleanup can be optimized with vector instructions, so we need to
@@ -226,10 +234,6 @@ void __nxstart(void)
 #ifdef CONFIG_ARCH_HAVE_HWP
   intel64_hwp_init();
 #endif
-
-  /* Store CPU IDs */
-
-  x86_64_cpu_priv_set(0);
 
   /* Start NuttX */
 

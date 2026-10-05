@@ -639,7 +639,8 @@ static inline_function uint64_t read_gsbase(void)
   return val;
 }
 
-static inline_function void write_gsbase(unsigned long val)
+static inline_function noinstrument_function
+void write_gsbase(unsigned long val)
 {
   __asm__ volatile("wrgsbase %0"
                    : /* no output */

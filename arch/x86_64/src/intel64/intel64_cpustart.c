@@ -122,10 +122,22 @@ static int x86_64_ap_startup(int cpu)
  *
  ****************************************************************************/
 
+noinstrument_function
 void x86_64_ap_boot(void)
 {
   struct tcb_s *tcb;
   uint8_t cpu = 0;
+
+  /* Get CPU ID */
+
+  cpu = x86_64_cpu_count_get();
+
+  /* Store CPU private data before anything else: up_cpu_index() reads it,
+   * and every C function may reach it through syslog or an instrumentation
+   * hook.
+   */
+
+  x86_64_cpu_priv_set(cpu);
 
   /* Do some checking on CPU compatibilities at the top of this function */
 
@@ -134,14 +146,6 @@ void x86_64_ap_boot(void)
   /* Reload the GDTR with mapped high memory address */
 
   setgdt((void *)g_gdt64, (uintptr_t)(&g_gdt64_low_end - &g_gdt64_low) - 1);
-
-  /* Get CPU ID */
-
-  cpu = x86_64_cpu_count_get();
-
-  /* Store CPU private data */
-
-  x86_64_cpu_priv_set(cpu);
 
   tcb = current_task(cpu);
   UNUSED(tcb);
