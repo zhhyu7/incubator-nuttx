@@ -138,7 +138,7 @@ SECTIONS
     }
 
     . = ALIGN(8);
-    .tdata_tbss ALIGN(0x1000) :
+    .tdata_tbss ALIGN(0x1000) : ALIGN(8)
     {
         _ertonly = ABSOLUTE(.);      /* For tls_initialize() */
         _stdata = ABSOLUTE(.);
@@ -146,6 +146,13 @@ SECTIONS
         _etdata = ABSOLUTE(.);
         _stbss = ABSOLUTE(.);
         *(.tbss .tbss.* .gnu.linkonce.tb.* .tcommon);
+
+        /* x86_64_tp_offset() puts the thread pointer right after this block
+         * while the linker addresses it from the block size rounded up to
+         * its alignment: pad to the alignment so both agree.
+         */
+
+        . = ALIGN(ALIGNOF(.tdata_tbss));
         _etbss = ABSOLUTE(.);
     }
 
