@@ -28,10 +28,12 @@
 #include <fcntl.h>
 #include <limits.h>
 #include <string.h>
+#include <sys/param.h>
 #include <sys/stat.h>
 #include <sys/statfs.h>
 
 #include <nuttx/fs/fs.h>
+#include <nuttx/fs/ioctl.h>
 #include <nuttx/fs/uio.h>
 
 #include "inode/inode.h"
@@ -1191,11 +1193,44 @@ static int fuse_filepath(FAR struct file *filep, FAR char *path)
 }
 
 /****************************************************************************
+ * Name: fuse_ioctl_iov_size
+ *
+ * Description:
+ *   Calculate the total payload size of an ioctl iovec list.
+ *
+ ****************************************************************************/
+
+static inline size_t
+fuse_ioctl_iov_size(FAR const struct fuse_ioctl_iovec *iov, size_t count)
+{
+  size_t total = 0;
+  size_t i;
+
+  for (i = 0; i < count; i++)
+    {
+      total += iov[i].len;
+    }
+
+  return total;
+}
+
+/****************************************************************************
  * Name: fuse_ioctl
  ****************************************************************************/
 
 static int fuse_ioctl(FAR struct file *filep, int cmd, unsigned long arg)
 {
+  FAR struct inode *inode = filep->f_inode;
+  FAR struct fuse_conn_s *conn = inode->i_private;
+  FAR struct fuse_file_s *fp = filep->f_priv;
+  struct fuse_ioctl_iovec iov[FUSE_IOV_SEGS * 2];
+  struct iovec vout[FUSE_IOV_SEGS];
+  struct iovec vin[FUSE_IOV_SEGS];
+  struct fuse_ioctl_out iout;
+  struct fuse_ioctl_in iin;
+  struct fuse_req_s req;
+  ssize_t arglen = ioctl_arglen(cmd, arg);
+
   switch (cmd)
     {
       case FIOC_SETLK:
@@ -1206,9 +1241,101 @@ static int fuse_ioctl(FAR struct file *filep, int cmd, unsigned long arg)
 
       case FIOC_FILEPATH:
         return fuse_filepath(filep, (FAR char *)(uintptr_t)arg);
+    }
 
-      default:
-        return -ENOTTY;
+  memset(&req, 0, sizeof(req));
+  memset(&iin, 0, sizeof(iin));
+  memset(&iout, 0, sizeof(iout));
+
+  req.hin.opcode = FUSE_IOCTL;
+  req.hin.nodeid = fp->nodeid;
+
+  iin.fh       = fp->fh;
+  iin.flags    = arglen < 0 ? FUSE_IOCTL_UNRESTRICTED : 0;
+  iin.cmd      = cmd;
+  iin.arg      = arg;
+  iin.in_size  = MAX(arglen, 0);
+  iin.out_size = MAX(arglen, 0);
+
+  for (; ; )
+    {
+      size_t i = 0;
+      size_t j = 0;
+      int ret;
+
+      vin[i].iov_base  = &iin;
+      vin[i++].iov_len = sizeof(iin);
+      if (iout.in_iovs > 0)
+        {
+          for (; i <= iout.in_iovs; i++)
+            {
+              vin[i].iov_base = (FAR void *)(uintptr_t)iov[i - 1].base;
+              vin[i].iov_len  = iov[i - 1].len;
+            }
+        }
+      else if (iin.in_size > 0)
+        {
+          vin[i].iov_base  = (FAR void *)(uintptr_t)arg;
+          vin[i++].iov_len = iin.in_size;
+        }
+
+      vout[j].iov_base  = &iout;
+      vout[j++].iov_len = sizeof(iout);
+      if (iout.out_iovs > 0)
+        {
+          for (; j <= iout.out_iovs; j++)
+            {
+              vout[j].iov_base =
+                (FAR void *)(uintptr_t)iov[iout.in_iovs + j - 1].base;
+              vout[j].iov_len = iov[iout.in_iovs + j - 1].len;
+            }
+        }
+      else if (iin.out_size > 0)
+        {
+          vout[j].iov_base  = (FAR void *)(uintptr_t)arg;
+          vout[j++].iov_len = iin.out_size;
+        }
+      else
+        {
+          vout[j].iov_base  = iov;
+          vout[j++].iov_len = sizeof(iov);
+        }
+
+      ret = fuse_request(conn, &req, vin, i, vout, j);
+      if (ret < 0)
+        {
+          return ret;
+        }
+
+      if (req.hout.len < sizeof(req.hout) + sizeof(iout))
+        {
+          return -EIO;
+        }
+
+      if (!(iout.flags & FUSE_IOCTL_RETRY))
+        {
+          return iout.result;
+        }
+
+      if (iin.out_size != 0)
+        {
+          return -ENOTSUP; /* Can retry only when out size is zero */
+        }
+
+      if (req.hout.len != sizeof(req.hout) + sizeof(iout) +
+                          sizeof(iov[0]) * (iout.in_iovs + iout.out_iovs))
+        {
+          return -EIO;
+        }
+
+      if (iout.in_iovs > FUSE_IOV_SEGS - 1 ||
+          iout.out_iovs > FUSE_IOV_SEGS - 1)
+        {
+          return -E2BIG;
+        }
+
+      iin.in_size = fuse_ioctl_iov_size(iov, iout.in_iovs);
+      iin.out_size = fuse_ioctl_iov_size(iov + iout.in_iovs, iout.out_iovs);
     }
 }
 

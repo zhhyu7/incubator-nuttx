@@ -4,7 +4,7 @@ FUSE (Filesystem in Userspace)
 
 NuttX provides a transport-independent FUSE client core under ``fs/fuse``.
 The core implements the NuttX ``mountpt_operations`` interface on top of the
-standard FUSE wire protocol (kernel ABI 7.38, see ``include/nuttx/fuse.h``)
+standard FUSE wire protocol (kernel ABI 7.45, see ``include/nuttx/fuse.h``)
 and dispatches each request through a pluggable transport.
 
 Architecture
@@ -32,6 +32,23 @@ transport only moves the FUSE request/reply bytes between the core and a
 server.  ``fuse_request()`` computes the request ``unique`` and ``len``,
 submits the request through ``conn->transport->request()`` and blocks on a
 per-request semaphore until the completion path posts it.
+
+IOCTL forwarding
+================
+
+Ioctls not handled by the FUSE core are sent to the server as ``FUSE_IOCTL``
+requests.  The client uses ``ioctl_arglen(cmd, arg)`` to determine the
+argument size.  For a known size, it sets both ``in_size`` and ``out_size`` to
+that value.  For an unknown size, it sets ``FUSE_IOCTL_UNRESTRICTED`` and both
+sizes to zero so the server can provide input and/or output iovecs.
+
+A retry response is followed only while the current ``out_size`` is zero,
+regardless of ``in_size``.  The server may provide input and/or output iovecs;
+the client uses them for the next request.  If that request returns another
+retry while its ``out_size`` is non-zero, the client rejects it.  Zero-length
+output iovec plans may therefore be retried repeatedly.  Retry iovecs use the
+protocol-defined 64-bit layout and their counts are limited by the client's
+scatter/gather segment arrays.
 
 Concurrency
 ===========
