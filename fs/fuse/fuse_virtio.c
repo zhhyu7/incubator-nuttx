@@ -28,6 +28,7 @@
 #include <string.h>
 
 #include <nuttx/nuttx.h>
+#include <nuttx/spinlock.h>
 #include <nuttx/virtio/virtio.h>
 #include <nuttx/virtio/virtio-fs.h>
 
@@ -59,6 +60,7 @@ struct fuse_virtio_s
 {
   FAR struct virtio_device *vdev;
   struct virtio_driver      vdrv;
+  spinlock_t                lock;
   char                      tag[VIRTIO_FS_TAG_LEN];
 };
 
@@ -201,7 +203,7 @@ static int fuse_virtio_request(FAR struct fuse_conn_s *conn,
 
   nxsem_init(&done, 0, 0);
 
-  flags = spin_lock_irqsave(&conn->lock);
+  flags = spin_lock_irqsave(&fs->lock);
   ret = virtqueue_add_buffer(vq, vb, req->vin_cnt + 1,
                              req->vout_cnt + 1, &done);
   if (ret >= 0)
@@ -209,7 +211,7 @@ static int fuse_virtio_request(FAR struct fuse_conn_s *conn,
       virtqueue_kick(vq);
     }
 
-  spin_unlock_irqrestore(&conn->lock, flags);
+  spin_unlock_irqrestore(&fs->lock, flags);
 
   /* Wait for the completion here:  the unmap below must run after the
    * host is done with the buffers, since it copies the reply data back
@@ -372,6 +374,7 @@ int fuse_virtio_connect(FAR struct fuse_conn_s *conn,
       return -ENOMEM;
     }
 
+  spin_lock_init(&fs->lock);
   strlcpy(fs->tag, tag, sizeof(fs->tag));
 
   /* Register the virtio driver to trigger probe and bind the device */

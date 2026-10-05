@@ -37,7 +37,6 @@
 #include <nuttx/mutex.h>
 #include <nuttx/queue.h>
 #include <nuttx/semaphore.h>
-#include <nuttx/spinlock.h>
 
 /****************************************************************************
  * Public Types
@@ -83,11 +82,10 @@ struct fuse_conn_s
 {
   FAR const struct fuse_transport_ops_s *transport;
   FAR void  *priv;        /* Transport private data */
-  spinlock_t lock;        /* Protects unique and transport queues */
-  uint64_t   unique;      /* Monotonic request id generator */
-  uint32_t   max_write;   /* Negotiated maximum write size */
   mutex_t    initlock;    /* Serializes the lazy FUSE_INIT */
   atomic_t   initialized; /* FUSE_INIT handshake completed */
+  atomic_t   unique;      /* Request id generator */
+  uint32_t   max_write;   /* Negotiated maximum write size */
 };
 
 /****************************************************************************

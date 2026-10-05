@@ -53,10 +53,11 @@ scatter/gather segment arrays.
 Concurrency
 ===========
 
-Each in-flight request owns its own ``sem_t``.  The connection lock only
-protects request enqueue (transport queue or virtqueue); it never wraps the
-full request round trip.  Multiple VFS calls may therefore be in flight
-concurrently without serializing on a single global lock.
+Each in-flight request owns its own ``sem_t``.  The connection's ``initlock``
+serializes the lazy FUSE_INIT handshake, while request IDs use an atomic
+counter.  The local transport uses its own device lock to protect request
+queues.  Multiple VFS calls may therefore be in flight concurrently without
+holding a connection lock for the full request round trip.
 
 Transports
 ==========

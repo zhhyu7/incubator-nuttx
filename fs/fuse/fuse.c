@@ -669,7 +669,7 @@ static int fuse_close(FAR struct file *filep)
    * the last user goes away.
    */
 
-  if (atomic_sub(&fp->refs, 1) == 1)
+  if (atomic_sub_relaxed(&fp->refs, 1) == 1)
     {
       memset(&req, 0, sizeof(req));
       memset(&rin, 0, sizeof(rin));
@@ -1404,7 +1404,7 @@ static int fuse_dup(FAR const struct file *oldp, FAR struct file *newp)
    * same handle twice.
    */
 
-  atomic_add(&fp->refs, 1);
+  atomic_add_relaxed(&fp->refs, 1);
   newp->f_priv = fp;
 
   return 0;
@@ -1730,7 +1730,7 @@ static int fuse_bind(FAR struct inode *blkdriver, FAR const void *data,
       return -ENOMEM;
     }
 
-  spin_lock_init(&conn->lock);
+  nxmutex_init(&conn->initlock);
   conn->max_write = FUSE_MAX_WRITE_BUFFER;
 
   /* Select the transport from the mount options.  Each transport claims a
@@ -1751,6 +1751,7 @@ static int fuse_bind(FAR struct inode *blkdriver, FAR const void *data,
 
   if (ret < 0)
     {
+      nxmutex_destroy(&conn->initlock);
       fs_heap_free(conn);
       return ret;
     }
@@ -1760,7 +1761,6 @@ static int fuse_bind(FAR struct inode *blkdriver, FAR const void *data,
    * server is still starting its read loop.
    */
 
-  nxmutex_init(&conn->initlock);
   *handle = conn;
 
   return 0;
@@ -1788,8 +1788,8 @@ static int fuse_unbind(FAR void *handle, FAR struct inode **blkdriver,
       fuse_request(conn, &req, NULL, 0, NULL, 0);
     }
 
-  nxmutex_destroy(&conn->initlock);
   conn->transport->destroy(conn);
+  nxmutex_destroy(&conn->initlock);
   fs_heap_free(conn);
 
   return 0;
@@ -2260,7 +2260,6 @@ int fuse_request(FAR struct fuse_conn_s *conn, FAR struct fuse_req_s *req,
                  FAR const struct iovec *vin, size_t vin_cnt,
                  FAR const struct iovec *vout, size_t vout_cnt)
 {
-  irqstate_t flags;
   size_t i;
   int ret;
 
@@ -2301,9 +2300,11 @@ int fuse_request(FAR struct fuse_conn_s *conn, FAR struct fuse_req_s *req,
       req->hin.len += vin[i].iov_len;
     }
 
-  flags = spin_lock_irqsave(&conn->lock);
-  req->hin.unique = ++conn->unique;
-  spin_unlock_irqrestore(&conn->lock, flags);
+  do
+    {
+      req->hin.unique = atomic_add_relaxed(&conn->unique, 1);
+    }
+  while (req->hin.unique == 0);
 
   req->hin.uid = geteuid();
   req->hin.gid = getegid();
