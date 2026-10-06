@@ -56,6 +56,41 @@ output iovec plans may therefore be retried repeatedly.  Retry iovecs use the
 protocol-defined 64-bit layout and their counts are limited by the client's
 scatter/gather segment arrays.
 
+Server notifications
+====================
+
+The ``/dev/fuse`` transport accepts one notification per ``write()`` or
+``writev()``.  Notifications use ``fuse_out_header.unique == 0`` and a
+positive notification code in ``error``.  The transport separates them from
+ordinary replies and calls ``fuse_notify()`` with the payload.  The declared
+message length must fit within the supplied input and match the notification
+layout, including the name length, data size or node count where applicable.
+Invalid lengths return ``-EINVAL``.  Extra input beyond the declared message
+is not consumed; a successful write returns the number of bytes actually
+consumed. Notifications do not complete an outstanding filesystem request and
+return ``-ENOTCONN`` before the FUSE_INIT handshake completes or after
+disconnect.
+
+The client currently has no directory-entry, attribute, readdir or file-data
+cache.  Valid ``FUSE_NOTIFY_INVAL_INODE``, ``FUSE_NOTIFY_INVAL_ENTRY``,
+``FUSE_NOTIFY_DELETE``, ``FUSE_NOTIFY_STORE``, ``FUSE_NOTIFY_INC_EPOCH`` and
+``FUSE_NOTIFY_PRUNE`` notifications therefore succeed without changing local
+state.  Pruning does
+not release active file handles or manufacture ``FUSE_FORGET`` requests.
+Payload contents, including names and entry flags, are not validated or
+acted upon.
+STORE data is consumed and discarded; it is not written to the server or
+retained locally.
+
+``FUSE_NOTIFY_RETRIEVE``, ``FUSE_NOTIFY_RESEND`` and
+``FUSE_NOTIFY_POLL`` remain unsupported and return ``-ENOTSUP``.  RESEND
+concerns outstanding requests, not cache invalidation.  File poll behavior
+is unchanged.
+
+Server notifications are currently supported only by the ``/dev/fuse``
+transport.  Virtio-fs does not negotiate ``VIRTIO_FS_F_NOTIFICATION`` and
+continues to use queue 0 for hiprio and queue 1 for requests.
+
 Concurrency
 ===========
 
@@ -69,6 +104,9 @@ and does not send ``FUSE_DESTROY`` while initialization is pending.
 The local transport uses its device lock to protect request queues.
 Multiple VFS calls may therefore be in flight concurrently without holding
 a connection lock for the full round trip.
+
+The local transport holds its device lock during notification processing
+to keep the connection alive.
 
 Transports
 ==========

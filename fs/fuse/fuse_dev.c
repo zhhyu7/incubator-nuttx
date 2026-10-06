@@ -367,9 +367,30 @@ static ssize_t fuse_dev_writev(FAR struct file *filep, FAR struct uio *uio)
       return -EINVAL;
     }
 
+  nxmutex_lock(&dev->lock);
+
+  if (hout.unique == 0)
+    {
+      int ret;
+
+      if (dev->conn == NULL || dev->conn == FUSE_DEV_DEAD)
+        {
+          nxmutex_unlock(&dev->lock);
+          return -ENOTCONN;
+        }
+
+      ret = fuse_notify(dev->conn, &hout, uio);
+      nxmutex_unlock(&dev->lock);
+      if (ret < 0)
+        {
+          return ret;
+        }
+
+      return resid - uio->uio_resid;
+    }
+
   /* Find and detach the matching in-flight request */
 
-  nxmutex_lock(&dev->lock);
   sq_for_every(&dev->processing, entry)
     {
       FAR struct fuse_req_s *tmp = container_of(entry, struct fuse_req_s,
@@ -528,7 +549,6 @@ int fuse_dev_connect(FAR struct fuse_conn_s *conn, FAR const char *options)
   FAR struct file *filep;
   FAR const char *opt;
   int ret;
-  int fd;
 
   opt = strstr(options, "fd=");
   if (opt == NULL)
@@ -536,9 +556,7 @@ int fuse_dev_connect(FAR struct fuse_conn_s *conn, FAR const char *options)
       return -EINVAL;
     }
 
-  fd = atoi(opt + 3);
-
-  ret = file_get(fd, &filep);
+  ret = file_get(atoi(opt + 3), &filep);
   if (ret < 0)
     {
       return ret;
@@ -565,14 +583,13 @@ int fuse_dev_connect(FAR struct fuse_conn_s *conn, FAR const char *options)
       return -EBUSY;
     }
 
-  dev->conn = conn;
-  dev->crefs++;
-  nxmutex_unlock(&dev->lock);
-
-  file_put(filep);
-
   conn->priv      = dev;
   conn->transport = &g_fuse_dev_transport;
+  dev->conn       = conn;
+  dev->crefs++;
+
+  nxmutex_unlock(&dev->lock);
+  file_put(filep);
 
   return 0;
 }

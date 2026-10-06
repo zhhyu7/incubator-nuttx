@@ -2370,3 +2370,120 @@ static int fuse_lstat(FAR struct inode *mountpt, FAR const char *relpath,
   return 0;
 }
 #endif /* CONFIG_FS_LINKS */
+
+/****************************************************************************
+ * Public Functions
+ ****************************************************************************/
+
+/****************************************************************************
+ * Name: fuse_notify
+ ****************************************************************************/
+
+int fuse_notify(FAR struct fuse_conn_s *conn,
+                FAR const struct fuse_out_header *hout,
+                FAR struct uio *uio)
+{
+  struct fuse_notify_inval_inode_out inode;
+  struct fuse_notify_inval_entry_out entry;
+  struct fuse_notify_prune_out prune;
+  struct fuse_notify_store_out store;
+  struct fuse_notify_delete_out del;
+
+  if (conn->initerror < 0)
+    {
+      return conn->initerror;
+    }
+
+  switch (hout->error)
+    {
+      case FUSE_NOTIFY_INVAL_INODE:
+        if (hout->len != sizeof(*hout) + sizeof(inode))
+          {
+            return -EINVAL;
+          }
+
+        uio_copyto(uio, 0, &inode, sizeof(inode));
+        uio_advance(uio, sizeof(inode));
+        return 0;
+
+      case FUSE_NOTIFY_INVAL_ENTRY:
+        if (hout->len < sizeof(*hout) + sizeof(entry))
+          {
+            return -EINVAL;
+          }
+
+        uio_copyto(uio, 0, &entry, sizeof(entry));
+        uio_advance(uio, sizeof(entry));
+
+        if (hout->len != sizeof(*hout) + sizeof(entry) + entry.namelen + 1)
+          {
+            return -EINVAL;
+          }
+
+        uio_advance(uio, entry.namelen + 1);
+        return 0;
+
+      case FUSE_NOTIFY_DELETE:
+        if (hout->len < sizeof(*hout) + sizeof(del))
+          {
+            return -EINVAL;
+          }
+
+        uio_copyto(uio, 0, &del, sizeof(del));
+        uio_advance(uio, sizeof(del));
+
+        if (hout->len != sizeof(*hout) + sizeof(del) + del.namelen + 1)
+          {
+            return -EINVAL;
+          }
+
+        uio_advance(uio, del.namelen + 1);
+        return 0;
+
+      case FUSE_NOTIFY_STORE:
+        if (hout->len < sizeof(*hout) + sizeof(store))
+          {
+            return -EINVAL;
+          }
+
+        uio_copyto(uio, 0, &store, sizeof(store));
+        uio_advance(uio, sizeof(store));
+
+        if (hout->len != sizeof(*hout) + sizeof(store) + store.size)
+          {
+            return -EINVAL;
+          }
+
+        uio_advance(uio, store.size);
+        return 0;
+
+      case FUSE_NOTIFY_INC_EPOCH:
+        if (hout->len != sizeof(*hout))
+          {
+            return -EINVAL;
+          }
+
+        return 0;
+
+      case FUSE_NOTIFY_PRUNE:
+        if (hout->len < sizeof(*hout) + sizeof(prune))
+          {
+            return -EINVAL;
+          }
+
+        uio_copyto(uio, 0, &prune, sizeof(prune));
+        uio_advance(uio, sizeof(prune));
+
+        if (hout->len != sizeof(*hout) + sizeof(prune) +
+                         sizeof(uint64_t) * prune.count)
+          {
+            return -EINVAL;
+          }
+
+        uio_advance(uio, sizeof(uint64_t) * prune.count);
+        return 0;
+
+      default:
+        return -ENOTSUP;
+    }
+}

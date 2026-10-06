@@ -33,6 +33,7 @@
 #include <stdbool.h>
 
 #include <nuttx/atomic.h>
+#include <nuttx/fs/uio.h>
 #include <nuttx/fuse.h>
 #include <nuttx/queue.h>
 #include <nuttx/semaphore.h>
@@ -89,6 +90,20 @@ struct fuse_conn_s
 /****************************************************************************
  * Public Function Prototypes
  ****************************************************************************/
+
+/****************************************************************************
+ * Name: fuse_notify
+ *
+ * Description:
+ *   Process a server notification in task context.  The caller keeps conn
+ *   alive and supplies only the payload in uio.  No input buffers are
+ *   retained.  Returns zero on success or a negated errno.
+ *
+ ****************************************************************************/
+
+int fuse_notify(FAR struct fuse_conn_s *conn,
+                FAR const struct fuse_out_header *hout,
+                FAR struct uio *uio);
 
 #ifdef CONFIG_FS_FUSE_DEV
 /* Implemented by fs/fuse/fuse_dev.c */
