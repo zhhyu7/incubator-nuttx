@@ -33,6 +33,7 @@
 
 #include <nuttx/fs/fs.h>
 #include <nuttx/fs/uio.h>
+#include <nuttx/mutex.h>
 #include <nuttx/nuttx.h>
 
 #include "fs_heap.h"

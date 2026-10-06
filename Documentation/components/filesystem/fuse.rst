@@ -33,6 +33,11 @@ server.  ``fuse_request()`` computes the request ``unique`` and ``len``,
 submits the request through ``conn->transport->request()``. Requests may
 use a completion callback; synchronous requests use a semaphore-backed
 callback.
+The core submits ``FUSE_INIT`` asynchronously during bind, and subsequent
+requests wait for its completion before proceeding.
+The INIT reply must contain exactly one complete ``fuse_init_out`` with
+the expected protocol major version.  The completion callback releases the
+INIT request after publishing the negotiated maximum write size.
 
 IOCTL forwarding
 ================
@@ -54,11 +59,16 @@ scatter/gather segment arrays.
 Concurrency
 ===========
 
-Each in-flight request owns its own ``sem_t``.  The connection's ``initlock``
-serializes the lazy FUSE_INIT handshake, while request IDs use an atomic
-counter.  The local transport uses its own device lock to protect request
-queues.  Multiple VFS calls may therefore be in flight concurrently without
-holding a connection lock for the full request round trip.
+Each request carries a completion callback and its argument.  Synchronous
+callers use a stack ``sem_t`` until completion; asynchronous callers provide
+their own callback.  Request IDs use an atomic counter, and the connection's
+``initdone`` gates requests while ``initerror`` is ``-EINPROGRESS``.
+The completion callback publishes success or the initialization error and
+wakes waiting requests.  Unbind does not wait for an unfinished handshake
+and does not send ``FUSE_DESTROY`` while initialization is pending.
+The local transport uses its device lock to protect request queues.
+Multiple VFS calls may therefore be in flight concurrently without holding
+a connection lock for the full round trip.
 
 Transports
 ==========

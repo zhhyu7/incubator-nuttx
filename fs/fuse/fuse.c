@@ -77,6 +77,15 @@ struct fuse_file_s
   char     relpath[];
 };
 
+struct fuse_req_init_s
+{
+  struct fuse_req_s    req;
+  struct fuse_init_in  iin;
+  struct fuse_init_out iout;
+  struct iovec         vin[1];
+  struct iovec         vout[1];
+};
+
 /****************************************************************************
  * Private Function Prototypes
  ****************************************************************************/
@@ -127,7 +136,6 @@ static int     fuse_chstat(FAR struct inode *mountpt,
                            FAR const char *relpath,
                            FAR const struct stat *buf, int flags);
 static int     fuse_syncfs(FAR struct inode *mountpt);
-static int     fuse_init(FAR struct fuse_conn_s *conn);
 #ifdef CONFIG_FS_LINKS
 static int     fuse_link(FAR struct inode *mountpt,
                          FAR const char *relpath1,
@@ -250,33 +258,18 @@ static int fuse_request_oneway(FAR struct fuse_conn_s *conn,
   size_t i;
   int ret;
 
-  /* Lazily perform the FUSE_INIT handshake on the first non-INIT request so
-   * that mount() does not block while a single-threaded server is still
-   * starting its read loop.
-   */
-
-  if (req->hin.opcode != FUSE_INIT &&
-      !atomic_read_acquire(&conn->initialized))
+  if (req->hin.opcode != FUSE_INIT)
     {
-      nxmutex_lock(&conn->initlock);
-      if (!atomic_read(&conn->initialized))
+      while ((ret = conn->initerror) == -EINPROGRESS)
         {
-          ret = fuse_init(conn);
-          if (ret < 0)
-            {
-              nxmutex_unlock(&conn->initlock);
-              return ret;
-            }
-
-          /* Publish the fields negotiated by fuse_init before the flag:
-           * the release store pairs with the acquire load in the unlocked
-           * fast path above.
-           */
-
-          atomic_set_release(&conn->initialized, 1);
+          nxsem_wait_uninterruptible(&conn->initdone);
+          nxsem_post(&conn->initdone);
         }
 
-      nxmutex_unlock(&conn->initlock);
+      if (ret < 0)
+        {
+          return ret;
+        }
     }
 
   req->hin.len = sizeof(req->hin);
@@ -779,52 +772,88 @@ static int fuse_lookup_path(FAR struct fuse_conn_s *conn,
 }
 
 /****************************************************************************
+ * Name: fuse_init_done
+ *
+ * Description:
+ *   Publish the result of the asynchronous FUSE_INIT handshake.
+ *
+ ****************************************************************************/
+
+static void fuse_init_done(FAR struct fuse_req_s *req)
+{
+  FAR struct fuse_req_init_s *init = container_of(req,
+                                                  struct fuse_req_init_s,
+                                                  req);
+  FAR struct fuse_conn_s *conn = req->arg;
+  int ret;
+
+  ret = req->hout.error;
+  if (ret < 0)
+    {
+      goto end;
+    }
+
+  if (req->hout.len != sizeof(req->hout) + sizeof(init->iout))
+    {
+      ret = -EIO;
+      goto end;
+    }
+
+  if (init->iout.major != FUSE_KERNEL_VERSION)
+    {
+      ret = -EPROTO;
+      goto end;
+    }
+
+  conn->max_write = init->iout.max_write > 0 ?
+                    init->iout.max_write : FUSE_MAX_WRITE_BUFFER;
+
+end:
+  fs_heap_free(init);
+  conn->initerror = ret;
+  nxsem_post(&conn->initdone);
+}
+
+/****************************************************************************
  * Name: fuse_init
  *
  * Description:
- *   Perform the FUSE_INIT handshake to negotiate protocol capabilities.
+ *   Submit the FUSE_INIT handshake without waiting for its reply.
  *
  ****************************************************************************/
 
 static int fuse_init(FAR struct fuse_conn_s *conn)
 {
-  struct fuse_init_out fout;
-  struct fuse_init_in fin;
-  struct fuse_req_s req;
-  struct iovec vout[1];
-  struct iovec vin[1];
+  FAR struct fuse_req_init_s *init;
   int ret;
 
-  memset(&req, 0, sizeof(req));
-  memset(&fin, 0, sizeof(fin));
+  init = fs_heap_zalloc(sizeof(*init));
+  if (init == NULL)
+    {
+      return -ENOMEM;
+    }
 
-  req.hin.opcode = FUSE_INIT;
-  req.hin.nodeid = FUSE_ROOT_ID;
+  init->req.done = fuse_init_done;
+  init->req.arg  = conn;
 
-  fin.major = FUSE_KERNEL_VERSION;
-  fin.minor = FUSE_KERNEL_MINOR_VERSION;
+  init->req.hin.opcode = FUSE_INIT;
+  init->req.hin.nodeid = FUSE_ROOT_ID;
 
-  vin[0].iov_base = &fin;
-  vin[0].iov_len  = sizeof(fin);
+  init->iin.major = FUSE_KERNEL_VERSION;
+  init->iin.minor = FUSE_KERNEL_MINOR_VERSION;
 
-  vout[0].iov_base = &fout;
-  vout[0].iov_len  = sizeof(fout);
+  init->vin[0].iov_base  = &init->iin;
+  init->vin[0].iov_len   = sizeof(init->iin);
+  init->vout[0].iov_base = &init->iout;
+  init->vout[0].iov_len  = sizeof(init->iout);
 
-  ret = fuse_request(conn, &req, vin, 1, vout, 1);
+  ret = fuse_request(conn, &init->req, init->vin, 1, init->vout, 1);
   if (ret < 0)
     {
-      return ret;
+      fs_heap_free(init);
     }
 
-  if (fout.major != FUSE_KERNEL_VERSION)
-    {
-      return -EPROTO;
-    }
-
-  conn->max_write = fout.max_write > 0 ?
-                    fout.max_write : FUSE_MAX_WRITE_BUFFER;
-
-  return 0;
+  return ret;
 }
 
 /****************************************************************************
@@ -1890,7 +1919,8 @@ static int fuse_bind(FAR struct inode *blkdriver, FAR const void *data,
       return -ENOMEM;
     }
 
-  nxmutex_init(&conn->initlock);
+  nxsem_init(&conn->initdone, 0, 0);
+  conn->initerror = -EINPROGRESS;
   conn->max_write = FUSE_MAX_WRITE_BUFFER;
 
   /* Select the transport from the mount options.  Each transport claims a
@@ -1911,19 +1941,23 @@ static int fuse_bind(FAR struct inode *blkdriver, FAR const void *data,
 
   if (ret < 0)
     {
-      nxmutex_destroy(&conn->initlock);
-      fs_heap_free(conn);
-      return ret;
+      goto err;
     }
 
-  /* The FUSE_INIT handshake is deferred to the first request (see
-   * fuse_request) so that mount() does not block while a single-threaded
-   * server is still starting its read loop.
-   */
+  ret = fuse_init(conn);
+  if (ret < 0)
+    {
+      conn->transport->destroy(conn);
+      goto err;
+    }
 
   *handle = conn;
-
   return 0;
+
+err:
+  nxsem_destroy(&conn->initdone);
+  fs_heap_free(conn);
+  return ret;
 }
 
 /****************************************************************************
@@ -1934,12 +1968,13 @@ static int fuse_unbind(FAR void *handle, FAR struct inode **blkdriver,
                        unsigned int flags)
 {
   FAR struct fuse_conn_s *conn = handle;
-  struct fuse_req_s req;
 
   /* Send FUSE_DESTROY only if the connection completed its handshake */
 
-  if (atomic_read(&conn->initialized))
+  if (conn->initerror >= 0)
     {
+      struct fuse_req_s req;
+
       memset(&req, 0, sizeof(req));
 
       req.hin.opcode = FUSE_DESTROY;
@@ -1949,7 +1984,7 @@ static int fuse_unbind(FAR void *handle, FAR struct inode **blkdriver,
     }
 
   conn->transport->destroy(conn);
-  nxmutex_destroy(&conn->initlock);
+  nxsem_destroy(&conn->initdone);
   fs_heap_free(conn);
 
   return 0;

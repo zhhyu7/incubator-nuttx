@@ -34,7 +34,6 @@
 
 #include <nuttx/atomic.h>
 #include <nuttx/fuse.h>
-#include <nuttx/mutex.h>
 #include <nuttx/queue.h>
 #include <nuttx/semaphore.h>
 
@@ -80,11 +79,11 @@ struct fuse_req_s
 struct fuse_conn_s
 {
   FAR const struct fuse_transport_ops_s *transport;
-  FAR void  *priv;        /* Transport private data */
-  mutex_t    initlock;    /* Serializes the lazy FUSE_INIT */
-  atomic_t   initialized; /* FUSE_INIT handshake completed */
-  atomic_t   unique;      /* Request id generator */
-  uint32_t   max_write;   /* Negotiated maximum write size */
+  FAR void    *priv;      /* Transport private data */
+  sem_t        initdone;  /* Posted when FUSE_INIT completes */
+  volatile int initerror; /* -EINPROGRESS until FUSE_INIT completes */
+  atomic_t     unique;    /* Request id generator */
+  uint32_t     max_write; /* Negotiated maximum write size */
 };
 
 /****************************************************************************
