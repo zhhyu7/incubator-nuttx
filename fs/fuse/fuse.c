@@ -127,6 +127,7 @@ static int     fuse_chstat(FAR struct inode *mountpt,
                            FAR const char *relpath,
                            FAR const struct stat *buf, int flags);
 static int     fuse_syncfs(FAR struct inode *mountpt);
+static int     fuse_init(FAR struct fuse_conn_s *conn);
 #ifdef CONFIG_FS_LINKS
 static int     fuse_link(FAR struct inode *mountpt,
                          FAR const char *relpath1,
@@ -224,6 +225,91 @@ static void fuse_attr_to_stat(FAR const struct fuse_attr *attr,
   st->st_mtim.tv_nsec = attr->mtimensec;
   st->st_ctim.tv_sec  = attr->ctime;
   st->st_ctim.tv_nsec = attr->ctimensec;
+}
+
+/****************************************************************************
+ * Name: fuse_request_oneway
+ ****************************************************************************/
+
+static int fuse_request_oneway(FAR struct fuse_conn_s *conn,
+                               FAR struct fuse_req_s *req,
+                               FAR const struct iovec *vin, size_t vin_cnt,
+                               FAR const struct iovec *vout, size_t vout_cnt)
+{
+  size_t i;
+  int ret;
+
+  /* Lazily perform the FUSE_INIT handshake on the first non-INIT request so
+   * that mount() does not block while a single-threaded server is still
+   * starting its read loop.
+   */
+
+  if (req->hin.opcode != FUSE_INIT &&
+      !atomic_read_acquire(&conn->initialized))
+    {
+      nxmutex_lock(&conn->initlock);
+      if (!atomic_read(&conn->initialized))
+        {
+          ret = fuse_init(conn);
+          if (ret < 0)
+            {
+              nxmutex_unlock(&conn->initlock);
+              return ret;
+            }
+
+          /* Publish the fields negotiated by fuse_init before the flag:
+           * the release store pairs with the acquire load in the unlocked
+           * fast path above.
+           */
+
+          atomic_set_release(&conn->initialized, 1);
+        }
+
+      nxmutex_unlock(&conn->initlock);
+    }
+
+  req->hin.len = sizeof(req->hin);
+  for (i = 0; i < vin_cnt; i++)
+    {
+      req->hin.len += vin[i].iov_len;
+    }
+
+  req->hin.uid = geteuid();
+  req->hin.gid = getegid();
+  req->hin.pid = getpid();
+
+  req->vin      = vin;
+  req->vin_cnt  = vin_cnt;
+  req->vout     = vout;
+  req->vout_cnt = vout_cnt;
+
+  nxsem_init(&req->wait, 0, 0);
+  ret = conn->transport->request(conn, req);
+  if (ret >= 0)
+    {
+      nxsem_wait_uninterruptible(&req->wait);
+    }
+
+  nxsem_destroy(&req->wait);
+  return ret < 0 ? ret : req->hout.error;
+}
+
+/****************************************************************************
+ * Name: fuse_request
+ ****************************************************************************/
+
+static inline int fuse_request(FAR struct fuse_conn_s *conn,
+                               FAR struct fuse_req_s *req,
+                               FAR const struct iovec *vin, size_t vin_cnt,
+                               FAR const struct iovec *vout, size_t vout_cnt)
+{
+  do
+    {
+      req->hin.unique = atomic_add_relaxed(&conn->unique, 1);
+    }
+  while (req->hin.unique == 0);
+
+  return fuse_request_oneway(conn, req, vin, vin_cnt, vout, vout_cnt);
 }
 
 /****************************************************************************
@@ -2224,85 +2310,3 @@ static int fuse_lstat(FAR struct inode *mountpt, FAR const char *relpath,
   return 0;
 }
 #endif /* CONFIG_FS_LINKS */
-
-/****************************************************************************
- * Public Functions
- ****************************************************************************/
-
-/****************************************************************************
- * Name: fuse_request
- ****************************************************************************/
-
-int fuse_request(FAR struct fuse_conn_s *conn, FAR struct fuse_req_s *req,
-                 FAR const struct iovec *vin, size_t vin_cnt,
-                 FAR const struct iovec *vout, size_t vout_cnt)
-{
-  size_t i;
-  int ret;
-
-  /* Lazily perform the FUSE_INIT handshake on the first non-INIT request so
-   * that mount() does not block while a single-threaded server is still
-   * starting its read loop.
-   */
-
-  if (req->hin.opcode != FUSE_INIT &&
-      !atomic_read_acquire(&conn->initialized))
-    {
-      nxmutex_lock(&conn->initlock);
-      if (!atomic_read(&conn->initialized))
-        {
-          ret = fuse_init(conn);
-          if (ret < 0)
-            {
-              nxmutex_unlock(&conn->initlock);
-              return ret;
-            }
-
-          /* Publish the fields negotiated by fuse_init before the flag:
-           * the release store pairs with the acquire load in the unlocked
-           * fast path above.
-           */
-
-          atomic_set_release(&conn->initialized, 1);
-        }
-
-      nxmutex_unlock(&conn->initlock);
-    }
-
-  /* The total request length is the header plus all request arguments */
-
-  req->hin.len = sizeof(req->hin);
-  for (i = 0; i < vin_cnt; i++)
-    {
-      req->hin.len += vin[i].iov_len;
-    }
-
-  do
-    {
-      req->hin.unique = atomic_add_relaxed(&conn->unique, 1);
-    }
-  while (req->hin.unique == 0);
-
-  req->hin.uid = geteuid();
-  req->hin.gid = getegid();
-  req->hin.pid = getpid();
-
-  req->vin      = vin;
-  req->vin_cnt  = vin_cnt;
-  req->vout     = vout;
-  req->vout_cnt = vout_cnt;
-
-  /* Submit through the transport and wait for the reply.  The completion
-   * path posts req->wait.
-   */
-
-  nxsem_init(&req->wait, 0, 0);
-  ret = conn->transport->request(conn, req);
-  if (ret >= 0)
-    {
-      nxsem_wait_uninterruptible(&req->wait);
-    }
-
-  nxsem_destroy(&req->wait);
-  return ret < 0 ? ret : req->hout.error;
-}

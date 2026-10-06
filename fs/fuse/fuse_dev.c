@@ -253,6 +253,7 @@ static ssize_t fuse_dev_readv(FAR struct file *filep, FAR struct uio *uio)
   FAR struct fuse_dev_s *dev = filep->f_priv;
   FAR struct fuse_req_s *req;
   FAR sq_entry_t *entry;
+  bool oneway = false;
   size_t resid;
   size_t i;
   int ret;
@@ -272,7 +273,15 @@ static ssize_t fuse_dev_readv(FAR struct file *filep, FAR struct uio *uio)
           req = container_of(entry, struct fuse_req_s, entry);
           if (uio->uio_resid >= req->hin.len)
             {
-              sq_addlast(&req->entry, &dev->processing);
+              if (req->hin.unique)
+                {
+                  sq_addlast(&req->entry, &dev->processing);
+                }
+              else
+                {
+                  oneway = true;
+                }
+
               nxmutex_unlock(&dev->lock);
               break;
             }
@@ -309,6 +318,11 @@ static ssize_t fuse_dev_readv(FAR struct file *filep, FAR struct uio *uio)
     {
       uio_copyfrom(uio, 0, req->vin[i].iov_base, req->vin[i].iov_len);
       uio_advance(uio, req->vin[i].iov_len);
+    }
+
+  if (oneway)
+    {
+      nxsem_post(&req->wait);
     }
 
   return resid - uio->uio_resid;

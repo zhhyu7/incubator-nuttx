@@ -92,25 +92,6 @@ struct fuse_conn_s
  * Public Function Prototypes
  ****************************************************************************/
 
-/****************************************************************************
- * Name: fuse_request
- *
- * Description:
- *   Submit a FUSE request through the connection transport and block until
- *   the reply arrives.  vout/outcnt describe the request arguments that
- *   follow the fuse_in_header; vin/incnt describe the buffers that receive
- *   the reply payload following the fuse_out_header.
- *
- * Returned Value:
- *   The FUSE reply 0 on success, or a negated errno on transport
- *   failure.
- *
- ****************************************************************************/
-
-int fuse_request(FAR struct fuse_conn_s *conn, FAR struct fuse_req_s *req,
-                 FAR const struct iovec *vin, size_t vin_cnt,
-                 FAR const struct iovec *vout, size_t out_cnt);
-
 #ifdef CONFIG_FS_FUSE_DEV
 /* Implemented by fs/fuse/fuse_dev.c */
 

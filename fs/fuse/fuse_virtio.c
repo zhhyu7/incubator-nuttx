@@ -173,7 +173,9 @@ static int fuse_virtio_request(FAR struct fuse_conn_s *conn,
   FAR struct fuse_virtio_s *fs = conn->priv;
   FAR struct virtio_device *vdev = fs->vdev;
   FAR struct virtqueue *vq = vdev->vrings_info[VIRTIOFS_REQUEST_VQ].vq;
-  size_t total = req->vin_cnt + req->vout_cnt + 2;
+  size_t writable = req->hin.unique ? req->vout_cnt + 1 : 0;
+  size_t readable = req->vin_cnt + 1;
+  size_t total = readable + writable;
   struct virtqueue_buf vb[total];
   enum virtio_dma_map dir;
   irqstate_t flags;
@@ -204,8 +206,7 @@ static int fuse_virtio_request(FAR struct fuse_conn_s *conn,
   nxsem_init(&done, 0, 0);
 
   flags = spin_lock_irqsave(&fs->lock);
-  ret = virtqueue_add_buffer(vq, vb, req->vin_cnt + 1,
-                             req->vout_cnt + 1, &done);
+  ret = virtqueue_add_buffer(vq, vb, readable, writable, &done);
   if (ret >= 0)
     {
       virtqueue_kick(vq);
