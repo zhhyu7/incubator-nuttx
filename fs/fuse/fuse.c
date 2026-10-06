@@ -381,6 +381,64 @@ static int fuse_setattr(FAR struct fuse_conn_s *conn,
 }
 
 /****************************************************************************
+ * Name: fuse_open_node
+ *
+ * Description:
+ *   Open a FUSE node and return the server-side file handle.
+ *
+ ****************************************************************************/
+
+static int fuse_open_node(FAR struct fuse_conn_s *conn, uint64_t nodeid,
+                          int oflags, FAR struct fuse_open_out *oout)
+{
+  struct fuse_open_in oin;
+  struct fuse_req_s req;
+  struct iovec vout[1];
+  struct iovec vin[1];
+
+  memset(&req, 0, sizeof(req));
+  memset(&oin, 0, sizeof(oin));
+
+  req.hin.opcode = FUSE_OPEN;
+  req.hin.nodeid = nodeid;
+
+  oin.flags = oflags;
+
+  vin[0].iov_base = &oin;
+  vin[0].iov_len  = sizeof(oin);
+
+  vout[0].iov_base = oout;
+  vout[0].iov_len  = sizeof(*oout);
+
+  return fuse_request(conn, &req, vin, 1, vout, 1);
+}
+
+/****************************************************************************
+ * Name: fuse_unlink_node
+ *
+ * Description:
+ *   Remove a named child node from a FUSE directory.
+ *
+ ****************************************************************************/
+
+static int fuse_unlink_node(FAR struct fuse_conn_s *conn, uint64_t parent,
+                            FAR const char *name)
+{
+  struct fuse_req_s req;
+  struct iovec vin[1];
+
+  memset(&req, 0, sizeof(req));
+
+  req.hin.opcode = FUSE_UNLINK;
+  req.hin.nodeid = parent;
+
+  vin[0].iov_base = (FAR void *)name;
+  vin[0].iov_len  = strlen(name) + 1;
+
+  return fuse_request(conn, &req, vin, 1, NULL, 0);
+}
+
+/****************************************************************************
  * Name: fuse_readlink_node
  ****************************************************************************/
 
@@ -670,13 +728,10 @@ static int fuse_open(FAR struct file *filep, FAR const char *relpath,
   FAR struct fuse_file_s *fp;
   struct fuse_entry_out entry;
   struct fuse_open_out oout;
-  struct fuse_req_s req;
   struct iovec vout[2];
   struct iovec vin[2];
   size_t pathlen;
   int ret;
-
-  memset(&req, 0, sizeof(req));
 
   /* Record the relative path so that FIOC_FILEPATH can report it later:
    * FUSE has no reverse (nodeid to name) query.
@@ -692,6 +747,7 @@ static int fuse_open(FAR struct file *filep, FAR const char *relpath,
   if ((oflags & O_CREAT) != 0)
     {
       struct fuse_create_in cin;
+      struct fuse_req_s req;
       FAR const char *name;
       uint64_t parent;
 
@@ -703,6 +759,7 @@ static int fuse_open(FAR struct file *filep, FAR const char *relpath,
         }
 
       memset(&cin, 0, sizeof(cin));
+      memset(&req, 0, sizeof(req));
 
       req.hin.opcode = FUSE_CREATE;
       req.hin.nodeid = parent;
@@ -725,8 +782,6 @@ static int fuse_open(FAR struct file *filep, FAR const char *relpath,
     }
   else /* Normal open: lookup then FUSE_OPEN */
     {
-      struct fuse_open_in oin;
-
       ret = fuse_lookup_path(conn, relpath, &entry, true);
       if (ret < 0)
         {
@@ -734,20 +789,7 @@ static int fuse_open(FAR struct file *filep, FAR const char *relpath,
           return ret;
         }
 
-      memset(&oin, 0, sizeof(oin));
-
-      req.hin.opcode = FUSE_OPEN;
-      req.hin.nodeid = entry.nodeid;
-
-      oin.flags = oflags;
-
-      vin[0].iov_base = &oin;
-      vin[0].iov_len  = sizeof(oin);
-
-      vout[0].iov_base = &oout;
-      vout[0].iov_len  = sizeof(oout);
-
-      ret = fuse_request(conn, &req, vin, 1, vout, 1);
+      ret = fuse_open_node(conn, entry.nodeid, oflags, &oout);
     }
 
   if (ret < 0)
@@ -1849,8 +1891,6 @@ static int fuse_statfs(FAR struct inode *mountpt, FAR struct statfs *buf)
 static int fuse_unlink(FAR struct inode *mountpt, FAR const char *relpath)
 {
   FAR struct fuse_conn_s *conn = mountpt->i_private;
-  struct fuse_req_s req;
-  struct iovec vin[1];
   FAR const char *name;
   uint64_t parent;
   int ret;
@@ -1861,15 +1901,7 @@ static int fuse_unlink(FAR struct inode *mountpt, FAR const char *relpath)
       return ret;
     }
 
-  memset(&req, 0, sizeof(req));
-
-  req.hin.opcode = FUSE_UNLINK;
-  req.hin.nodeid = parent;
-
-  vin[0].iov_base = (FAR void *)name;
-  vin[0].iov_len  = strlen(name) + 1;
-
-  return fuse_request(conn, &req, vin, 1, NULL, 0);
+  return fuse_unlink_node(conn, parent, name);
 }
 
 /****************************************************************************
