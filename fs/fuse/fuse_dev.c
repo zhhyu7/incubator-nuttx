@@ -150,10 +150,17 @@ fuse_dev_notify(FAR struct fuse_dev_s *dev, pollevent_t events)
 
 static void fuse_dev_abort(FAR struct fuse_dev_s *dev)
 {
+  FAR struct fuse_conn_s *conn;
   FAR sq_entry_t *entry;
 
   nxmutex_lock(&dev->lock);
+  conn = dev->conn;
   dev->conn = FUSE_DEV_DEAD;
+
+  if (conn != NULL && conn != FUSE_DEV_DEAD)
+    {
+      fuse_abort(conn);
+    }
 
   while ((entry = sq_remfirst(&dev->pending)) != NULL)
     {

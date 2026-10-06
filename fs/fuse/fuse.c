@@ -27,6 +27,7 @@
 #include <errno.h>
 #include <fcntl.h>
 #include <limits.h>
+#include <poll.h>
 #include <string.h>
 #include <sys/param.h>
 #include <sys/stat.h>
@@ -77,6 +78,14 @@ struct fuse_file_s
   char     relpath[];
 };
 
+struct fuse_poll_s
+{
+  struct list_node   node;
+  FAR struct file   *file;
+  FAR struct pollfd *fds;
+  uint32_t           kh;
+};
+
 struct fuse_req_init_s
 {
   struct fuse_req_s    req;
@@ -99,6 +108,8 @@ static off_t   fuse_seek(FAR struct file *filep, off_t offset, int whence);
 static int     fuse_ioctl(FAR struct file *filep, int cmd,
                           unsigned long arg);
 static int     fuse_truncate(FAR struct file *filep, off_t length);
+static int     fuse_poll(FAR struct file *filep,
+                         FAR struct pollfd *fds, bool setup);
 static int     fuse_sync(FAR struct file *filep);
 static int     fuse_dup(FAR const struct file *oldp, FAR struct file *newp);
 static int     fuse_fstat(FAR const struct file *filep,
@@ -163,7 +174,7 @@ const struct mountpt_operations g_fuse_operations =
   fuse_seek,      /* seek */
   fuse_ioctl,     /* ioctl */
   fuse_truncate,  /* truncate */
-  NULL,           /* poll */
+  fuse_poll,      /* poll */
   fuse_readv,     /* readv */
   fuse_writev,    /* writev */
 #ifdef CONFIG_FS_FILEMAP
@@ -540,6 +551,49 @@ static int fuse_unlink_node(FAR struct fuse_conn_s *conn, uint64_t parent,
   vin[0].iov_len  = strlen(name) + 1;
 
   return fuse_request(conn, &req, vin, 1, NULL, 0);
+}
+
+/****************************************************************************
+ * Name: fuse_poll_node
+ *
+ * Description:
+ *   Query the server for readiness of a file handle.
+ *
+ ****************************************************************************/
+
+static int fuse_poll_node(FAR struct fuse_conn_s *conn, uint64_t nodeid,
+                          uint64_t fh, uint64_t kh, pollevent_t events,
+                          FAR struct fuse_poll_out *pout)
+{
+  struct fuse_poll_in pin;
+  struct fuse_req_s req;
+  struct iovec vout[1];
+  struct iovec vin[1];
+  int ret;
+
+  memset(&req, 0, sizeof(req));
+  memset(&pin, 0, sizeof(pin));
+
+  req.hin.opcode = FUSE_POLL;
+  req.hin.nodeid = nodeid;
+
+  pin.fh     = fh;
+  pin.kh     = kh;
+  pin.flags  = FUSE_POLL_SCHEDULE_NOTIFY;
+  pin.events = events;
+
+  vin[0].iov_base  = &pin;
+  vin[0].iov_len   = sizeof(pin);
+  vout[0].iov_base = pout;
+  vout[0].iov_len  = sizeof(*pout);
+
+  ret = fuse_request(conn, &req, vin, 1, vout, 1);
+  if (ret >= 0 && req.hout.len != sizeof(req.hout) + sizeof(*pout))
+    {
+      ret = -EIO;
+    }
+
+  return ret;
 }
 
 /****************************************************************************
@@ -1638,6 +1692,123 @@ static int fuse_truncate(FAR struct file *filep, off_t length)
 }
 
 /****************************************************************************
+ * Name: fuse_poll_teardown
+ ****************************************************************************/
+
+static inline void
+fuse_poll_teardown(FAR struct file *filep, FAR struct pollfd *fds)
+{
+  FAR struct inode *inode = filep->f_inode;
+  FAR struct fuse_conn_s *conn = inode->i_private;
+  FAR struct fuse_poll_s *poll = fds->priv;
+  irqstate_t flags;
+
+  flags = spin_lock_irqsave(&conn->polllock);
+  if (poll != NULL)
+    {
+      list_delete(&poll->node);
+      poll->fds->priv = NULL;
+      poll->fds = NULL;
+      spin_unlock_irqrestore(&conn->polllock, flags);
+
+      file_put(poll->file);
+      fs_heap_free(poll);
+    }
+  else
+    {
+      spin_unlock_irqrestore(&conn->polllock, flags);
+    }
+}
+
+/****************************************************************************
+ * Name: fuse_poll_setup
+ ****************************************************************************/
+
+static int fuse_poll_setup(FAR struct file *filep, FAR struct pollfd *fds)
+{
+  FAR struct inode *inode = filep->f_inode;
+  FAR struct fuse_conn_s *conn = inode->i_private;
+  FAR struct fuse_file_s *fp = filep->f_priv;
+  FAR struct fuse_poll_s *poll;
+  struct fuse_poll_out pout;
+  irqstate_t flags;
+  int ret;
+
+  poll = fs_heap_zalloc(sizeof(*poll));
+  if (poll == NULL)
+    {
+      return -ENOMEM;
+    }
+
+  file_ref(filep);
+  poll->file = filep;
+
+  poll->kh = atomic_add_relaxed(&conn->kh, 1) + 1;
+
+  flags = spin_lock_irqsave(&conn->polllock);
+  fds->priv = poll;
+  poll->fds = fds;
+  list_add_tail(&conn->polls, &poll->node);
+  spin_unlock_irqrestore(&conn->polllock, flags);
+
+  ret = fuse_poll_node(conn, fp->nodeid, fp->fh,
+                       poll->kh, fds->events, &pout);
+  if (ret < 0)
+    {
+      fuse_poll_teardown(filep, fds);
+      return ret;
+    }
+
+  if (pout.revents)
+    {
+      poll_notify(&fds, 1, pout.revents);
+    }
+
+  return 0;
+}
+
+/****************************************************************************
+ * Name: fuse_poll_wakeup
+ ****************************************************************************/
+
+static void fuse_poll_wakeup(FAR struct fuse_conn_s *conn, uint32_t kh)
+{
+  irqstate_t flags = spin_lock_irqsave_nopreempt(&conn->polllock);
+  FAR struct fuse_poll_s *poll;
+
+  list_for_every_entry(&conn->polls, poll, struct fuse_poll_s, node)
+    {
+      FAR struct pollfd *fds = poll->fds;
+
+      if (poll->kh == kh)
+        {
+          poll_notify(&fds, 1, fds->events & (POLLIN | POLLOUT | POLLPRI));
+          break;
+        }
+    }
+
+  spin_unlock_irqrestore_nopreempt(&conn->polllock, flags);
+}
+
+/****************************************************************************
+ * Name: fuse_poll
+ ****************************************************************************/
+
+static int fuse_poll(FAR struct file *filep,
+                     FAR struct pollfd *fds, bool setup)
+{
+  if (setup)
+    {
+      return fuse_poll_setup(filep, fds);
+    }
+  else
+    {
+      fuse_poll_teardown(filep, fds);
+      return 0;
+    }
+}
+
+/****************************************************************************
  * Name: fuse_sync
  ****************************************************************************/
 
@@ -1923,6 +2094,9 @@ static int fuse_bind(FAR struct inode *blkdriver, FAR const void *data,
   conn->initerror = -EINPROGRESS;
   conn->max_write = FUSE_MAX_WRITE_BUFFER;
 
+  spin_lock_init(&conn->polllock);
+  list_initialize(&conn->polls);
+
   /* Select the transport from the mount options.  Each transport claims a
    * distinct option keyword: "fd=" for the local /dev/fuse character
    * device, "tag=" for the virtio-conn device.
@@ -1968,6 +2142,16 @@ static int fuse_unbind(FAR void *handle, FAR struct inode **blkdriver,
                        unsigned int flags)
 {
   FAR struct fuse_conn_s *conn = handle;
+  irqstate_t irqflags;
+
+  irqflags = spin_lock_irqsave(&conn->polllock);
+  if (!list_is_empty(&conn->polls))
+    {
+      spin_unlock_irqrestore(&conn->polllock, irqflags);
+      return -EBUSY;
+    }
+
+  spin_unlock_irqrestore(&conn->polllock, irqflags);
 
   /* Send FUSE_DESTROY only if the connection completed its handshake */
 
@@ -2376,6 +2560,23 @@ static int fuse_lstat(FAR struct inode *mountpt, FAR const char *relpath,
  ****************************************************************************/
 
 /****************************************************************************
+ * Name: fuse_abort
+ ****************************************************************************/
+
+void fuse_abort(FAR struct fuse_conn_s *conn)
+{
+  irqstate_t flags = spin_lock_irqsave_nopreempt(&conn->polllock);
+  FAR struct fuse_poll_s *poll;
+
+  list_for_every_entry(&conn->polls, poll, struct fuse_poll_s, node)
+    {
+      poll_notify(&poll->fds, 1, POLLERR | POLLHUP);
+    }
+
+  spin_unlock_irqrestore_nopreempt(&conn->polllock, flags);
+}
+
+/****************************************************************************
  * Name: fuse_notify
  ****************************************************************************/
 
@@ -2396,6 +2597,21 @@ int fuse_notify(FAR struct fuse_conn_s *conn,
 
   switch (hout->error)
     {
+      case FUSE_NOTIFY_POLL:
+        {
+          struct fuse_notify_poll_wakeup_out wakeup;
+
+          if (hout->len != sizeof(*hout) + sizeof(wakeup))
+            {
+              return -EINVAL;
+            }
+
+          uio_copyto(uio, 0, &wakeup, sizeof(wakeup));
+          uio_advance(uio, sizeof(wakeup));
+          fuse_poll_wakeup(conn, wakeup.kh);
+          return 0;
+        }
+
       case FUSE_NOTIFY_INVAL_INODE:
         if (hout->len != sizeof(*hout) + sizeof(inode))
           {

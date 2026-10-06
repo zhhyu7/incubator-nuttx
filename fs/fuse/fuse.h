@@ -35,8 +35,10 @@
 #include <nuttx/atomic.h>
 #include <nuttx/fs/uio.h>
 #include <nuttx/fuse.h>
+#include <nuttx/list.h>
 #include <nuttx/queue.h>
 #include <nuttx/semaphore.h>
+#include <nuttx/spinlock.h>
 
 /****************************************************************************
  * Public Types
@@ -80,16 +82,21 @@ struct fuse_req_s
 struct fuse_conn_s
 {
   FAR const struct fuse_transport_ops_s *transport;
-  FAR void    *priv;      /* Transport private data */
-  sem_t        initdone;  /* Posted when FUSE_INIT completes */
-  volatile int initerror; /* -EINPROGRESS until FUSE_INIT completes */
-  atomic_t     unique;    /* Request id generator */
-  uint32_t     max_write; /* Negotiated maximum write size */
+  FAR void        *priv;      /* Transport private data */
+  sem_t            initdone;  /* Posted when FUSE_INIT completes */
+  volatile int     initerror; /* -EINPROGRESS until FUSE_INIT completes */
+  atomic_t         unique;    /* Request id generator */
+  uint32_t         max_write; /* Negotiated maximum write size */
+  spinlock_t       polllock;
+  struct list_node polls;
+  atomic_t         kh;
 };
 
 /****************************************************************************
  * Public Function Prototypes
  ****************************************************************************/
+
+void fuse_abort(FAR struct fuse_conn_s *conn);
 
 /****************************************************************************
  * Name: fuse_notify

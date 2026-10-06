@@ -82,14 +82,37 @@ acted upon.
 STORE data is consumed and discarded; it is not written to the server or
 retained locally.
 
-``FUSE_NOTIFY_RETRIEVE``, ``FUSE_NOTIFY_RESEND`` and
-``FUSE_NOTIFY_POLL`` remain unsupported and return ``-ENOTSUP``.  RESEND
-concerns outstanding requests, not cache invalidation.  File poll behavior
-is unchanged.
+``FUSE_NOTIFY_RETRIEVE`` and ``FUSE_NOTIFY_RESEND`` remain unsupported and
+return ``-ENOTSUP``.  RESEND concerns outstanding requests, not cache
+invalidation.
 
-Server notifications are currently supported only by the ``/dev/fuse``
-transport.  Virtio-fs does not negotiate ``VIRTIO_FS_F_NOTIFICATION`` and
-continues to use queue 0 for hiprio and queue 1 for requests.
+The ``/dev/fuse`` transport currently delivers server notifications.
+Virtio-fs does not yet negotiate ``VIRTIO_FS_F_NOTIFICATION`` and continues
+to use queue 0 for hiprio and queue 1 for requests.
+
+File polling
+============
+
+Each poll setup sends a synchronous ``FUSE_POLL`` request containing the file
+handle, requested events and ``FUSE_POLL_SCHEDULE_NOTIFY``.  The initial
+reply's ``revents`` are reported to the application.  Each registration
+holds a file reference and receives a handle generated from an
+atomic 32-bit counter and carried in the 64-bit ``kh`` protocol field.
+
+``FUSE_NOTIFY_POLL`` carries only ``kh``.  After validating and consuming
+its payload, the client reports the matching registration's requested
+``POLLIN`` and ``POLLOUT`` events without issuing another query.  Unknown
+or expired handles are ignored.  Every transport is expected to deliver
+these notifications; virtio-fs notification reception remains to be
+implemented.
+
+Teardown removes the registration before releasing the file reference and
+poll storage.  Disconnect wakes registered polls with``POLLERR | POLLHUP``
+and aborts outstanding transport requests.  Poll requests use the synchronous
+FUSE request mechanism and can therefore wait beyond the poll timeout if the
+server does not reply.  Unmount returns ``-EBUSY`` while registrations remain.
+An ``-ENOSYS`` reply is returned as an error; there is no local-readiness
+fallback.
 
 Concurrency
 ===========
@@ -106,7 +129,10 @@ Multiple VFS calls may therefore be in flight concurrently without holding
 a connection lock for the full round trip.
 
 The local transport holds its device lock during notification processing
-to keep the connection alive.
+to keep the connection alive.  A separate ``polllock`` protects poll
+registrations in a doubly linked list and event delivery.  Lock ordering
+is device lock before poll lock; FUSE requests are issued without the poll
+lock held.
 
 Transports
 ==========
