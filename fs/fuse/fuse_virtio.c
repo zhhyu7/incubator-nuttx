@@ -233,13 +233,13 @@ out:
       virtio_unmap_buf(vdev, buf, len, dir, vb[i].buf);
     }
 
-  /* The reply is already in place:  post the request wait that the core
-   * blocks on so its wait returns immediately.
+  /* The reply is already in place:  invoke the callback that completes the
+   * request in the core.
    */
 
   if (ret >= 0)
     {
-      nxsem_post(&req->wait);
+      req->done(req);
     }
 
   return ret;

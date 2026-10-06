@@ -228,6 +228,15 @@ static void fuse_attr_to_stat(FAR const struct fuse_attr *attr,
 }
 
 /****************************************************************************
+ * Name: fuse_req_done
+ ****************************************************************************/
+
+static void fuse_req_done(FAR struct fuse_req_s *req)
+{
+  nxsem_post((FAR sem_t *)req->arg);
+}
+
+/****************************************************************************
  * Name: fuse_request_oneway
  ****************************************************************************/
 
@@ -236,6 +245,8 @@ static int fuse_request_oneway(FAR struct fuse_conn_s *conn,
                                FAR const struct iovec *vin, size_t vin_cnt,
                                FAR const struct iovec *vout, size_t vout_cnt)
 {
+  bool wait = false;
+  sem_t done;
   size_t i;
   int ret;
 
@@ -283,15 +294,29 @@ static int fuse_request_oneway(FAR struct fuse_conn_s *conn,
   req->vout     = vout;
   req->vout_cnt = vout_cnt;
 
-  nxsem_init(&req->wait, 0, 0);
-  ret = conn->transport->request(conn, req);
-  if (ret >= 0)
+  if (req->done == NULL)
     {
-      nxsem_wait_uninterruptible(&req->wait);
+      wait = true;
+      nxsem_init(&done, 0, 0);
+      req->arg  = &done;
+      req->done = fuse_req_done;
     }
 
-  nxsem_destroy(&req->wait);
-  return ret < 0 ? ret : req->hout.error;
+  ret = conn->transport->request(conn, req);
+  if (ret >= 0 && wait)
+    {
+      nxsem_wait_uninterruptible(&done);
+      ret = req->hout.error;
+    }
+
+  if (wait)
+    {
+      nxsem_destroy(&done);
+      req->arg  = NULL;
+      req->done = NULL;
+    }
+
+  return ret;
 }
 
 /****************************************************************************

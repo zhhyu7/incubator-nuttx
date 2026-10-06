@@ -158,16 +158,20 @@ static void fuse_dev_abort(FAR struct fuse_dev_s *dev)
     {
       FAR struct fuse_req_s *req = container_of(entry, struct fuse_req_s,
                                                 entry);
+      nxmutex_unlock(&dev->lock);
       req->hout.error = -ENOTCONN;
-      nxsem_post(&req->wait);
+      req->done(req);
+      nxmutex_lock(&dev->lock);
     }
 
   while ((entry = sq_remfirst(&dev->processing)) != NULL)
     {
       FAR struct fuse_req_s *req = container_of(entry, struct fuse_req_s,
                                                 entry);
+      nxmutex_unlock(&dev->lock);
       req->hout.error = -ENOTCONN;
-      nxsem_post(&req->wait);
+      req->done(req);
+      nxmutex_lock(&dev->lock);
     }
 
   fuse_dev_notify(dev, POLLHUP);
@@ -292,7 +296,7 @@ static ssize_t fuse_dev_readv(FAR struct file *filep, FAR struct uio *uio)
 
           nxmutex_unlock(&dev->lock);
           req->hout.error = -EIO;
-          nxsem_post(&req->wait);
+          req->done(req);
           continue;
         }
 
@@ -322,7 +326,7 @@ static ssize_t fuse_dev_readv(FAR struct file *filep, FAR struct uio *uio)
 
   if (oneway)
     {
-      nxsem_post(&req->wait);
+      req->done(req);
     }
 
   return resid - uio->uio_resid;
@@ -398,7 +402,7 @@ static ssize_t fuse_dev_writev(FAR struct file *filep, FAR struct uio *uio)
       datalen -= chunk;
     }
 
-  nxsem_post(&req->wait);
+  req->done(req);
   return resid - uio->uio_resid;
 }
 

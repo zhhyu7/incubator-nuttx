@@ -46,12 +46,10 @@ struct fuse_conn_s;
 struct fuse_req_s;
 
 /* Transport abstraction.  A transport moves FUSE request/reply bytes
- * between the core and a server.  request() submits a request and returns
- * immediately (non-blocking); the completion path posts req->wait.  The
- * core (fuse_request) computes the unique/len, waits for completion and
- * returns the FUSE error code.  The optional maxbuf() reports the largest
- * payload one request can carry at this moment (bouncing transports
- * bounded by their shared memory); NULL means no limit.
+ * between the core and a server; completion invokes req->done.
+ * The optional maxbuf() reports the largest payload one request can carry
+ * at this moment (bouncing transports bounded by their shared memory);
+ * NULL means no limit.
  */
 
 struct fuse_transport_ops_s
@@ -68,7 +66,8 @@ struct fuse_req_s
 {
   struct fuse_in_header   hin;   /* Request header (filled by core) */
   struct fuse_out_header  hout;  /* Reply header (filled by transport) */
-  sem_t                   wait;  /* Per-request completion semaphore */
+  FAR void               *arg;   /* Completion callback argument */
+  CODE void             (*done)(FAR struct fuse_req_s *req);
   FAR const struct iovec *vin;   /* Request args (sent to server) */
   size_t                  vin_cnt;
   FAR const struct iovec *vout;  /* Reply buffers (received from server) */

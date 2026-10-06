@@ -30,8 +30,9 @@ Architecture
 The core owns the filesystem semantics and the request life cycle.  A
 transport only moves the FUSE request/reply bytes between the core and a
 server.  ``fuse_request()`` computes the request ``unique`` and ``len``,
-submits the request through ``conn->transport->request()`` and blocks on a
-per-request semaphore until the completion path posts it.
+submits the request through ``conn->transport->request()``. Requests may
+use a completion callback; synchronous requests use a semaphore-backed
+callback.
 
 IOCTL forwarding
 ================
