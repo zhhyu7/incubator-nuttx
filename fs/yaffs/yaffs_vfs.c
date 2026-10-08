@@ -541,7 +541,7 @@ static int yaffs_vfs_ioctl(FAR struct file *filep, int cmd,
           ret = inode_getpath(inode, path, PATH_MAX);
           if (ret >= 0)
             {
-              strcat(path, priv->path);
+              strlcat(path, priv->path, PATH_MAX);
             }
         }
         break;

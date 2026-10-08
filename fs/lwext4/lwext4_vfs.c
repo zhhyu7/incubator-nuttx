@@ -905,19 +905,12 @@ static int lwext4_ioctl(FAR struct file *filep, int cmd, unsigned long arg)
           ret = inode_getpath(inode, path, PATH_MAX);
           if (ret >= 0)
             {
-              size_t len = strlen(path);
-              if (path[len - 1] != '/')
-                {
-                  path[len++] = '/';
-                }
-
               /* Extract relative path from lwext4 internal path
                * by stripping the mount_name prefix (e.g., "/nx0/")
                */
 
-              strlcpy(path + len,
-                      priv->path + strlen(fs->mount_name),
-                      PATH_MAX - len);
+              strlcat(path, priv->path + strlen(fs->mount_name),
+                      PATH_MAX);
             }
 
           return ret;

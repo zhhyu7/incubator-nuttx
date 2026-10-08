@@ -639,13 +639,7 @@ static int littlefs_ioctl(FAR struct file *filep, int cmd, unsigned long arg)
           ret = inode_getpath(inode, path, PATH_MAX);
           if (ret >= 0)
             {
-              size_t len = strlen(path);
-              if (path[len - 1] != '/')
-                {
-                  path[len++] = '/';
-                }
-
-              strlcpy(path + len, priv->relpath, PATH_MAX - len);
+              strlcat(path, priv->relpath, PATH_MAX);
             }
         }
         break;

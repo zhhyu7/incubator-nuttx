@@ -1385,14 +1385,7 @@ static int fat_ioctl(FAR struct file *filep, int cmd, unsigned long arg)
           ret = inode_getpath(inode, path, PATH_MAX);
           if (ret >= 0)
             {
-              size_t len = strlen(path);
-              if (len > 0 && path[len - 1] != '/')
-                {
-                  path[len++] = '/';
-                  path[len]   = '\0';
-                }
-
-              strlcpy(&path[len], ff->ff_path, PATH_MAX - len);
+              strlcat(path, ff->ff_path, PATH_MAX);
             }
         }
         break;
