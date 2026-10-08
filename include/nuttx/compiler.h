@@ -1843,19 +1843,24 @@ double log2(double x);
 long double log2l(long double x);
 #  define __builtin_log2l(x) log2l(x)
 
-/* Power and root */
+/* Power and root
+ *
+ * The TASKING math.h defines these names as function like macros, which fire
+ * on the declaration too.  The parentheses keep the declarator from looking
+ * like an invocation.  Uses still go through the macro.
+ */
 
-float powf(float x, float y);
+float (powf)(float x, float y);
 #  define __builtin_powf(x, y) powf(x, y)
-double pow(double x, double y);
+double (pow)(double x, double y);
 #  define __builtin_pow(x, y) pow(x, y)
-long double powl(long double x, long double y);
+long double (powl)(long double x, long double y);
 #  define __builtin_powl(x, y) powl(x, y)
-float sqrtf(float x);
+float (sqrtf)(float x);
 #  define __builtin_sqrtf(x) sqrtf(x)
-double sqrt(double x);
+double (sqrt)(double x);
 #  define __builtin_sqrt(x) sqrt(x)
-long double sqrtl(long double x);
+long double (sqrtl)(long double x);
 #  define __builtin_sqrtl(x) sqrtl(x)
 
 /* Rounding and remainder */
@@ -1915,9 +1920,14 @@ double scalbn(double x, int n);
 long double scalbnl(long double x, int n);
 #  define __builtin_scalbnl(x, n) scalbnl(x, n)
 
-/* Absolute value, sign, min/max */
+/* Absolute value, sign, min/max
+ *
+ * The TASKING math.h defines these names as function like macros, which fire
+ * on the declaration too.  The parentheses keep the declarator from looking
+ * like an invocation.  Uses still go through the macro.
+ */
 
-long double fabsl(long double x);
+long double (fabsl)(long double x);
 #  define __builtin_fabsl(x) fabsl(x)
 float copysignf(float x, float y);
 #  define __builtin_copysignf(x, y) copysignf(x, y)
@@ -1925,17 +1935,17 @@ long double copysignl(long double x, long double y);
 #  define __builtin_copysignl(x, y) copysignl(x, y)
 double copysign(double x, double y);
 #  define __builtin_copysign(x, y) copysign(x, y)
-float fmaxf(float x, float y);
+float (fmaxf)(float x, float y);
 #  define __builtin_fmaxf(x, y) fmaxf(x, y)
-long double fmaxl(long double x, long double y);
+long double (fmaxl)(long double x, long double y);
 #  define __builtin_fmaxl(x, y) fmaxl(x, y)
-double fmax(double x, double y);
+double (fmax)(double x, double y);
 #  define __builtin_fmax(x, y) fmax(x, y)
-float fminf(float x, float y);
+float (fminf)(float x, float y);
 #  define __builtin_fminf(x, y) fminf(x, y)
-double fmin(double x, double y);
+double (fmin)(double x, double y);
 #  define __builtin_fmin(x, y) fmin(x, y)
-long double fminl(long double x, long double y);
+long double (fminl)(long double x, long double y);
 #  define __builtin_fminl(x, y) fminl(x, y)
 
 /* Error function */
