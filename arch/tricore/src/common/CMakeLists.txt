@@ -126,3 +126,18 @@ if(CONFIG_ARCH_TOOLCHAIN_TASKING)
     target_link_options(nuttx_user PRIVATE --optimize=0)
   endif()
 endif()
+
+# TASKING toolchain: build a fake libc_fpu.a to override the toolchain's default
+# C library and provide stubs for the symbols the linker still references (see
+# tricore_libc.c for details).
+
+if(CONFIG_TRICORE_TOOLCHAIN_TASKING)
+  nuttx_add_kernel_library(c_fpu)
+  target_sources(c_fpu PRIVATE tricore_libc.c)
+  target_link_options(nuttx PRIVATE
+                      --library-directory=${CMAKE_CURRENT_BINARY_DIR})
+  if(CONFIG_BUILD_PROTECTED)
+    target_link_options(nuttx_user PRIVATE
+                        --library-directory=${CMAKE_CURRENT_BINARY_DIR})
+  endif()
+endif()

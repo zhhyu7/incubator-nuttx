@@ -1,5 +1,5 @@
 # ##############################################################################
-# arch/tricore/src/cmake/tc3xx.cmake
+# arch/tricore/src/cmake/chip.cmake
 #
 # Licensed to the Apache Software Foundation (ASF) under one or more contributor
 # license agreements.  See the NOTICE file distributed with this work for

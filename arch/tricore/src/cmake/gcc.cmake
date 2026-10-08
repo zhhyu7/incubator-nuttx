@@ -18,13 +18,10 @@
 #
 # ##############################################################################
 
-# Toolchain
+include(chip)
 
 set(CMAKE_SYSTEM_NAME Generic)
 set(CMAKE_SYSTEM_VERSION 1)
-
-set(ARCH_SUBDIR chip)
-include(${ARCH_SUBDIR})
 
 set(CROSSDEV tricore-elf-)
 string(REGEX REPLACE "-$" "" CROSSDEV_TARGET ${CROSSDEV})

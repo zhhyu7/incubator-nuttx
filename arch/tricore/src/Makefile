@@ -21,15 +21,10 @@
 include $(TOPDIR)/Make.defs
 include chip/Make.defs
 
-ifeq ($(CONFIG_ARCH_TC3XX),y)
-ARCH_SUBDIR = tc3xx
-endif
-
 ARCH_SRCDIR = $(TOPDIR)$(DELIM)arch$(DELIM)$(CONFIG_ARCH)$(DELIM)src
 
 INCLUDES += ${INCDIR_PREFIX}$(ARCH_SRCDIR)$(DELIM)chip
 INCLUDES += ${INCDIR_PREFIX}$(ARCH_SRCDIR)$(DELIM)common
-INCLUDES += ${INCDIR_PREFIX}$(ARCH_SRCDIR)$(DELIM)$(ARCH_SUBDIR)
 INCLUDES += ${INCDIR_PREFIX}$(TOPDIR)$(DELIM)sched
 
 CPPFLAGS += $(INCLUDES)
@@ -122,7 +117,6 @@ endif
 
 VPATH += chip
 VPATH += common
-VPATH += $(ARCH_SUBDIR)
 
 all: $(HEAD_COBJ) $(BIN)
 

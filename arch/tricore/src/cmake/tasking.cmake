@@ -18,16 +18,13 @@
 #
 # ##############################################################################
 
-# Toolchain
+include(chip)
 
 set(CMAKE_SYSTEM_NAME Generic)
 set(CMAKE_SYSTEM_VERSION 1)
 
 set(CMAKE_C_COMPILER_FORCED TRUE)
 set(CMAKE_CXX_COMPILER_FORCED TRUE)
-
-set(ARCH_SUBDIR chip)
-include(${ARCH_SUBDIR})
 
 set(CMAKE_ASM_COMPILER cctc)
 set(CMAKE_C_COMPILER cctc)

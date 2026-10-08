@@ -22,7 +22,7 @@ set(SRCS tc3xx_timerisr.c tc3xx_serial.c)
 
 target_sources(arch PRIVATE ${SRCS})
 
-if(CONFIG_ARCH_CHIP_TC397)
+if(CONFIG_ARCH_CHIP_TC39X)
 
   if(NOT EXISTS ${CMAKE_CURRENT_LIST_DIR}/tc397)
     FetchContent_Declare(
@@ -37,13 +37,5 @@ if(CONFIG_ARCH_CHIP_TC397)
   endif()
 
   add_subdirectory(tc397)
-
-  if(CONFIG_TRICORE_TOOLCHAIN_TASKING)
-    nuttx_add_kernel_library(c_fpu)
-    target_sources(c_fpu PRIVATE tc3xx_libc.c)
-    target_link_options(
-      nuttx PRIVATE
-      --library-directory=${CMAKE_BINARY_DIR}/arch/tricore/src/exclude_chip)
-  endif()
 
 endif()

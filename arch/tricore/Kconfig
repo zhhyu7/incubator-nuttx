@@ -165,10 +165,6 @@ config HAVE_SECURITY_CORE
 	---help---
 		In addition to the 6 cores, tc4xx also has one more security core.
 
-if ARCH_CHIP_TC3XX
-source "arch/tricore/src/tc3xx/Kconfig"
-endif
-
 config MCAL_UART
 	bool "Enable the MCAL UART adaptation layer"
 	select SERIAL_TXDMA
@@ -192,5 +188,13 @@ config MCAL_UART_MAX_CHANNELS
 		UART channels configured in the MCAL EB tool.
 
 endif # MCAL_UART
+
+if ARCH_CHIP_TC3XX
+source "arch/tricore/src/tc3xx/Kconfig"
+endif
+
+if ARCH_CHIP_TC4XX
+source "arch/tricore/src/tc4xx/Kconfig"
+endif
 
 endif # ARCH_TRICORE
