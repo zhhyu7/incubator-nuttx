@@ -53,7 +53,7 @@ int set_sporadic_param(FAR const struct sched_param *param,
 
   /* Update parameters associated with SCHED_SPORADIC */
 
-  if ((atomic_read(&rtcb->flags) & TCB_FLAG_POLICY_MASK) ==
+  if ((atomic_read(&tcb->flags) & TCB_FLAG_POLICY_MASK) ==
       TCB_FLAG_SCHED_SPORADIC)
     {
       ret = nxsched_validate_sporadic(param, &repl_ticks, &budget_ticks);
@@ -67,14 +67,14 @@ int set_sporadic_param(FAR const struct sched_param *param,
       ret = nxsched_reset_sporadic(tcb);
       if (ret >= 0)
         {
+          sporadic = tcb->sporadic;
+          DEBUGASSERT(sporadic != NULL);
+
           /* Save the sporadic scheduling parameters and reset to the
            * beginning to the replenishment interval.
            */
 
           tcb->timeslice         = budget_ticks;
-
-          sporadic = rtcb->sporadic;
-          DEBUGASSERT(sporadic != NULL);
 
           sporadic->hi_priority  = param->sched_priority;
           sporadic->low_priority = param->sched_ss_low_priority;
