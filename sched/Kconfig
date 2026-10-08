@@ -787,8 +787,8 @@ if SCHED_SPORADIC
 
 config SCHED_SPORADIC_MAXREPL
 	int "Maximum number of replenishments"
-	default 3
-	range 1 255
+	default 4
+	range 4 255
 	---help---
 		Controls the size of allocated replenishment structures and, hence,
 		also limits the maximum number of replenishments.
