@@ -77,8 +77,9 @@ void nxsched_process_delivered(int cpu)
 
       if (nxsched_switch_running(cpu, priority == SWITCH_EQUAL))
         {
-          nxsched_suspend_scheduler(prev);
-          nxsched_resume_scheduler(current_task(cpu));
+          clock_t now = clock_systime_ticks();
+          nxsched_suspend_scheduler(prev, now);
+          nxsched_resume_scheduler(current_task(cpu), now);
         }
       else
         {

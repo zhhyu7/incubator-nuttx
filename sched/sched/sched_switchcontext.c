@@ -201,12 +201,13 @@ int nxsched_hook_unregister(FAR struct nxsched_hook_s *hook)
  *
  ****************************************************************************/
 
-__jumpfunc__ void nxsched_suspend_scheduler(FAR struct tcb_s *tcb)
+__jumpfunc__ void nxsched_suspend_scheduler(FAR struct tcb_s *tcb,
+                                            clock_t now)
 {
-  if (tcb == NULL)
-    {
-      return;
-    }
+#if defined(CONFIG_SCHED_SPORADIC) || \
+    (defined(CONFIG_SCHED_TICKLESS) && CONFIG_RR_INTERVAL > 0)
+  atomic_t flags = atomic_read(&tcb->flags);
+#endif
 
   nxsched_checkstackoverflow(tcb);
 
@@ -215,19 +216,16 @@ __jumpfunc__ void nxsched_suspend_scheduler(FAR struct tcb_s *tcb)
 #endif
 
 #ifdef CONFIG_SCHED_SPORADIC
-  /* Perform sporadic schedule operations */
-
-  if ((tcb->flags & TCB_FLAG_POLICY_MASK) == TCB_FLAG_SCHED_SPORADIC &&
-      tcb->sporadic != NULL)
+  if ((flags & TCB_FLAG_POLICY_MASK) == TCB_FLAG_SCHED_SPORADIC)
     {
-      nxsched_suspend_sporadic(tcb, clock_systime_ticks());
+      nxsched_suspend_sporadic(tcb, now);
     }
 #endif
 
-#if CONFIG_RR_INTERVAL > 0 && defined(CONFIG_SCHED_TICKLESS)
-  if ((tcb->flags & TCB_FLAG_POLICY_MASK) == TCB_FLAG_SCHED_RR)
+#if defined(CONFIG_SCHED_TICKLESS) && CONFIG_RR_INTERVAL > 0
+  if ((flags & TCB_FLAG_POLICY_MASK) == TCB_FLAG_SCHED_RR)
     {
-      nxsched_suspend_roundrobin(tcb);
+      nxsched_suspend_roundrobin(tcb, now);
     }
 #endif
 
@@ -266,20 +264,26 @@ __jumpfunc__ void nxsched_suspend_scheduler(FAR struct tcb_s *tcb)
  *
  ****************************************************************************/
 
-__jumpfunc__ void nxsched_resume_scheduler(FAR struct tcb_s *tcb)
+__jumpfunc__ void nxsched_resume_scheduler(FAR struct tcb_s *tcb,
+                                           clock_t now)
 {
+#if defined(CONFIG_SCHED_SPORADIC) || \
+    (defined(CONFIG_SCHED_TICKLESS) && CONFIG_RR_INTERVAL > 0)
+  atomic_t flags = atomic_read(&tcb->flags);
+#endif
+
 #ifdef CONFIG_SCHED_SPORADIC
-  if ((tcb->flags & TCB_FLAG_POLICY_MASK) == TCB_FLAG_SCHED_SPORADIC &&
+  if ((flags & TCB_FLAG_POLICY_MASK) == TCB_FLAG_SCHED_SPORADIC &&
       tcb->sporadic != NULL)
     {
-      nxsched_resume_sporadic(tcb, clock_systime_ticks());
+      nxsched_resume_sporadic(tcb, now);
     }
 #endif
 
-#if CONFIG_RR_INTERVAL > 0 && defined(CONFIG_SCHED_TICKLESS)
-  if ((tcb->flags & TCB_FLAG_POLICY_MASK) == TCB_FLAG_SCHED_RR)
+#if defined(CONFIG_SCHED_TICKLESS) && CONFIG_RR_INTERVAL > 0
+  if ((flags & TCB_FLAG_POLICY_MASK) == TCB_FLAG_SCHED_RR)
     {
-      nxsched_resume_roundrobin(tcb);
+      nxsched_resume_roundrobin(tcb, now);
     }
 #endif
 
@@ -305,9 +309,18 @@ __jumpfunc__ void nxsched_resume_scheduler(FAR struct tcb_s *tcb)
 void nxsched_switch(FAR struct tcb_s *tcb, FAR struct tcb_s *rtcb)
 {
   uint16_t count = RSPINLOCK_COUNT(g_schedlock.local_val);
+#if defined(CONFIG_SCHED_SPORADIC) || (CONFIG_RR_INTERVAL > 0)
+  clock_t  now   = clock_systime_ticks();
+#else
+  clock_t  now   = 0u;
+#endif
 
-  nxsched_suspend_scheduler(rtcb);
-  nxsched_resume_scheduler(tcb);
+  if (rtcb != NULL)
+    {
+      nxsched_suspend_scheduler(rtcb, now);
+    }
+
+  nxsched_resume_scheduler(tcb, now);
   up_switch_context(tcb, rtcb);
 
   if (!up_interrupt_context())

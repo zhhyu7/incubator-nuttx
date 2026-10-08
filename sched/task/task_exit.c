@@ -112,7 +112,7 @@ __jumpfunc__ int nxtask_exit(void)
 
   /* Update scheduler parameters. */
 
-  nxsched_suspend_scheduler(dtcb);
+  nxsched_suspend_scheduler(dtcb, clock_systime_ticks());
 
   /* When task exits, need to trace before release tcb. */
 

@@ -120,14 +120,6 @@ __jumpfunc__ void nxsched_unlock(FAR struct tcb_s *rtcb)
         {
           rtcb->timeslice = MSEC2TICK(CONFIG_RR_INTERVAL);
         }
-#  ifdef CONFIG_SCHED_TICKLESS
-      else if ((atomic_or(&rtcb->flags, TCB_FLAG_PREEMPT_SCHED) &
-                TCB_FLAG_PREEMPT_SCHED) == 0)
-        {
-          nxsched_reassess_timer();
-          atomic_and(&rtcb->flags, ~TCB_FLAG_PREEMPT_SCHED);
-        }
-#  endif
     }
 #endif
 
@@ -145,25 +137,7 @@ __jumpfunc__ void nxsched_unlock(FAR struct tcb_s *rtcb)
   if ((atomic_read(&rtcb->flags) & TCB_FLAG_POLICY_MASK) ==
       TCB_FLAG_SCHED_SPORADIC && rtcb->timeslice < 0)
     {
-      /* Yes.. that is the situation.  Force the low-priority state
-       * now
-       */
-
       nxsched_sporadic_lowpriority(rtcb);
-
-#  ifdef CONFIG_SCHED_TICKLESS
-      /* Make sure that the call to nxsched_merge_pending() did not
-       * change the currently active task.
-       */
-
-      if (rtcb == this_task() &&
-          (atomic_or(&rtcb->flags, TCB_FLAG_PREEMPT_SCHED) &
-           TCB_FLAG_PREEMPT_SCHED) == 0)
-        {
-          nxsched_reassess_timer();
-          atomic_and(&rtcb->flags, ~TCB_FLAG_PREEMPT_SCHED);
-        }
-#  endif
     }
 #endif
 

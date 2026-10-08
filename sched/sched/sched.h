@@ -385,27 +385,14 @@ int  nxsched_reprioritize(FAR struct tcb_s *tcb, int sched_priority);
      nxsched_set_priority(tcb,sched_priority)
 #endif
 
-/* Support for tickless operation */
-
-void nxsched_reassess_timer(void);
-
-#if defined(CONFIG_SCHED_TICKLESS) && \
-    (CONFIG_RR_INTERVAL > 0 || defined(CONFIG_SCHED_SPORADIC))
-void nxsched_timer_cancel(void);
-void nxsched_timer_start(clock_t now, clock_t delay);
-#else
-#  define nxsched_timer_cancel()
-#  define nxsched_timer_start(now, delay)
-#endif
-
 /* Scheduler policy support */
 
 #if CONFIG_RR_INTERVAL > 0
 clock_t nxsched_process_roundrobin(FAR struct tcb_s *tcb, clock_t ticks,
                                    bool noswitches);
 #  ifdef CONFIG_SCHED_TICKLESS
-void nxsched_suspend_roundrobin(FAR struct tcb_s *tcb);
-void nxsched_resume_roundrobin(FAR struct tcb_s *tcb);
+void nxsched_suspend_roundrobin(FAR struct tcb_s *tcb, clock_t now);
+void nxsched_resume_roundrobin(FAR struct tcb_s *tcb, clock_t now);
 #  endif
 #endif
 
@@ -455,8 +442,8 @@ void nxsched_process_cpuload_ticks(clock_t ticks);
 #define nxsched_process_cpuload() nxsched_process_cpuload_ticks(1)
 #endif
 
-void nxsched_suspend_scheduler(FAR struct tcb_s *tcb);
-void nxsched_resume_scheduler(FAR struct tcb_s *tcb);
+void nxsched_suspend_scheduler(FAR struct tcb_s *tcb, clock_t now);
+void nxsched_resume_scheduler(FAR struct tcb_s *tcb, clock_t now);
 
 /* Critical section monitor */
 

@@ -104,7 +104,6 @@
 #define TCB_FLAG_FORCED_CANCEL     (1U << 11)                     /* Bit 11: Pthread cancel is forced */
 #define TCB_FLAG_JOIN_COMPLETED    (1U << 12)                     /* Bit 12: Pthread join completed */
 #define TCB_FLAG_FREE_TCB          (1U << 13)                     /* Bit 13: Free tcb after exit */
-#define TCB_FLAG_PREEMPT_SCHED     (1U << 14)                     /* Bit 14: tcb is PREEMPT_SCHED */
 #define TCB_FLAG_KILL_PROCESSING   (1U << 15)                     /* Bit 15: tcb is killed */
 #define TCB_FLAG_FREE_GROUP        (1U << 16)                     /* Bit 16: Free group before tcb free */
 

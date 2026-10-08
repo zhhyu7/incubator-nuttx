@@ -25,6 +25,7 @@
  ****************************************************************************/
 
 #include <nuttx/config.h>
+#include <nuttx/nuttx.h>
 
 #include <stdint.h>
 #include <stdbool.h>
@@ -35,33 +36,28 @@
 #include <nuttx/sched.h>
 #include <nuttx/clock.h>
 #include <nuttx/percpu.h>
-#include <nuttx/atomic.h>
+#include <nuttx/hrtimer.h>
 
 #include "sched/sched.h"
+#include "clock/clock.h"
 
 #ifdef CONFIG_SMP
 
 /****************************************************************************
- * Private Data
+ * Private Type Declarations
  ****************************************************************************/
 
 struct roundrobin_call_s
 {
   struct cpu_call_data_s data;
   pid_t                  pid;
-  atomic_t               pending;
 };
-
-static DEFINE_PER_CPU_SMP(struct roundrobin_call_s, g_call_data);
 
 /****************************************************************************
- * Private Type Declarations
+ * Private Data
  ****************************************************************************/
 
-struct roundrobin_arg_s
-{
-  pid_t pid;
-};
+static DEFINE_PER_CPU_SMP(struct roundrobin_call_s, g_call_data);
 
 /****************************************************************************
  * Private Functions
@@ -70,29 +66,26 @@ struct roundrobin_arg_s
 static int nxsched_roundrobin_handler(FAR void *cookie)
 {
   FAR struct roundrobin_call_s *call = cookie;
-  pid_t pid = call->pid;
-  FAR struct tcb_s *tcb;
-  irqstate_t flags;
+  irqstate_t        flags = enter_critical_section();
+  pid_t             pid   = call->pid;
+  FAR struct tcb_s *tcb   = nxsched_get_tcb(pid);
 
-  atomic_set_release(&call->pending, false);
+  /* Clear the pid to indicate the handler has completed. */
 
-  flags = enter_critical_section();
-  tcb = nxsched_get_tcb(pid);
+  DEBUGASSERT(pid != 0);
 
-  if (!tcb || tcb->task_state == TSTATE_TASK_INVALID ||
-      (atomic_read(&tcb->flags) & TCB_FLAG_EXIT_PROCESSING) != 0)
+  call->pid = 0;
+
+  if (pid != 0 && tcb && tcb->task_state != TSTATE_TASK_INVALID &&
+      (atomic_read(&tcb->flags) & TCB_FLAG_EXIT_PROCESSING) == 0)
     {
       /* There is no TCB with this pid or, if there is, it is not a task. */
 
-      nxsched_put_tcb(tcb);
-      leave_critical_section(flags);
-      return OK;
-    }
-
-  if (tcb->task_state == TSTATE_TASK_RUNNING && tcb->cpu == this_cpu() &&
-      nxsched_switch_running(tcb->cpu, true))
-    {
-      nxsched_switch(this_task(), tcb);
+      if (tcb->task_state == TSTATE_TASK_RUNNING && tcb->cpu == this_cpu() &&
+          nxsched_switch_running(tcb->cpu, true))
+        {
+          nxsched_switch(this_task(), tcb);
+        }
     }
 
   nxsched_put_tcb(tcb);
@@ -160,22 +153,18 @@ clock_t nxsched_process_roundrobin(FAR struct tcb_s *tcb, clock_t ticks,
   /* Did decrementing the timeslice counter cause the timeslice to expire? */
 
   ret = tcb->timeslice;
-  if (tcb->timeslice <= 0 && !nxsched_islocked_tcb(tcb))
+  if (tcb->timeslice <= 0)
     {
-      /* We will also suppress context switches if we were called via one
-       * of the unusual cases handled by nxsched_reassess_timer().  In that
-       * case, we will return a value of one so that the timer will expire
-       * as soon as possible and we can perform this action in the normal
-       * timer expiration context.
-       *
-       * This is kind of kludge, but I am not to concerned because I hope
-       * that the situation is impossible or at least could only occur on
-       * rare corner-cases.
+      /* The timeslice expired but the reset (and the possible rotation)
+       * cannot be performed if the scheduler is locked or the caller is
+       * mid-switch.  Return CLOCK_MAX: nothing is to be timed;
+       * sched_unlock() (or the resume path) resets the timeslice and
+       * re-arms the scheduler event timer.
        */
 
-      if (noswitches)
+      if (nxsched_islocked_tcb(tcb) || noswitches)
         {
-          ret = 0;
+          ret = 0u;
         }
       else
         {
@@ -213,31 +202,36 @@ clock_t nxsched_process_roundrobin(FAR struct tcb_s *tcb, clock_t ticks,
                   FAR struct roundrobin_call_s *call =
                     &per_cpu_var_smp(g_call_data, tcb->cpu);
 
-                  if (atomic_xchg(&call->pending, true))
+                  if (call->pid == 0)
                     {
-                      return ret;
+                      call->pid = tcb->pid;
+                      nxsched_cpu_call_init(&call->data,
+                                            nxsched_roundrobin_handler,
+                                            call);
+                      nxsched_cpu_call_single_async(tcb->cpu, &call->data);
+                      ret = 0u;
                     }
-
-                  call->pid = tcb->pid;
-                  nxsched_cpu_call_init(&call->data,
-                                        nxsched_roundrobin_handler,
-                                        call);
-                  nxsched_cpu_call_single_async(tcb->cpu, &call->data);
                 }
               else if (nxsched_switch_running(tcb->cpu, true))
 #else
               if (nxsched_reprioritize_rtr(tcb, tcb->sched_priority))
 #endif
                 {
+                  /* nxsched_switch() calls nxsched_suspend/resume_roundrobin
+                   * which re-arm the roundrobin timer for the new task.
+                   */
+
                   nxsched_switch(this_task(), rtcb);
+                  ret = 0u;
                 }
             }
         }
     }
-  else if (tcb->timeslice == 0)
-    {
-      ret = CLOCK_MAX;
-    }
+
+  /* If a context switch occurred, the roundrobin timer has been
+   * re-armed by nxsched_resume_roundrobin() for the new task.
+   * Return 0 to prevent the caller from re-arming it again.
+   */
 
   return ret;
 }
@@ -245,28 +239,56 @@ clock_t nxsched_process_roundrobin(FAR struct tcb_s *tcb, clock_t ticks,
 #ifdef CONFIG_SCHED_TICKLESS
 
 /****************************************************************************
- * Name:  nxsched_suspend_roundrobin
- *
- * Description:
- *   Called when a task using round-robin scheduling is being switched out.
- *   Records the current time so that the elapsed time can be subtracted
- *   from the timeslice when the task is resumed.
- *
- * Input Parameters:
- *   tcb - The TCB of the thread that is being suspended.
- *
- * Returned Value:
- *   None
- *
+ * Private Types
  ****************************************************************************/
 
-void nxsched_suspend_roundrobin(FAR struct tcb_s *tcb)
+struct roundrobin_event_s
 {
-  clock_t now     = clock_systime_ticks();
-  clock_t elapsed = now - tcb->starttime;
+  hrtimer_t         timer;
+  FAR struct tcb_s *tcb;
+};
 
-  nxsched_process_roundrobin(tcb, elapsed, true);
-  nxsched_timer_cancel();
+/****************************************************************************
+ * Private Data
+ ****************************************************************************/
+
+static DEFINE_PER_CPU_BSS_SMP(struct roundrobin_event_s, g_roundrobin_event);
+#define g_roundrobin_event this_cpu_var_smp(g_roundrobin_event)
+
+/****************************************************************************
+ * Private Functions
+ ****************************************************************************/
+
+static uint64_t roundrobin_timer_expired(FAR const hrtimer_t *timer,
+                                         uint64_t expired)
+{
+  FAR struct roundrobin_event_s *event =
+    container_of(timer, struct roundrobin_event_s, timer);
+  clock_t            now   = div_const(expired, NSEC_PER_TICK);
+  irqstate_t         flags = enter_critical_section();
+  FAR struct tcb_s  *tcb   = event->tcb;
+  clock_t            delay = 0u;
+
+  if (tcb)
+    {
+      clock_t elapsed = now - tcb->starttime;
+
+      event->tcb      = NULL;
+      tcb->starttime  = now;
+
+      delay = nxsched_process_roundrobin(tcb, elapsed, false);
+
+      if (delay != 0u)
+        {
+          /* Re-arm the round-robin timer. */
+
+          event->tcb = tcb;
+        }
+    }
+
+  leave_critical_section(flags);
+
+  return TICK2NSEC((uint64_t)delay);
 }
 
 /****************************************************************************
@@ -285,11 +307,49 @@ void nxsched_suspend_roundrobin(FAR struct tcb_s *tcb)
  *
  ****************************************************************************/
 
-void nxsched_resume_roundrobin(FAR struct tcb_s *tcb)
+void nxsched_resume_roundrobin(FAR struct tcb_s *tcb, clock_t now)
 {
-  clock_t now = clock_systime_ticks();
   DEBUGASSERT(tcb->timeslice >= 0);
   tcb->starttime = now;
-  nxsched_timer_start(now, tcb->timeslice);
+
+  g_roundrobin_event.tcb = tcb;
+  hrtimer_start(&g_roundrobin_event.timer, roundrobin_timer_expired,
+                TICK2NSEC((uint64_t)now + tcb->timeslice),
+                HRTIMER_MODE_ABS);
 }
-#endif
+
+/****************************************************************************
+ * Name:  nxsched_suspend_roundrobin
+ *
+ * Description:
+ *   Called when a task using round-robin scheduling is being switched out.
+ *   Records the current time so that the elapsed time can be subtracted
+ *   from the timeslice when the task is resumed.
+ *
+ * Input Parameters:
+ *   tcb - The TCB of the thread that is being suspended.
+ *
+ * Returned Value:
+ *   None
+ *
+ ****************************************************************************/
+
+void nxsched_suspend_roundrobin(FAR struct tcb_s *tcb, clock_t now)
+{
+  clock_t elapsed = now - tcb->starttime;
+
+  if (g_roundrobin_event.tcb != NULL)
+    {
+      g_roundrobin_event.tcb = NULL;
+      hrtimer_cancel(&g_roundrobin_event.timer);
+    }
+
+  tcb->starttime = now;
+
+  if (elapsed > 0)
+    {
+      nxsched_process_roundrobin(tcb, elapsed, true);
+    }
+}
+
+#endif /* CONFIG_SCHED_TICKLESS */
