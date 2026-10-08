@@ -49,7 +49,7 @@ int set_sporadic_param(FAR const struct sched_param *param,
   FAR struct sporadic_s *sporadic;
   clock_t repl_ticks;
   clock_t budget_ticks;
-  int ret = OK;
+  int     ret = OK;
 
   /* Update parameters associated with SCHED_SPORADIC */
 
@@ -57,34 +57,32 @@ int set_sporadic_param(FAR const struct sched_param *param,
       TCB_FLAG_SCHED_SPORADIC)
     {
       ret = nxsched_validate_sporadic(param, &repl_ticks, &budget_ticks);
-      if (ret < 0)
-        {
-          return ret;
-        }
-
-      /* Stop/reset current sporadic scheduling */
-
-      ret = nxsched_reset_sporadic(tcb);
       if (ret >= 0)
         {
-          sporadic = tcb->sporadic;
-          DEBUGASSERT(sporadic != NULL);
+          /* Stop/reset current sporadic scheduling */
 
-          /* Save the sporadic scheduling parameters and reset to the
-           * beginning to the replenishment interval.
-           */
+          ret = nxsched_reset_sporadic(tcb);
+          if (ret >= 0)
+            {
+              sporadic = tcb->sporadic;
+              DEBUGASSERT(sporadic != NULL);
 
-          tcb->timeslice         = budget_ticks;
+              /* Save the sporadic scheduling parameters and reset to the
+               * beginning to the replenishment interval.
+               */
 
-          sporadic->hi_priority  = param->sched_priority;
-          sporadic->low_priority = param->sched_ss_low_priority;
-          sporadic->max_repl     = param->sched_ss_max_repl;
-          sporadic->repl_period  = repl_ticks;
-          sporadic->budget       = budget_ticks;
+              tcb->timeslice         = budget_ticks;
 
-          /* And restart at the next replenishment interval */
+              sporadic->hi_priority  = param->sched_priority;
+              sporadic->low_priority = param->sched_ss_low_priority;
+              sporadic->max_repl     = param->sched_ss_max_repl;
+              sporadic->repl_period  = repl_ticks;
+              sporadic->budget       = budget_ticks;
 
-          ret = nxsched_start_sporadic(tcb);
+              /* And restart at the next replenishment interval */
+
+              ret = nxsched_start_sporadic(tcb);
+            }
         }
     }
 
@@ -136,7 +134,7 @@ int nxsched_set_param(pid_t pid, FAR const struct sched_param *param)
 {
   FAR struct tcb_s *rtcb;
   FAR struct tcb_s *tcb;
-  int ret = OK;
+  int               ret = OK;
 
   /* Verify that the requested priority is in the valid range */
 
