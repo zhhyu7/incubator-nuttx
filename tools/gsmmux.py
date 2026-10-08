@@ -890,6 +890,13 @@ class GSMMultiplexer:
             except Exception as e:
                 self._debug_log(f"[Error] Failed to write raw data log: {e}")
 
+        # Route to DLCI1 (symlinked as ttyGSM0): it is the console channel, so
+        # pre-mux boot/panic text shows up on the same node as its framed logs.
+        port = self.virtual_ports.get(1)
+        if port:
+            port.write(text.encode("utf-8", errors="replace"))
+            port.drain_write()
+
     def open_serial(self):
         """Open physical serial port"""
         if self.device_path.startswith("socket://"):
