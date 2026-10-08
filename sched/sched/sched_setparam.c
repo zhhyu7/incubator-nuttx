@@ -132,6 +132,7 @@ int set_sporadic_param(FAR const struct sched_param *param,
 
 int nxsched_set_param(pid_t pid, FAR const struct sched_param *param)
 {
+  irqstate_t flags;
   FAR struct tcb_s *rtcb;
   FAR struct tcb_s *tcb;
   int               ret = OK;
@@ -150,6 +151,7 @@ int nxsched_set_param(pid_t pid, FAR const struct sched_param *param)
        * list while adjusting the priority
        */
 
+      flags = enter_critical_section();
       sched_lock();
 
       /* Check if the task to reprioritize is the calling task */
@@ -184,6 +186,8 @@ int nxsched_set_param(pid_t pid, FAR const struct sched_param *param)
         {
           ret = nxsched_reprioritize(tcb, param->sched_priority);
         }
+
+      leave_critical_section(flags);
 
       if (tcb != rtcb)
         {
