@@ -24,6 +24,10 @@
 // where the headers compare it against the version that introduced
 // those builtins, which is what keeps the portable side.
 #  define _LIBCPP_COMPILER_GCC
+
+// The __c11_atomic_ builtins take only a constant memory order, define this macro
+// instead of checking __TASKING__ in libc++ source.
+#  define _LIBCPP_C11_ATOMIC_CONSTANT_ORDER
 #endif
 
 #define _LIBCPP_ABI_VERSION 1
