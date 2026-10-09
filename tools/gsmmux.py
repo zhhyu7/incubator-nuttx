@@ -1436,6 +1436,7 @@ Examples:
   %(prog)s -d /dev/ttyUSB0 -n 2 -b 115200
   %(prog)s -d /dev/ttyUSB0 -n 2 -r raw_data.log
   %(prog)s -d /dev/ttyACM1 -n 4 --bin 1 --elf nuttx.elf
+  %(prog)s -d /dev/ttyACM1 -n 4 --bin 1 --elf nuttx.elf --minicom 1
         """,
     )
 
@@ -1515,6 +1516,14 @@ Examples:
         help="Note timestamp frequency for --bin decoding (default: 16384)",
     )
 
+    parser.add_argument(
+        "--minicom",
+        type=int,
+        metavar="PORT",
+        help="After the mux is up, launch minicom on /tmp/ttyGSM<PORT> in the "
+        "foreground; the mux keeps running until minicom exits",
+    )
+
     args = parser.parse_args()
 
     # Test mode (python only)
@@ -1586,8 +1595,20 @@ Examples:
     try:
         mux.start()
 
-        while mux.running:
-            time.sleep(1)
+        if args.minicom is not None:
+            node = f"{GSMMUX_NODE_PREFIX}{args.minicom}"
+            print(f"\nLaunching minicom on {node} (mux stays in background)...")
+            try:
+                subprocess.run(["minicom", "-D", node])
+            except FileNotFoundError:
+                print(
+                    "Error: minicom not found, please install it "
+                    "(e.g. sudo apt install minicom)"
+                )
+            mux.running = False
+        else:
+            while mux.running:
+                time.sleep(1)
     except Exception as e:
         print(f"Error: {e}")
     finally:
