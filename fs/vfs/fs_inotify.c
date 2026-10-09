@@ -61,6 +61,26 @@
 #  define NOTIFY_IS_REMOTE(list) false
 #endif
 
+/* Event classes the notify hooks can deliver to a watch.  IN_MOVED_FROM
+ * and IN_DELETE additionally deliver IN_MOVE_SELF / IN_DELETE_SELF on
+ * the target watch list.  IN_ISDIR is a flag, and IN_Q_OVERFLOW /
+ * IN_IGNORED are synthesized rather than hook-delivered, so none of
+ * them carries watch interest.
+ */
+
+#define INOTIFY_EVENT_BITS  (IN_ACCESS | IN_MODIFY | IN_ATTRIB |     \
+                             IN_CLOSE_WRITE | IN_CLOSE_NOWRITE |     \
+                             IN_OPEN | IN_MOVED_FROM | IN_MOVED_TO | \
+                             IN_CREATE | IN_DELETE |                 \
+                             IN_DELETE_SELF | IN_MOVE_SELF |         \
+                             IN_UNMOUNT)
+
+/* Counters are indexed by IN_* bit position; IN_UNMOUNT is bit 13, the
+ * highest counted class.
+ */
+
+#define INOTIFY_NEVENTS     14
+
 /****************************************************************************
  * Private Types
  ****************************************************************************/
@@ -114,8 +134,12 @@ struct inotify_global_s
   mutex_t  lock;               /* Enforces global exclusive access */
   int      event_cookie;       /* Event cookie */
   int      watch_cookie;       /* Watch cookie */
-  uint32_t read_count;         /* Number of read events */
-  uint32_t write_count;        /* Number of write events */
+
+  /* Registered-watch count per event class, indexed by IN_* bit
+   * position; a zero entry means no watch can match that class.
+   */
+
+  uint32_t event_count[INOTIFY_NEVENTS];
   struct   hsearch_data hash;  /* Hash table for watch lists */
 };
 
@@ -193,8 +217,15 @@ static DEFINE_PER_CPU_BMP(struct inotify_global_s, g_inotify) =
 
 static inline void inotify_add_count(uint32_t mask)
 {
-  g_inotify.read_count += (mask & IN_ACCESS) ? 1 : 0;
-  g_inotify.write_count += (mask & IN_MODIFY) ? 1 : 0;
+  int bit;
+
+  mask &= INOTIFY_EVENT_BITS;
+  while (mask != 0)
+    {
+      bit = ffs(mask) - 1;
+      g_inotify.event_count[bit]++;
+      mask &= ~(1u << bit);
+    }
 }
 
 /****************************************************************************
@@ -207,8 +238,15 @@ static inline void inotify_add_count(uint32_t mask)
 
 static inline void inotify_sub_count(uint32_t mask)
 {
-  g_inotify.read_count -= (mask & IN_ACCESS) ? 1 : 0;
-  g_inotify.write_count -= (mask & IN_MODIFY) ? 1 : 0;
+  int bit;
+
+  mask &= INOTIFY_EVENT_BITS;
+  while (mask != 0)
+    {
+      bit = ffs(mask) - 1;
+      g_inotify.event_count[bit]--;
+      mask &= ~(1u << bit);
+    }
 }
 
 /****************************************************************************
@@ -221,9 +259,41 @@ static inline void inotify_sub_count(uint32_t mask)
 
 static inline int notify_check_mask(uint32_t mask)
 {
-  return (((mask & IN_ACCESS) && g_inotify.read_count == 0) ||
-          ((mask & IN_MODIFY) && g_inotify.write_count == 0)) ?
-          -EBADF : OK;
+  int bit;
+
+  /* An IN_MOVED_FROM / IN_DELETE event also delivers IN_MOVE_SELF /
+   * IN_DELETE_SELF on the target watch list, so a watch registered
+   * for the transformed bits keeps the event alive.
+   */
+
+  if (mask & IN_MOVED_FROM)
+    {
+      mask |= IN_MOVE_SELF;
+    }
+
+  if (mask & IN_DELETE)
+    {
+      mask |= IN_DELETE_SELF;
+    }
+
+  /* The counters are read without g_inotify.lock: aligned uint32_t
+   * loads, racing only with concurrent watcher add/remove, which is
+   * the same race the read/write fast path has always accepted.
+   */
+
+  mask &= INOTIFY_EVENT_BITS;
+  while (mask != 0)
+    {
+      bit = ffs(mask) - 1;
+      if (g_inotify.event_count[bit] != 0)
+        {
+          return OK;
+        }
+
+      mask &= ~(1u << bit);
+    }
+
+  return -EBADF;
 }
 
 /****************************************************************************
@@ -1057,6 +1127,17 @@ static void notify_queue_path_event2(FAR const char *path, uint32_t mask,
   FAR char *pathbuffer;
   uint32_t cookie = 0;
 
+  /* No registered watch is interested in any event class this event
+   * can deliver, so the realpath + tempbuffer work below cannot reach
+   * a consumer. This funnel carries every open/close/create/delete/
+   * move and every notify_event() injection.
+   */
+
+  if (notify_check_mask(mask) < 0)
+    {
+      return;
+    }
+
   pathbuffer = lib_get_tempbuffer(PATH_MAX);
   if (pathbuffer == NULL)
     {
@@ -1170,13 +1251,13 @@ static inline void notify_queue_filep_event(FAR struct file *filep,
     }
 
   /* Fast path: when no inotify watcher is registered for the relevant
-   * event class, skip the global lock entirely.  read_count and
-   * write_count are 32-bit aligned uint32_t fields, and a plain load
-   * is atomic on the architectures NuttX targets.  Concurrent
-   * watcher add/remove only races with events that happened just
-   * before/after the watcher's lifetime window — exactly the same
-   * race that already existed between the unlock after this check
-   * and the subsequent re-acquire below.
+   * event class, skip the global lock entirely.  The per-class
+   * event_count[] entries are 32-bit aligned uint32_t fields, and a
+   * plain load is atomic on the architectures NuttX targets.
+   * Concurrent watcher add/remove only races with events that
+   * happened just before/after the watcher's lifetime window —
+   * exactly the same race that already existed between the unlock
+   * after this check and the subsequent re-acquire below.
    *
    * Without this fast path every write()/read() on a notify-eligible
    * file serializes on g_inotify.lock, which lets long-running
@@ -1549,7 +1630,14 @@ int file_notify_add_watch(FAR struct file *filep, FAR const char *pathname,
         }
 
       ret = old->wd;
-      inotify_add_count(tmpmask ^ old->mask);
+
+      /* Re-count both directions: a mask replacement can drop event
+       * classes, not only add them.  Add the new mask first so no
+       * class transiently reads zero while still registered.
+       */
+
+      inotify_add_count(old->mask);
+      inotify_sub_count(tmpmask);
     }
   else
     {
