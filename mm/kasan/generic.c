@@ -138,7 +138,7 @@ kasan_is_poisoned(uintptr_t addr, size_t size)
   return false;
 }
 
-static void kasan_do_poison(FAR uintptr_t *p, size_t size,
+static void kasan_do_poison(FAR volatile uintptr_t *p, size_t size,
                             unsigned int bit, bool poisoned)
 {
   unsigned int nbit = KASAN_BITS_PER_WORD - bit % KASAN_BITS_PER_WORD;
