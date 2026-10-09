@@ -33,6 +33,7 @@
 #include <nuttx/init.h>
 #include <nuttx/irq.h>
 #include <nuttx/arch.h>
+#include <nuttx/cancelpt.h>
 
 #include "sched/sched.h"
 #include "semaphore/semaphore.h"
@@ -121,6 +122,11 @@ int nxsem_wait_slow(FAR sem_t *sem)
           nxsem_add_holder_tcb(htcb, sem);
           nxsched_put_tcb(htcb);
         }
+    }
+  else if (check_cancellation_point() &&
+           atomic_read(NXSEM_COUNT(sem)) <= 0)
+    {
+      ret = -ECANCELED;
     }
   else
     {
