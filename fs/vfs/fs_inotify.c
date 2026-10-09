@@ -1055,13 +1055,7 @@ static void notify_queue_path_event2(FAR const char *path, uint32_t mask,
   FAR struct inotify_watch_list_s *list;
   FAR char *abspath;
   FAR char *pathbuffer;
-  FAR char *pathcopy;
   uint32_t cookie = 0;
-
-  if (path == NULL || *path == '\0')
-    {
-      return;
-    }
 
   pathbuffer = lib_get_tempbuffer(PATH_MAX);
   if (pathbuffer == NULL)
@@ -1069,21 +1063,7 @@ static void notify_queue_path_event2(FAR const char *path, uint32_t mask,
       return;
     }
 
-  /* Copy path to a separate buffer before lib_realpath reads it,
-   * to avoid KASAN use-after-free when the caller's path buffer
-   * has adjacent poisoned memory from a concurrent free.
-   */
-
-  pathcopy = lib_get_tempbuffer(PATH_MAX);
-  if (pathcopy == NULL)
-    {
-      lib_put_tempbuffer(pathbuffer);
-      return;
-    }
-
-  strlcpy(pathcopy, path, PATH_MAX);
-  abspath = lib_realpath(pathcopy, pathbuffer, true);
-  lib_put_tempbuffer(pathcopy);
+  abspath = lib_realpath(path, pathbuffer, true);
   if (abspath == NULL)
     {
       lib_put_tempbuffer(pathbuffer);
