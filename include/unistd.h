@@ -424,6 +424,11 @@ int     isatty(int);
 FAR char *ttyname(int);
 int       ttyname_r(int, FAR char *, size_t);
 
+/* The name of the user */
+
+FAR char *getlogin(void);
+int       getlogin_r(FAR char *buf, size_t bufsize);
+
 /* Memory management */
 
 #if defined(CONFIG_ARCH_ADDRENV) && defined(CONFIG_MM_PGALLOC) && \
