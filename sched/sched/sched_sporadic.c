@@ -97,7 +97,7 @@ FAR struct replenishment_s *
 static int sporadic_set_lowpriority(FAR struct tcb_s *tcb)
 {
   FAR struct sporadic_s *sporadic;
-  int ret;
+  int ret = OK;
 
   DEBUGASSERT(tcb != NULL && tcb->sporadic != NULL);
   sporadic = tcb->sporadic;
@@ -144,11 +144,10 @@ static int sporadic_set_lowpriority(FAR struct tcb_s *tcb)
       if (ret < 0)
         {
           serr("ERROR: nxsched_reprioritize failed: %d\n", ret);
-          return ret;
         }
     }
 
-  return OK;
+  return ret;
 }
 
 /****************************************************************************
@@ -168,7 +167,8 @@ static int sporadic_set_lowpriority(FAR struct tcb_s *tcb)
 static int sporadic_set_hipriority(FAR struct tcb_s *tcb)
 {
   FAR struct sporadic_s *sporadic;
-  int ret;
+  bool boosted = false;
+  int  ret     = OK;
 
   DEBUGASSERT(tcb != NULL && tcb->sporadic != NULL);
   sporadic = tcb->sporadic;
@@ -180,7 +180,7 @@ static int sporadic_set_hipriority(FAR struct tcb_s *tcb)
 #endif
 
 #ifdef CONFIG_PRIORITY_INHERITANCE
-  /* If the priority was boosted above the higher priority, than just
+  /* If the priority was boosted above the higher priority, then just
    * reset the base priority.
    *
    * First, was the priority boosted above the lo_priority which should be
@@ -188,7 +188,8 @@ static int sporadic_set_hipriority(FAR struct tcb_s *tcb)
    * sched_priority > hi_priority would be sufficient).
    */
 
-  if (tcb->sched_priority > tcb->base_priority)
+  if (tcb->sched_priority > tcb->base_priority &&
+      tcb->sched_priority > sporadic->hi_priority)
     {
       /* Boosted... Do we still need to reprioritize?  If we were boosted to
        * a priority above the hi_priority then we do not need to do anything
@@ -199,15 +200,8 @@ static int sporadic_set_hipriority(FAR struct tcb_s *tcb)
        * sporadic_set_lowpriority().
        */
 
-      if (tcb->sched_priority > sporadic->hi_priority)
-        {
-          /* No.. the new execution priority is lower than the boosted
-           * priority.  Just reset the base priority.
-           */
-
-          tcb->base_priority = sporadic->hi_priority;
-          return OK;
-        }
+      tcb->base_priority = sporadic->hi_priority;
+      boosted = true;
     }
 
   /* The thread priority has not been boosted or it has been boosted to a
@@ -219,14 +213,16 @@ static int sporadic_set_hipriority(FAR struct tcb_s *tcb)
 
   /* Then reprioritize to the higher priority */
 
-  ret = nxsched_reprioritize(tcb, sporadic->hi_priority);
-  if (ret < 0)
+  if (!boosted)
     {
-      serr("ERROR: nxsched_reprioritize failed: %d\n", ret);
-      return ret;
+      ret = nxsched_reprioritize(tcb, sporadic->hi_priority);
+      if (ret < 0)
+        {
+          serr("ERROR: nxsched_reprioritize failed: %d\n", ret);
+        }
     }
 
-  return OK;
+  return ret;
 }
 
 /****************************************************************************
