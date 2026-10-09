@@ -1607,6 +1607,7 @@ noreturn_function static inline void code_unreachable(void)
 /* TASKING/TriCore intrinsic mappings */
 
 #define CONFIG_HAVE_BUILTIN_CLZ 1
+#define CONFIG_HAVE_BUILTIN_CTZ 1
 #define CONFIG_HAVE_BUILTIN_POPCOUNT 1
 #define CONFIG_HAVE_BUILTIN_POPCOUNTLL 1
 
@@ -1616,6 +1617,25 @@ noreturn_function static inline void code_unreachable(void)
   ((unsigned long long)(x) >> 32 ?                                  \
    __clz((int)((unsigned long long)(x) >> 32)) :                    \
    32 + __clz((int)(unsigned int)(x)))
+
+/* TASKING has __clz but no count trailing zeros, so locate the lowest set
+ * bit instead.  ~x + 1 rather than -x so that the macro does not report
+ * W562 at every call site.
+ *
+ * A macro rather than an inline function because libc++ uses these inside a
+ * constant expression, so the operand is evaluated more than once.
+ */
+
+#define __builtin_ctz(x)                                            \
+  (31 - __clz((int)((unsigned int)(x) & (~(unsigned int)(x) + 1u))))
+#define __builtin_ctzll(x)                                          \
+  ((unsigned int)(x) ? __builtin_ctz((unsigned int)(x))             \
+                     : 32 + __builtin_ctz((unsigned int)            \
+                                          ((unsigned long long)(x) >> 32)))
+
+/* long is 32 bit here, so this is the plain form */
+
+#define __builtin_ctzl(x)             __builtin_ctz(x)
 
 #define __builtin_popcount(x)         __popcntw((unsigned int)(x))
 #define __builtin_popcountl(x)        __popcntw((unsigned int)(x))
