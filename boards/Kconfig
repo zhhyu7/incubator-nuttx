@@ -2163,6 +2163,13 @@ config ARCH_BOARD_MPS3_AN547
 		This options selects support for NuttX on the MPS3 AN547
 		board featuring the Cortex-M55.
 
+config ARCH_BOARD_QEMU_VIRT_M
+	bool "QEMU virt-m (M-profile, multi-core)"
+	depends on ARCH_CHIP_QEMU_M
+	---help---
+		QEMU virt-m board: single board shared by the
+		cortex-m7/m33/m55 chip variants.
+
 config ARCH_BOARD_NRF51_MICROBIT
 	bool "NRF51 microbit"
 	depends on ARCH_CHIP_NRF51
@@ -3544,6 +3551,7 @@ config ARCH_BOARD
 	default "mps2-an500"                if ARCH_BOARD_MPS2_AN500
 	default "mps2-an521"                if ARCH_BOARD_MPS2_AN521
 	default "mps3-an547"                if ARCH_BOARD_MPS3_AN547
+	default "virt-m"                    if ARCH_BOARD_QEMU_VIRT_M
 	default "nrf51-microbit"            if ARCH_BOARD_NRF51_MICROBIT
 	default "rv32m1-vega"               if ARCH_BOARD_RV32M1_VEGA
 	default "rv-virt"                   if ARCH_BOARD_QEMU_RV_VIRT
@@ -3782,6 +3790,9 @@ source "boards/arm/mps/mps2-an521/Kconfig"
 endif
 if ARCH_BOARD_MPS3_AN547
 source "boards/arm/mps/mps3-an547/Kconfig"
+endif
+if ARCH_BOARD_QEMU_VIRT_M
+source "boards/arm/qemu-m/virt-m/Kconfig"
 endif
 if ARCH_BOARD_NRF51_MICROBIT
 source "boards/arm/nrf51/nrf51-microbit/Kconfig"

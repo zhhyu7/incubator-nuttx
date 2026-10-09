@@ -1,0 +1,38 @@
+#
+# For a description of the syntax of this configuration file,
+# see the file kconfig-language.txt in the NuttX tools repository.
+#
+
+if ARCH_CHIP_QEMU_M
+
+menu "QEMU virt-m Chip Selection"
+
+choice
+	prompt "QEMU virt-m CPU variant"
+	default ARCH_CHIP_QEMU_M_M55
+
+config ARCH_CHIP_QEMU_M_M7
+	bool "Cortex-M7 (ARMv7-M)"
+	select ARCH_CORTEXM7
+	select ARCH_HAVE_FPU
+	select ARCH_HAVE_MPU
+	select ARCH_HAVE_MPU_UNIFIED
+	select ARCH_HAVE_STACKCHECK
+
+config ARCH_CHIP_QEMU_M_M33
+	bool "Cortex-M33 (ARMv8-M)"
+	select ARCH_CORTEXM33
+	select ARCH_HAVE_MPU
+
+config ARCH_CHIP_QEMU_M_M55
+	bool "Cortex-M55 (ARMv8.1-M)"
+	select ARCH_CORTEXM55
+	select ARCH_HAVE_FPU
+	select ARCH_HAVE_MPU
+	select ARM_HAVE_MVE
+
+endchoice
+
+endmenu
+
+endif

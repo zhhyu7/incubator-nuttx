@@ -700,6 +700,15 @@ config ARCH_CHIP_MPS
 	---help---
 		MPS platform (MPS2 MPS3)
 
+config ARCH_CHIP_QEMU_M
+	bool "QEMU virt-m platform (M-profile, multi-core)"
+	select ARCH_HAVE_POWEROFF
+	select ARCH_HAVE_RESET
+	select ARCH_HAVE_MULTICPU
+	---help---
+		QEMU virt-m: M-profile synthetic SoC with N cores
+		(cortex-m7/m33/m55).
+
 config ARCH_CHIP_NRF51
 	bool "Nordic nRF51 (Cortex-M0)"
 	select ARCH_CORTEXM0
@@ -1246,6 +1255,7 @@ config ARCH_CHIP
 	default "phy62xx"	if ARCH_CHIP_PHY62XX
 	default "tlsr82"	if ARCH_CHIP_TLSR82
 	default "qemu"		if ARCH_CHIP_QEMU_ARM
+	default "qemu-m"	if ARCH_CHIP_QEMU_M
 	default "mps"		if ARCH_CHIP_MPS
 	default "goldfish"	if ARCH_CHIP_GOLDFISH_ARM
 	default "at32"		if ARCH_CHIP_AT32
@@ -2121,6 +2131,9 @@ source "arch/arm/src/nrf51/Kconfig"
 endif
 if ARCH_CHIP_MPS
 source "arch/arm/src/mps/Kconfig"
+endif
+if ARCH_CHIP_QEMU_M
+source "arch/arm/src/qemu-m/Kconfig"
 endif
 if ARCH_CHIP_GOLDFISH_ARM
 source "arch/arm/src/goldfish/Kconfig"
