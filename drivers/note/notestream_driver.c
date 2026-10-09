@@ -129,8 +129,8 @@ static ssize_t notestream_add(FAR struct note_driver_s *drv,
 
   if (atomic_read(&stream->state) != NOTESTREAM_READY)
     {
-      if (!OSINIT_IDLELOOP() ||
-          !note_is_safe(note, len, noswitches) ||
+      if (!OSINIT_IDLELOOP() || up_interrupt_context() ||
+          sched_idletask() || !note_is_safe(note, len, noswitches) ||
           !atomic_cmpxchg(&stream->state, &expected, NOTESTREAM_OPENING))
         {
           return -EAGAIN;
