@@ -48,6 +48,10 @@ from enum import IntEnum
 
 import serial
 
+# Host node prefix: a world-writable dir (not /dev) so the mux needs no
+# root to create the per-DLCI symlinks.
+GSMMUX_NODE_PREFIX = "/tmp/ttyGSM"
+
 
 def _set_nonblocking(fd):
     """Set a file descriptor to non-blocking mode."""
@@ -707,8 +711,7 @@ class VirtualSerialPort:
         # Get slave device name
         self.slave_name = os.ttyname(self.slave_fd)
 
-        # World-accessible so non-root clients can open the port when the mux
-        # runs under sudo (to create /dev symlinks).
+        # World-accessible so any local client can open the port.
         try:
             os.chmod(self.slave_name, 0o666)
         except OSError:
@@ -823,7 +826,7 @@ class GSMMultiplexer:
         self.show_raw_data = show_raw_data
         self.debug = debug
         self.symlink_prefix = (
-            symlink_prefix  # e.g. /dev/ttyGSM -> /dev/ttyGSM1, /dev/ttyGSM2
+            symlink_prefix  # e.g. /tmp/ttyGSM -> /tmp/ttyGSM0, /tmp/ttyGSM1
         )
         self.symlinks = []  # Track created symlinks for cleanup
         self.decoder = GSM0710Decoder(
@@ -1434,7 +1437,7 @@ Examples:
         hex_dump_file=args.hex_dump,
         show_raw_data=args.show_raw_data,
         debug_log_file=args.debug,
-        symlink_prefix="/dev/ttyGSM",
+        symlink_prefix=GSMMUX_NODE_PREFIX,
     )
 
     def signal_handler(signum, frame):
