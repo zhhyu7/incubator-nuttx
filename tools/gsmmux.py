@@ -22,35 +22,24 @@
 """
 GSM 07.10 Multiplexer
 
-Supports two operating modes selected via --mode:
-
-  python (default):
-    Pure Python implementation that does NOT rely on kernel modules.
-    Implements the GSM 07.10 protocol entirely in Python and creates
-    virtual serial ports using PTY.
-
-  kernel:
-    Uses the Linux kernel n_gsm line discipline (requires the n_gsm
-    kernel module). Attaches the discipline to the serial port and
-    creates /dev/ttyGSM<N> virtual TTY device nodes.
-    Supports selecting the line discipline number via -l/--ldisc.
+Pure Python implementation that does NOT rely on kernel modules. It
+implements the GSM 07.10 protocol entirely in Python and exposes each
+DLCI channel as a PTY-backed virtual serial port.
 
 Main features:
-1. GSM 07.10 frame encoding/decoding (python mode)
-2. FCS (Frame Check Sequence) calculation (python mode)
+1. GSM 07.10 frame encoding/decoding
+2. FCS (Frame Check Sequence) calculation
 3. Virtual PTY / ttyGSM device creation
-4. Multi-threaded data forwarding (python mode)
+4. Multi-threaded data forwarding
 5. Support for multiple DLCI channels
 """
 
 import argparse
-import array
 import fcntl
 import os
 import pty
 import select
 import signal
-import stat
 import sys
 import termios
 import threading
@@ -719,7 +708,7 @@ class VirtualSerialPort:
         self.slave_name = os.ttyname(self.slave_fd)
 
         # World-accessible so non-root clients can open the port when the mux
-        # runs under sudo (to create /dev symlinks); matches kernel-mode 0o666.
+        # runs under sudo (to create /dev symlinks).
         try:
             os.chmod(self.slave_name, 0o666)
         except OSError:
@@ -803,253 +792,6 @@ class VirtualSerialPort:
     def fileno(self):
         """Return file descriptor for select"""
         return self.master_fd if self.master_fd else -1
-
-
-class GSMMultiplexerKernel:
-    """GSM 07.10 Multiplexer - Linux kernel n_gsm line discipline mode
-
-    Requires the n_gsm kernel module. Attaches the GSM 07.10 line
-    discipline to the serial port and exposes /dev/ttyGSM<N> devices.
-    """
-
-    MTU = 127
-    MRU = 127
-    DEVICE_NAME = "/dev/ttyGSM"
-    DRIVER_NAME = "gsmtty"
-    N_GSM0710 = 21
-    TIOCSETD = 0x5423
-    GSMIOC_GETCONF = 0x804C4700
-    GSMIOC_SETCONF = 0x404C4701
-    GSMIOC_GETFIRST = 0x80044704
-
-    def __init__(self):
-        self.device_fd = None
-        self.device_name = None
-        self.created_nodes = []
-
-    def get_major_number(self, driver_name):
-        """Get driver major number from /proc/devices"""
-        try:
-            with open("/proc/devices", "r") as f:
-                for line in f:
-                    if driver_name in line:
-                        parts = line.strip().split()
-                        if len(parts) >= 2:
-                            try:
-                                return int(parts[0])
-                            except ValueError:
-                                continue
-        except IOError as e:
-            print(f"Cannot open /proc/devices: {e}")
-        return -1
-
-    def set_raw_mode(self, fd, baudrate=0):
-        """Set serial port to raw mode"""
-        try:
-            attrs = termios.tcgetattr(fd)
-            attrs[0] &= ~(
-                termios.IGNBRK
-                | termios.BRKINT
-                | termios.PARMRK
-                | termios.ISTRIP
-                | termios.INLCR
-                | termios.IGNCR
-                | termios.ICRNL
-                | termios.IXON
-            )
-            attrs[1] &= ~termios.OPOST
-            attrs[2] &= ~(termios.CSIZE | termios.PARENB)
-            attrs[2] |= termios.CS8
-            attrs[3] &= ~(
-                termios.ECHO
-                | termios.ECHONL
-                | termios.ICANON
-                | termios.ISIG
-                | termios.IEXTEN
-            )
-            if baudrate > 0:
-                speed_map = {
-                    9600: termios.B9600,
-                    19200: termios.B19200,
-                    38400: termios.B38400,
-                    57600: termios.B57600,
-                    115200: termios.B115200,
-                    230400: termios.B230400,
-                    460800: termios.B460800,
-                    500000: termios.B500000,
-                    576000: termios.B576000,
-                    921600: termios.B921600,
-                    1000000: termios.B1000000,
-                    1152000: termios.B1152000,
-                    1500000: termios.B1500000,
-                    2000000: termios.B2000000,
-                    2500000: termios.B2500000,
-                }
-                if baudrate in speed_map:
-                    attrs[4] = attrs[5] = speed_map[baudrate]
-                else:
-                    print(f"Unsupported baudrate: {baudrate}")
-                    return False
-            termios.tcsetattr(fd, termios.TCSANOW, attrs)
-            return True
-        except (termios.error, OSError) as e:
-            print(f"Error setting raw mode: {e}")
-            return False
-
-    def set_line_discipline(self, fd, ldisc_type):
-        """Set GSM line discipline"""
-        try:
-            ldisc = array.array("i", [ldisc_type])
-            fcntl.ioctl(fd, self.TIOCSETD, ldisc)
-            return True
-        except OSError as e:
-            print(f"Error setting line discipline: {e}")
-            return False
-
-    def configure_gsm(self, fd):
-        """Configure GSM multiplexing parameters"""
-        try:
-            # struct gsm_config: adaption, encapsulation, initiator, t1, t2,
-            #                    t3, n2, mru, mtu, k, i, unused[8]
-            gsm_config = array.array("I", [0] * 19)
-            fcntl.ioctl(fd, self.GSMIOC_GETCONF, gsm_config)
-            gsm_config[1] = 0  # encapsulation: basic encoding mode
-            gsm_config[2] = 1  # initiator: act as initiator
-            gsm_config[7] = self.MRU
-            gsm_config[8] = self.MTU
-            fcntl.ioctl(fd, self.GSMIOC_SETCONF, gsm_config)
-            return True
-        except OSError as e:
-            print(f"Error configuring GSM multiplexing parameters: {e}")
-            return False
-
-    def make_device_nodes(self, major, basename, count):
-        """Create virtual TTY device nodes"""
-        created = 0
-        old_umask = os.umask(0)
-        try:
-            for minor in range(1, count + 1):
-                devname = f"{basename}{minor}"
-                device_num = os.makedev(major, minor)
-                try:
-                    os.mknod(devname, stat.S_IFCHR | 0o666, device_num)
-                    self.created_nodes.append(devname)
-                    created += 1
-                    print(f"Created {devname}")
-                except OSError as e:
-                    print(f"Error creating {devname}: {e}")
-        finally:
-            os.umask(old_umask)
-        return created
-
-    def remove_device_nodes(self):
-        """Remove created device nodes"""
-        if not self.created_nodes:
-            return
-        for devname in self.created_nodes:
-            try:
-                os.unlink(devname)
-                print(f"Removed {devname}")
-            except OSError as e:
-                print(f"Error removing {devname}: {e}")
-        self.created_nodes.clear()
-
-    def test_device_access(self, fd, basename):
-        """Check if the device is accessible, with retries for link establishment"""
-        try:
-            first_minor = array.array("I", [0])
-            fcntl.ioctl(fd, self.GSMIOC_GETFIRST, first_minor)
-            test_devname = f"{basename}{first_minor[0]}"
-
-            max_retries = 10
-            for attempt in range(max_retries):
-                try:
-                    test_fd = os.open(
-                        test_devname, os.O_RDWR | os.O_NOCTTY | os.O_NONBLOCK
-                    )
-                    os.close(test_fd)
-                    return True
-                except OSError as e:
-                    if attempt < max_retries - 1:
-                        print(
-                            f"Waiting for n_gsm link ({attempt + 1}/{max_retries}): {e}"
-                        )
-                        time.sleep(1)
-                    else:
-                        print(
-                            f"Device access test failed after {max_retries} "
-                            f"attempts: {e}"
-                        )
-                        return False
-        except OSError as e:
-            print(f"Device access test failed: {e}")
-            return False
-
-    def signal_handler(self, signum, frame):
-        """Signal handler"""
-        print(f"Caught signal {signum}")
-        self.cleanup()
-        sys.exit(0)
-
-    def run(self, device_name, node_count, baudrate, ldisc_type):
-        """Run GSM multiplexer in kernel mode"""
-        try:
-            self.device_fd = os.open(
-                device_name, os.O_RDWR | os.O_NOCTTY | os.O_NONBLOCK
-            )
-            self.device_name = device_name
-            print(f"serial: {device_name}, fd: {self.device_fd}")
-
-            if not self.set_raw_mode(self.device_fd, baudrate):
-                return False
-            if not self.set_line_discipline(self.device_fd, ldisc_type):
-                return False
-            if not self.configure_gsm(self.device_fd):
-                return False
-
-            time.sleep(2)
-            print("Line discipline set")
-
-            major = self.get_major_number(self.DRIVER_NAME)
-            if major < 0:
-                print("Cannot get major number")
-                return False
-
-            created = self.make_device_nodes(major, self.DEVICE_NAME, node_count)
-            if created == 0:
-                print("No nodes have been created")
-                return False
-            elif created < node_count:
-                print(
-                    f"Cannot create all nodes, only {created}/{node_count} "
-                    "have been created"
-                )
-
-            if not self.test_device_access(self.device_fd, self.DEVICE_NAME):
-                self.remove_device_nodes()
-                return False
-
-            signal.signal(signal.SIGINT, self.signal_handler)
-            signal.signal(signal.SIGTERM, self.signal_handler)
-            print("Running in foreground, use Ctrl+C(SIGINT) or kill(SIGTERM) to stop")
-            signal.pause()
-            self.cleanup()
-            return True
-
-        except OSError as e:
-            print(f"Error opening {device_name}: {e}")
-            self.cleanup()
-            return False
-
-    def cleanup(self):
-        """Cleanup resources"""
-        print("Cleaning up")
-        self.remove_device_nodes()
-        if self.device_fd is not None:
-            try:
-                os.close(self.device_fd)
-            except OSError:
-                pass
 
 
 class GSMMultiplexer:
@@ -1594,23 +1336,10 @@ def main():
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
-  # Python mode (default, no kernel module required)
   %(prog)s -d /dev/ttyUSB0 -n 3
   %(prog)s -d /dev/ttyUSB0 -n 2 -b 115200
   %(prog)s -d /dev/ttyUSB0 -n 2 -r raw_data.log
-
-  # Kernel mode (requires n_gsm kernel module)
-  %(prog)s --mode kernel -d /dev/ttyUSB0 -n 3
-  %(prog)s --mode kernel -d /dev/ttyUSB0 -n 3 -l 21
         """,
-    )
-
-    parser.add_argument(
-        "--mode",
-        choices=["python", "kernel"],
-        default="python",
-        help="Operating mode: 'python' (pure Python PTY, default) or "
-        "'kernel' (Linux n_gsm line discipline)",
     )
 
     parser.add_argument(
@@ -1636,44 +1365,36 @@ Examples:
     )
 
     parser.add_argument(
-        "-l",
-        "--ldisc",
-        type=int,
-        default=GSMMultiplexerKernel.N_GSM0710,
-        help=f"Line discipline number, kernel mode only (default: {GSMMultiplexerKernel.N_GSM0710})",
-    )
-
-    parser.add_argument(
         "-t",
         "--test",
         action="store_true",
-        help="Run frame encoding/decoding test (python mode only)",
+        help="Run frame encoding/decoding test",
     )
 
     parser.add_argument(
         "-r",
         "--raw-log",
         metavar="FILE",
-        help="Save raw data to file (python mode only)",
+        help="Save raw data to file",
     )
 
     parser.add_argument(
         "-x",
         "--hex-dump",
         metavar="FILE",
-        help="Save received serial data as hex dump (python mode only)",
+        help="Save received serial data as hex dump",
     )
 
     parser.add_argument(
         "--show-raw-data",
         action="store_true",
-        help="Display raw data to terminal (python mode only)",
+        help="Display raw data to terminal",
     )
 
     parser.add_argument(
         "--debug",
         metavar="FILE",
-        help="Enable debug mode and save messages to file (python mode only)",
+        help="Enable debug mode and save messages to file",
     )
 
     args = parser.parse_args()
@@ -1696,14 +1417,6 @@ Examples:
         print("Error: Number of channels must be greater than 0")
         return 1
 
-    # Kernel mode
-    if args.mode == "kernel":
-        mux = GSMMultiplexerKernel()
-        baudrate = args.baudrate if args.baudrate > 0 else 0
-        success = mux.run(args.device, args.number, baudrate, args.ldisc)
-        return 0 if success else 1
-
-    # Python mode
     if args.number > GSM0710.MAX_DLCI:
         print(f"Error: Number of channels must be between 1 and {GSM0710.MAX_DLCI}")
         return 1
