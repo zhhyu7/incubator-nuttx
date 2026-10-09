@@ -702,6 +702,10 @@ class GSM0710Decoder:
 class VirtualSerialPort:
     """Virtual serial port - implemented using PTY"""
 
+    # Cap the pending-write buffer so a channel with no reader (nobody has
+    # opened ttyGSMx) cannot grow it without bound; keep the newest data.
+    MAX_WBUF = 1024 * 1024
+
     def __init__(self, dlci, name=None):
         self.dlci = dlci
         self.name = name
@@ -782,6 +786,8 @@ class VirtualSerialPort:
         if not self.running or not self.master_fd:
             return 0
         self._wbuf.extend(data)
+        if len(self._wbuf) > self.MAX_WBUF:
+            del self._wbuf[: len(self._wbuf) - self.MAX_WBUF]
         return len(data)
 
     def drain_write(self):
