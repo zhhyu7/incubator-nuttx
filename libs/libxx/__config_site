@@ -28,6 +28,10 @@
 // The __c11_atomic_ builtins take only a constant memory order, define this macro
 // instead of checking __TASKING__ in libc++ source.
 #  define _LIBCPP_C11_ATOMIC_CONSTANT_ORDER
+
+// TASKING's __dynamic_cast has different argument types (erased to void *),
+// which should be matched by libcxxabi.
+#  define _LIBCXXABI_DYNAMIC_CAST_UNTYPED_ARGS
 #endif
 
 #define _LIBCPP_ABI_VERSION 1

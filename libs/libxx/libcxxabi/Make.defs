@@ -81,8 +81,16 @@ else
 CPPSRCS += cxa_noexception.cpp
 endif
 
+# TASKING emits the __class_type_info type infos unconditionally
 ifeq ($(CONFIG_CXX_RTTI),y)
 CPPSRCS += private_typeinfo.cpp stdlib_typeinfo.cpp
+else ifeq ($(CONFIG_ARCH_TOOLCHAIN_TASKING),y)
+CPPSRCS += private_typeinfo.cpp stdlib_typeinfo.cpp
+endif
+
+ifeq ($(CONFIG_ARCH_TOOLCHAIN_TASKING),y)
+# Allow typeid and dynamic_cast to pass the front end
+private_typeinfo.cpp_CXXFLAGS += --pass-c++=--rtti
 endif
 
 # Fix compilation error on ARM32:

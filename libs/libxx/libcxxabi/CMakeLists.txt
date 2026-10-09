@@ -108,7 +108,8 @@ if(CONFIG_LIBCXXABI)
     list(APPEND SRCS cxa_noexception.cpp)
   endif()
 
-  if(CONFIG_CXX_RTTI)
+  # TASKING emits the __class_type_info type infos unconditionally
+  if(CONFIG_CXX_RTTI OR CONFIG_ARCH_TOOLCHAIN_TASKING)
     list(APPEND SRCS private_typeinfo.cpp stdlib_typeinfo.cpp)
   endif()
 
@@ -137,6 +138,12 @@ if(CONFIG_LIBCXXABI)
 
   target_compile_definitions(libcxxabi
                              PRIVATE LIBCXXABI_NON_DEMANGLING_TERMINATE)
+
+  if(CONFIG_ARCH_TOOLCHAIN_TASKING)
+    # Allow typeid and dynamic_cast to pass the front end
+    set_source_files_properties(libcxxabi/src/private_typeinfo.cpp
+                                PROPERTIES COMPILE_OPTIONS "--pass-c++=--rtti")
+  endif()
 
   if(NOT CONFIG_ARCH_TOOLCHAIN_CLANG AND NOT CONFIG_ARCH_TOOLCHAIN_TASKING)
     target_compile_options(
