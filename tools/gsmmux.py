@@ -1425,6 +1425,77 @@ def test_frame_codec():
     print("\n=== Test completed ===\n")
 
 
+def _tmux(*cmd, capture=False):
+    # 'attach' must inherit the terminal, so only capture stdout when a
+    # command's output is needed (split-window -P prints a pane id).
+    return subprocess.run(
+        ["tmux", *cmd],
+        stdout=subprocess.PIPE if capture else None,
+        stderr=subprocess.DEVNULL,
+    )
+
+
+def _run_tmux_view(ports):
+    """Bring up the tmux view for the given ports.
+
+    In an existing tmux session this only splits the panes and returns their
+    ids, so the caller blocks on the shared mux loop and cleans them up. In a
+    plain shell it owns a session and attaches (blocking) itself, returning
+    None once the user exits.
+    """
+    views = [f"{GSMMUX_NODE_PREFIX}{p}" for p in ports]
+
+    try:
+        if os.environ.get("TMUX"):
+            pane_ids = []
+            for view in views:
+                r = _tmux(
+                    "split-window",
+                    "-P",
+                    "-F",
+                    "#{pane_id}",
+                    f"minicom -D {view}",
+                    capture=True,
+                )
+                pane_id = r.stdout.strip().decode()
+                if pane_id:
+                    pane_ids.append(pane_id)
+            _tmux("select-layout", "even-horizontal")
+            return pane_ids
+
+        # Plain shell: own a session and attach (blocks until exit).
+        session = "gsmmux"
+        _tmux("kill-session", "-t", session)
+        _tmux("new-session", "-d", "-s", session, f"minicom -D {views[0]}")
+        for view in views[1:]:
+            _tmux("split-window", "-t", session, f"minicom -D {view}")
+        _tmux("select-layout", "-t", session, "even-horizontal")
+        _tmux("attach", "-t", session)
+        _tmux("kill-session", "-t", session)
+    except FileNotFoundError:
+        print("Error: tmux not found (e.g. sudo apt install tmux)")
+    return None
+
+
+def _parse_tmux_ports(args):
+    """Parse --tmux into a port list; return (ports, error_message)."""
+    if args.tmux is None:
+        return [], None
+    if args.minicom is not None:
+        return [], "--tmux and --minicom are mutually exclusive"
+    ports = []
+    for tok in args.tmux.split(","):
+        tok = tok.strip()
+        if not tok:
+            continue
+        if not tok.isdigit():
+            return [], f"invalid --tmux port list: {args.tmux}"
+        ports.append(int(tok))
+    if not ports:
+        return [], f"invalid --tmux port list: {args.tmux}"
+    return ports, None
+
+
 def main():
     """Main function"""
     parser = argparse.ArgumentParser(
@@ -1437,6 +1508,7 @@ Examples:
   %(prog)s -d /dev/ttyUSB0 -n 2 -r raw_data.log
   %(prog)s -d /dev/ttyACM1 -n 4 --bin 1 --elf nuttx.elf
   %(prog)s -d /dev/ttyACM1 -n 4 --bin 1 --elf nuttx.elf --minicom 1
+  %(prog)s -d /dev/ttyACM1 -n 4 --bin 1 --elf nuttx.elf --tmux 0,1
         """,
     )
 
@@ -1524,6 +1596,14 @@ Examples:
         "foreground; the mux keeps running until minicom exits",
     )
 
+    parser.add_argument(
+        "--tmux",
+        metavar="PORTS",
+        help="After the mux is up, show each /tmp/ttyGSM<port> from this "
+        "comma-separated list in its own tmux pane (e.g. 0,1); the mux keeps "
+        "running until the tmux session is closed",
+    )
+
     args = parser.parse_args()
 
     # Test mode (python only)
@@ -1570,6 +1650,11 @@ Examples:
                 return 1
             bin_dlcis.add(int(tok) + 1)
 
+    tmux_ports, tmux_err = _parse_tmux_ports(args)
+    if tmux_err is not None:
+        print(f"Error: {tmux_err}")
+        return 1
+
     mux = GSMMultiplexer(
         args.device,
         args.number,
@@ -1595,7 +1680,15 @@ Examples:
     try:
         mux.start()
 
-        if args.minicom is not None:
+        tmux_panes = None
+        if args.tmux is not None:
+            print("\nLaunching tmux view (mux stays in background)...")
+            tmux_panes = _run_tmux_view(tmux_ports)
+            # Plain-shell attach already blocked and returned None; in-tmux
+            # returns the panes and falls through to the shared loop below.
+            if tmux_panes is None:
+                mux.running = False
+        elif args.minicom is not None:
             node = f"{GSMMUX_NODE_PREFIX}{args.minicom}"
             print(f"\nLaunching minicom on {node} (mux stays in background)...")
             try:
@@ -1606,9 +1699,12 @@ Examples:
                     "(e.g. sudo apt install minicom)"
                 )
             mux.running = False
-        else:
-            while mux.running:
-                time.sleep(1)
+
+        while mux.running:
+            time.sleep(1)
+
+        for pane_id in tmux_panes or []:
+            _tmux("kill-pane", "-t", pane_id)
     except Exception as e:
         print(f"Error: {e}")
     finally:
