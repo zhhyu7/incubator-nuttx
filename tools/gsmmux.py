@@ -40,6 +40,7 @@ import os
 import pty
 import select
 import signal
+import subprocess
 import sys
 import termios
 import threading
@@ -57,6 +58,12 @@ def _set_nonblocking(fd):
     """Set a file descriptor to non-blocking mode."""
     flags = fcntl.fcntl(fd, fcntl.F_GETFL)
     fcntl.fcntl(fd, fcntl.F_SETFL, flags | os.O_NONBLOCK)
+
+
+def _set_blocking(fd):
+    """Set a file descriptor to blocking mode."""
+    flags = fcntl.fcntl(fd, fcntl.F_GETFL)
+    fcntl.fcntl(fd, fcntl.F_SETFL, flags & ~os.O_NONBLOCK)
 
 
 # GSM 07.10 protocol constants
@@ -811,12 +818,19 @@ class GSMMultiplexer:
         show_raw_data=False,
         debug_log_file=None,
         symlink_prefix=None,
+        bin_dlcis=None,
+        elf=None,
+        freq=16384,
     ):
         self.device_path = device_path
         self.num_channels = num_channels
         self.baudrate = baudrate
         self.serial_port = None
         self.virtual_ports = {}
+        self.bin_dlcis = bin_dlcis or set()
+        self.elf = elf
+        self.freq = freq
+        self.bin_decoders = {}
         self.raw_log_file = raw_log_file
         self.raw_log_fd = None
         self.hex_dump_file = hex_dump_file
@@ -948,6 +962,51 @@ class GSMMultiplexer:
             else:
                 print(f"Created virtual port DLCI {dlci}: {slave_name}")
 
+    def start_bin_decoders(self):
+        """Start a resident nxtrace per --bin DLCI.
+
+        tty->DLCx->nxtrace->ttyGSMx: the mux writes a channel's raw binlog to
+        nxtrace's stdin and nxtrace decodes it to text written straight onto
+        the channel's ttyGSMx PTY (nxtrace stdout is the PTY master).
+        """
+        if not self.bin_dlcis:
+            return
+
+        pynuttx = os.path.join(os.path.dirname(os.path.abspath(__file__)), "pynuttx")
+        for dlci in sorted(self.bin_dlcis):
+            if dlci not in self.virtual_ports:
+                continue
+
+            cmd = [
+                "python3",
+                "-m",
+                "nxtrace",
+                "capture",
+                "--elf",
+                self.elf,
+                "--format",
+                "text",
+                "--eol",
+                "crlf",
+                "--freq",
+                str(self.freq),
+                "serial",
+                "-",
+            ]
+            vport = self.virtual_ports[dlci]
+            # nxtrace writes decoded text straight to this PTY master; its
+            # buffered stdout cannot survive EAGAIN, so the master must be
+            # blocking (the mux only ever select-reads it, never writes it).
+            _set_blocking(vport.master_fd)
+            self.bin_decoders[dlci] = subprocess.Popen(
+                cmd,
+                cwd=pynuttx,
+                stdin=subprocess.PIPE,
+                stdout=vport.master_fd,
+                stderr=subprocess.DEVNULL,
+            )
+            print(f"Started nxtrace decoder for DLCI {dlci} (ttyGSM{dlci - 1})")
+
     def gsm_initialize(self):
         """
         Initialize GSM 07.10 connection
@@ -1013,9 +1072,19 @@ class GSMMultiplexer:
             )
             if frame.control in _data_ctrl and frame.dlci in self.virtual_ports:
                 if len(frame.data) > 0:
-                    vport = self.virtual_ports[frame.dlci]
-                    vport.write(frame.data)
-                    vport.drain_write()
+                    dec = self.bin_decoders.get(frame.dlci)
+                    if dec is not None:
+                        # bin channel: write raw binlog to nxtrace's stdin; its
+                        # decoded text comes back on stdout and is written to
+                        # ttyGSMx in the event loop.
+                        try:
+                            os.write(dec.stdin.fileno(), frame.data)
+                        except OSError:
+                            pass
+                    else:
+                        vport = self.virtual_ports[frame.dlci]
+                        vport.write(frame.data)
+                        vport.drain_write()
             elif frame.control == GSM0710.SABM:
                 ua_frame = GSM0710Frame(
                     dlci=frame.dlci,
@@ -1073,6 +1142,31 @@ class GSMMultiplexer:
             self._tx_queue.extend(encoded)
             offset += len(chunk)
 
+    def _handle_readable(self, fd, serial_fd, fd_to_dlci):
+        """Dispatch one readable fd: serial RX, bin decoder, or vport TX."""
+        if fd == serial_fd:
+            # One-shot large read relies on the low-latency flush
+            # (open_serial) to keep the kernel RX from overflowing on
+            # 921600 bursts, so one thread never loses bytes.
+            try:
+                data = os.read(serial_fd, 65536)
+            except BlockingIOError:
+                return
+            if data:
+                self._handle_serial_data(data)
+                if self._tx_queue:
+                    self._drain_tx_queue()
+        elif fd in fd_to_dlci:
+            dlci = fd_to_dlci[fd]
+            try:
+                data = os.read(fd, 8192)
+            except BlockingIOError:
+                return
+            if data:
+                self._handle_vport_data(dlci, data)
+                if self._tx_queue:
+                    self._drain_tx_queue()
+
     def event_loop(self):
         """Single-threaded select() loop with non-blocking TX queues.
 
@@ -1114,30 +1208,7 @@ class GSMMultiplexer:
                         self.virtual_ports[fd_to_dlci[fd]].drain_write()
 
                 for fd in readable:
-                    if fd == serial_fd:
-                        # One-shot large read relies on the low-latency flush
-                        # (open_serial) to keep the kernel RX from overflowing
-                        # on 921600 bursts, so one thread never loses bytes.
-                        try:
-                            data = os.read(serial_fd, 65536)
-                        except BlockingIOError:
-                            continue
-                        if data:
-                            self._handle_serial_data(data)
-                            # Drain TX after processing RX (responses queued)
-                            if self._tx_queue:
-                                self._drain_tx_queue()
-                    elif fd in fd_to_dlci:
-                        dlci = fd_to_dlci[fd]
-                        try:
-                            data = os.read(fd, 8192)
-                        except BlockingIOError:
-                            continue
-                        if data:
-                            self._handle_vport_data(dlci, data)
-                            # Drain TX immediately after queuing frames
-                            if self._tx_queue:
-                                self._drain_tx_queue()
+                    self._handle_readable(fd, serial_fd, fd_to_dlci)
             except OSError as e:
                 if self.running:
                     import errno as errno_mod
@@ -1164,6 +1235,7 @@ class GSMMultiplexer:
 
         self.open_serial()
         self.create_virtual_ports()
+        self.start_bin_decoders()
         self.gsm_initialize()
 
         loop_thread = threading.Thread(target=self.event_loop, daemon=True)
@@ -1181,6 +1253,11 @@ class GSMMultiplexer:
             else:
                 print(f"  DLCI {dlci}: {vport.slave_name}")
         print("\nPress Ctrl+C to stop")
+
+    def _stop_bin_decoders(self):
+        """Stop resident nxtrace decoders."""
+        for dec in self.bin_decoders.values():
+            dec.kill()
 
     def stop(self):
         """Stop multiplexer"""
@@ -1229,6 +1306,9 @@ class GSMMultiplexer:
         # Wait for threads
         for thread in self.threads:
             thread.join(timeout=1.0)
+
+        # Stop nxtrace decoders
+        self._stop_bin_decoders()
 
         # Close virtual ports
         for vport in self.virtual_ports.values():
@@ -1342,6 +1422,7 @@ Examples:
   %(prog)s -d /dev/ttyUSB0 -n 3
   %(prog)s -d /dev/ttyUSB0 -n 2 -b 115200
   %(prog)s -d /dev/ttyUSB0 -n 2 -r raw_data.log
+  %(prog)s -d /dev/ttyACM1 -n 4 --bin 1 --elf nuttx.elf
         """,
     )
 
@@ -1400,6 +1481,27 @@ Examples:
         help="Enable debug mode and save messages to file",
     )
 
+    parser.add_argument(
+        "--bin",
+        metavar="PORTS",
+        help="Comma-separated ports whose binlog is decoded via nxtrace "
+        "into ttyGSMx (requires --elf); e.g. --bin 1",
+    )
+
+    parser.add_argument(
+        "--elf",
+        metavar="ELF",
+        help="Core ELF for binlog decoding (required with --bin)",
+    )
+
+    parser.add_argument(
+        "--freq",
+        type=int,
+        default=16384,
+        metavar="HZ",
+        help="Note timestamp frequency for --bin decoding (default: 16384)",
+    )
+
     args = parser.parse_args()
 
     # Test mode (python only)
@@ -1428,6 +1530,24 @@ Examples:
 
     raw_log_file = args.raw_log
 
+    # ttyGSM<port> maps to DLCI(port + 1) (DLCI1 = ttyGSM0)
+    bin_dlcis = set()
+    if args.bin:
+        if not args.elf:
+            print("Error: --bin requires --elf")
+            return 1
+        if not os.path.isfile(args.elf):
+            print(f"Error: ELF file not found: {args.elf}")
+            return 1
+        for tok in args.bin.split(","):
+            tok = tok.strip()
+            if not tok:
+                continue
+            if not tok.isdigit():
+                print(f"Error: invalid --bin port list: {args.bin}")
+                return 1
+            bin_dlcis.add(int(tok) + 1)
+
     mux = GSMMultiplexer(
         args.device,
         args.number,
@@ -1438,6 +1558,9 @@ Examples:
         show_raw_data=args.show_raw_data,
         debug_log_file=args.debug,
         symlink_prefix=GSMMUX_NODE_PREFIX,
+        bin_dlcis=bin_dlcis,
+        elf=args.elf,
+        freq=args.freq,
     )
 
     def signal_handler(signum, frame):
