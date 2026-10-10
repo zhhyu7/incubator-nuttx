@@ -135,5 +135,6 @@ extern const struct auth_hash auth_hash_crc8;
 extern const struct auth_hash auth_hash_crc16;
 extern const struct auth_hash auth_hash_crc32;
 extern const struct auth_hash auth_hash_cmac_aes_128;
+extern const struct auth_hash auth_hash_cmac_aes_256;
 
 #endif /* __INCLUDE_CRYPTO_XFORM_H */
