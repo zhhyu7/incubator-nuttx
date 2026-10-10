@@ -28,6 +28,7 @@
 
 #include <nuttx/instrument.h>
 #include <nuttx/note/note_driver.h>
+#include <nuttx/note/noteitm_driver.h>
 #include <nuttx/note/noteram_driver.h>
 #include <nuttx/rtt.h>
 #include <nuttx/t32.h>

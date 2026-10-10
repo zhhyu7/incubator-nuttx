@@ -352,9 +352,35 @@ endif
 config DRIVERS_NOTEITM
 	bool "Note ITM driver"
 	depends on CORESIGHT_ITM
+	select DRIVERS_NOTE
 	default n
 	---help---
 		The note driver output to ITM.
+
+config DRIVERS_NOTEITM_BASEADDR
+	hex "ITM base address"
+	depends on DRIVERS_NOTEITM
+	default 0xe0000000 if ARCH_ARM_M
+	default 0x0
+	---help---
+		Base address of the ITM.  The driver registers the coresight ITM
+		device itself when none exists yet, because note_initialize() runs
+		before the board hooks.  Set to 0 if the board registers the ITM
+		with itm_register() before that.
+
+config DRIVERS_NOTEITM_FILTER_DEFAULT_MODE
+	hex "Note ITM driver filter mode"
+	depends on DRIVERS_NOTEITM && SCHED_INSTRUMENTATION_FILTER
+	default SCHED_INSTRUMENTATION_FILTER_DEFAULT_MODE
+	---help---
+		Filter mode for noteitm
+
+config DRIVERS_NOTEITM_CPUSET
+	hex "Note ITM driver CPU set"
+	depends on DRIVERS_NOTEITM && !UP && SCHED_INSTRUMENTATION_FILTER
+	default SCHED_INSTRUMENTATION_CPUSET
+	---help---
+		CPU set for noteitm
 
 config DRIVERS_NOTERPMSG_SERVER
 	bool "Enable RPMSG server for NOTE"

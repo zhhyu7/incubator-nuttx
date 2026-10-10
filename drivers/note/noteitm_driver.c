@@ -22,8 +22,13 @@
  * Included Files
  ****************************************************************************/
 
+#include <nuttx/config.h>
+
+#include <errno.h>
+#include <string.h>
+
 #include <nuttx/note/note_driver.h>
-#include <nuttx/coresight/coresight_itm.h>
+#include <nuttx/hwtracing/coresight/coresight_itm.h>
 
 /****************************************************************************
  * Private Types
@@ -59,9 +64,9 @@ DEFINE_PER_CPU_BMP(struct noteitm_s, g_noteitm) =
     "itm",
     {
       {
-        CONFIG_DRIVERS_NOTERTT_FILTER_DEFAULT_MODE,
+        CONFIG_DRIVERS_NOTEITM_FILTER_DEFAULT_MODE,
 #  ifndef CONFIG_UP
-        CONFIG_DRIVERS_NOTERTT_CPUSET
+        CONFIG_DRIVERS_NOTEITM_CPUSET
 #  endif
       },
 
@@ -122,6 +127,29 @@ static ssize_t noteitm_add(FAR struct note_driver_s *drv,
 int noteitm_register(void)
 {
   FAR struct itm_port_s *stimulus = itm_alloc_port();
+
+#if CONFIG_DRIVERS_NOTEITM_BASEADDR != 0
+  /* note_initialize() runs before any board hook, so register the ITM here
+   * when nobody has done it yet.
+   */
+
+  if (stimulus == NULL)
+    {
+      struct hwtracing_desc_s desc;
+
+      memset(&desc, 0, sizeof(desc));
+      desc.name = "itm";
+      desc.addr = CONFIG_DRIVERS_NOTEITM_BASEADDR;
+      desc.type = HWTRACING_DEV_TYPE_SOURCE;
+      desc.subtype.source_subtype = HWTRACING_DEV_SUBTYPE_SOURCE_SOFTWARE;
+
+      if (itm_register(&desc) != NULL)
+        {
+          stimulus = itm_alloc_port();
+        }
+    }
+#endif
+
   if (stimulus == NULL)
     {
       return -ENOSPC;
