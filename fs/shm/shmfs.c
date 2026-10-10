@@ -501,16 +501,29 @@ static int shmfs_add_map(FAR struct mm_map_entry_s *entry,
                          FAR struct inode *inode)
 {
   FAR struct mm_map_s *mm = get_current_mm();
+  int ret;
 
   if (mm_map_find(mm, entry->vaddr, entry->length))
     {
+      /* Reuse the existing record. It already owns the inode reference
+       * released in shmfs_munmap; a second one would never be dropped,
+       * since only this record is unmapped, leaking the inode and its
+       * backing store once the object is unlinked.
+       */
+
       return OK;
     }
 
   entry->munmap = shmfs_munmap;
   entry->priv.p = (FAR void *)inode;
 
-  return mm_map_add(mm, entry);
+  ret = mm_map_add(mm, entry);
+  if (ret == OK)
+    {
+      inode_addref(inode);
+    }
+
+  return ret;
 }
 
 /****************************************************************************
@@ -570,8 +583,6 @@ static int shmfs_mmap(FAR struct file *filep,
                            entry->length);
           return ret;
         }
-
-      inode_addref(filep->f_inode);
     }
 
   return ret;
