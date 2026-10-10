@@ -35,21 +35,21 @@
 #include <nuttx/queue.h>
 #include <nuttx/spinlock.h>
 #include <nuttx/virtio/virtio-config.h>
+#include <nuttx/virtio/virtio.h>
 #include <openamp/open_amp.h>
 
 /****************************************************************************
  * Pre-processor Definitions
  ****************************************************************************/
 
-/* VHost ioctl command definitions */
-
-#define VHOSTIOC_DUMP         _VHOSTIOC(1)
-
-/* Run a ping measurement.  arg is a struct vhost_ping_s, which names the
- * target device, since /dev/vhost is a single global node.
+/* VHost ioctl command definitions.  They carry the same values as the
+ * VirtIO ones, so one command number drives both /dev/virtio and
+ * /dev/vhost.  The PING argument is a struct virtio_ping_s, which names
+ * the target device since both nodes are single and global.
  */
 
-#define VHOSTIOC_PING         _VHOSTIOC(2)
+#define VHOSTIOC_DUMP         VIRTIOIOC_DUMP
+#define VHOSTIOC_PING         VIRTIOIOC_PING
 
 /****************************************************************************
  * Public Type Definitions
