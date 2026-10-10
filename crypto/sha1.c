@@ -233,8 +233,10 @@ void sha1transform(FAR uint32_t *state,
 
 /* SHA1Init - Initialize new context */
 
-void sha1init(FAR SHA1_CTX *context)
+void sha1init(FAR void *priv)
 {
+  FAR SHA1_CTX *context = priv;
+
   /* SHA1 initialization constants */
 
   context->count = 0;
@@ -279,8 +281,9 @@ void sha1update(FAR SHA1_CTX *context,
 /* Add padding and return the message digest. */
 
 void sha1final(FAR unsigned char *digest,
-               FAR SHA1_CTX *context)
+               FAR void *priv)
 {
+  FAR SHA1_CTX *context = priv;
   unsigned int i;
   unsigned char finalcount[8];
 

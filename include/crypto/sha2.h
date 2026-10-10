@@ -70,21 +70,21 @@ typedef struct _SHA2_CTX
   uint8_t buffer[SHA512_BLOCK_LENGTH];
 } SHA2_CTX;
 
-void sha224init(FAR SHA2_CTX *);
+void sha224init(FAR void *);
 void sha224update(FAR SHA2_CTX *, FAR const void *, size_t);
-void sha224final(FAR uint8_t *, FAR SHA2_CTX *);
+void sha224final(FAR uint8_t *, FAR void *);
 
-void sha256init(FAR SHA2_CTX *);
+void sha256init(FAR void *);
 void sha256update(FAR SHA2_CTX *, FAR const void *, size_t);
-void sha256final(FAR uint8_t *, FAR SHA2_CTX *);
+void sha256final(FAR uint8_t *, FAR void *);
 
-void sha384init(FAR SHA2_CTX *);
+void sha384init(FAR void *);
 void sha384update(FAR SHA2_CTX *, FAR const void *, size_t);
-void sha384final(FAR uint8_t *, FAR SHA2_CTX *);
+void sha384final(FAR uint8_t *, FAR void *);
 
-void sha512init(FAR SHA2_CTX *);
+void sha512init(FAR void *);
 void sha512update(FAR SHA2_CTX *, FAR const void *, size_t);
-void sha512final(FAR uint8_t *, FAR SHA2_CTX *);
+void sha512final(FAR uint8_t *, FAR void *);
 
 /* MGF1 (Mask Generation Function 1) - RFC 8017 */
 

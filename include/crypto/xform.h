@@ -72,10 +72,10 @@ struct enc_xform
   uint16_t minkey;
   uint16_t maxkey;
   uint16_t ctxsize;
-  CODE void (*encrypt)(caddr_t, FAR uint8_t *, size_t);
-  CODE void (*decrypt)(caddr_t, FAR uint8_t *, size_t);
+  CODE void (*encrypt)(FAR void *, FAR uint8_t *, size_t);
+  CODE void (*decrypt)(FAR void *, FAR uint8_t *, size_t);
   CODE int  (*setkey)(FAR void *, FAR uint8_t *, int len);
-  CODE void (*reinit)(caddr_t, FAR uint8_t *);
+  CODE void (*reinit)(FAR void *, FAR uint8_t *);
 };
 
 struct comp_algo

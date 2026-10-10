@@ -67,17 +67,17 @@
 #include "podd.h"
 #include "sk.h"
 
-static int check_parity(FAR des_cblock *key);
+static int check_parity(FAR uint8_t *key);
 
 int des_check_key;
 
-static int check_parity(FAR des_cblock *key)
+static int check_parity(FAR uint8_t *key)
 {
   int i;
 
   for (i = 0; i < DES_KEY_SZ; i++)
   {
-    if (*key[i] != odd_parity[*key[i]])
+    if (key[i] != odd_parity[key[i]])
       {
         return 0;
       }
@@ -157,7 +157,7 @@ static des_cblock weak_keys[NUM_WEAK_KEY] =
  * Public Functions
  ****************************************************************************/
 
-int des_is_weak_key(FAR des_cblock *key)
+int des_is_weak_key(FAR uint8_t *key)
 {
   int i;
 
@@ -198,7 +198,7 @@ static int shifts2[16] =
  * return -2 if illegal weak key.
  */
 
-int des_set_key(FAR des_cblock *key, des_key_schedule schedule)
+int des_set_key(FAR uint8_t *key, FAR void *schedule)
 {
   register uint32_t c;
   register uint32_t d;

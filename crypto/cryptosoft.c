@@ -1044,7 +1044,7 @@ int swcr_encdec(FAR struct cryptop *crp, FAR struct cryptodesc *crd,
 
   if (exf->reinit && !(crd->crd_flags & CRD_F_UPDATE))
     {
-      exf->reinit((caddr_t)sw->sw_kschedule, iv);
+      exf->reinit(sw->sw_kschedule, iv);
     }
 
   i = crd->crd_len;
@@ -1060,12 +1060,12 @@ int swcr_encdec(FAR struct cryptop *crp, FAR struct cryptodesc *crd,
         {
           if (crd->crd_flags & CRD_F_ENCRYPT)
             {
-              exf->encrypt((caddr_t)sw->sw_kschedule,
+              exf->encrypt(sw->sw_kschedule,
                   blk, buflen);
             }
           else
             {
-              exf->decrypt((caddr_t)sw->sw_kschedule,
+              exf->decrypt(sw->sw_kschedule,
                   blk, buflen);
             }
         }
@@ -1076,7 +1076,7 @@ int swcr_encdec(FAR struct cryptop *crp, FAR struct cryptodesc *crd,
           for (j = 0; j < blks; j++)
             blk[j] ^= ivp[j];
 
-          exf->encrypt((caddr_t)sw->sw_kschedule, blk, buflen);
+          exf->encrypt(sw->sw_kschedule, blk, buflen);
 
           /* Keep encrypted block for XOR'ng
            * with next block
@@ -1096,7 +1096,7 @@ int swcr_encdec(FAR struct cryptop *crp, FAR struct cryptodesc *crd,
           nivp = (ivp == iv) ? iv2 : iv;
           bcopy(blk, nivp, blks);
 
-          exf->decrypt((caddr_t)sw->sw_kschedule, blk, buflen);
+          exf->decrypt(sw->sw_kschedule, blk, buflen);
 
           /* XOR with previous block */
 
@@ -1282,7 +1282,7 @@ int swcr_authenc(FAR struct cryptop *crp)
       if (exf->reinit)
         {
           swe->sw_enclen = 0;
-          exf->reinit((caddr_t)swe->sw_kschedule,
+          exf->reinit(swe->sw_kschedule,
                       (FAR uint8_t *)crp->crp_iv);
         }
     }
@@ -1341,13 +1341,13 @@ int swcr_authenc(FAR struct cryptop *crp)
           bcopy(buf + i, blk, len);
           if (crde->crd_flags & CRD_F_ENCRYPT)
             {
-              exf->encrypt((caddr_t)swe->sw_kschedule, blk, len);
+              exf->encrypt(swe->sw_kschedule, blk, len);
               axf->update(&ctx, blk, len);
             }
           else
             {
               axf->update(&ctx, blk, len);
-              exf->decrypt((caddr_t)swe->sw_kschedule, blk, len);
+              exf->decrypt(swe->sw_kschedule, blk, len);
             }
 
           if (crp->crp_dst)

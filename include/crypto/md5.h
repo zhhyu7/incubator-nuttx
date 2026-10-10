@@ -34,9 +34,9 @@ typedef struct MD5CONTEXT
   uint8_t buffer[MD5_BLOCK_LENGTH];  /* input buffer */
 } MD5_CTX;
 
-void md5init(FAR MD5_CTX *);
+void md5init(FAR void *);
 void md5update(FAR MD5_CTX *, FAR const void *, size_t);
-void md5final(FAR uint8_t *, FAR MD5_CTX *);
+void md5final(FAR uint8_t *, FAR void *);
 void md5transform(FAR uint32_t *, FAR const uint8_t *);
 
 #endif /* __INCLUDE_CRYPTO_MD5_H */

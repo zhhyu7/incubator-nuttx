@@ -46,10 +46,10 @@ typedef struct RMD160CONTEXT
   u_char buffer[RMD160_BLOCK_LENGTH]; /* input buffer */
 } RMD160_CTX;
 
-void rmd160init(FAR RMD160_CTX *);
+void rmd160init(FAR void *);
 void rmd160transform(FAR uint32_t *,
                      FAR const u_char *);
 void rmd160update(FAR RMD160_CTX *, FAR const u_char *, uint32_t);
-void rmd160final(FAR u_char *, FAR RMD160_CTX *);
+void rmd160final(FAR u_char *, FAR void *);
 
 #endif  /* __INCLUDE_CRYPTO_RMD160_H */

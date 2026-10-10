@@ -77,7 +77,11 @@ des_key_schedule[16];
 #define DES_KEY_SZ (sizeof(des_cblock))
 #define DES_SCHEDULE_SZ (sizeof(des_key_schedule))
 
-void des_encrypt2(FAR uint32_t *data, caddr_t ks, int enc);
+void des_encrypt2(FAR uint32_t *data, FAR void *ks, int enc);
+void des_ecb3_encrypt(FAR uint8_t *input, FAR uint8_t *output,
+                      FAR void *ks1, FAR void *ks2, FAR void *ks3,
+                      int encrypt);
+int des_set_key(FAR uint8_t *key, FAR void *schedule);
 
 #define ITERATIONS 16
 #define HALF_ITERATIONS 8

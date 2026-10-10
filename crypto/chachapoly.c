@@ -54,16 +54,16 @@ int chacha20_setkey(FAR void *sched, FAR uint8_t *key, int len)
   return 0;
 }
 
-void chacha20_reinit(caddr_t key, FAR uint8_t *iv)
+void chacha20_reinit(FAR void *key, FAR uint8_t *iv)
 {
-  FAR struct chacha20_ctx *ctx = (FAR struct chacha20_ctx *)key;
+  FAR struct chacha20_ctx *ctx = key;
 
   chacha_ivsetup((FAR chacha_ctx *)ctx->block, iv, ctx->nonce);
 }
 
-void chacha20_crypt(caddr_t key, FAR uint8_t *data, size_t len)
+void chacha20_crypt(FAR void *key, FAR uint8_t *data, size_t len)
 {
-  FAR struct chacha20_ctx *ctx = (FAR struct chacha20_ctx *)key;
+  FAR struct chacha20_ctx *ctx = key;
 
   /* The underlying chacha state keeps its own block counter (input[12]),
    * so successive calls continue the keystream seamlessly.  This mirrors
@@ -74,9 +74,9 @@ void chacha20_crypt(caddr_t key, FAR uint8_t *data, size_t len)
   chacha_encrypt_bytes((FAR chacha_ctx *)ctx, data, data, len);
 }
 
-void chachapoly_reinit(caddr_t key, FAR uint8_t *iv)
+void chachapoly_reinit(FAR void *key, FAR uint8_t *iv)
 {
-  FAR struct chacha20_ctx *ctx = (FAR struct chacha20_ctx *)key;
+  FAR struct chacha20_ctx *ctx = key;
 
   /* initial counter is 1 */
 

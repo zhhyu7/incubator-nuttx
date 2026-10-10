@@ -50,23 +50,26 @@
  * Public Functions
  ****************************************************************************/
 
-void aes_cmac_init(FAR AES_CMAC_CTX *ctx)
+void aes_cmac_init(FAR void *priv)
 {
+  FAR AES_CMAC_CTX *ctx = priv;
+
   memset(ctx->X, 0, sizeof ctx->X);
   ctx->m_n = 0;
 }
 
-void aes_cmac_setkey(FAR AES_CMAC_CTX *ctx,
+void aes_cmac_setkey(FAR void *priv,
                      FAR const uint8_t *key, uint16_t len)
 {
+  FAR AES_CMAC_CTX *ctx = priv;
+
   aes_setkey(&ctx->aesctx, key, len);
 }
 
-void aes_cmac_update(FAR AES_CMAC_CTX *ctx,
-                     FAR const uint8_t *data,
-                     u_int len)
+int aes_cmac_update(FAR void *priv, FAR const uint8_t *data, size_t len)
 {
-  u_int mlen;
+  FAR AES_CMAC_CTX *ctx = priv;
+  size_t mlen;
 
   if (ctx->m_n > 0)
     {
@@ -75,7 +78,7 @@ void aes_cmac_update(FAR AES_CMAC_CTX *ctx,
       ctx->m_n += mlen;
       if (ctx->m_n < 16 || len == mlen)
         {
-          return;
+          return 0;
         }
 
       XOR(ctx->m_last, ctx->X);
@@ -98,11 +101,13 @@ void aes_cmac_update(FAR AES_CMAC_CTX *ctx,
 
   memcpy(ctx->m_last, data, len);
   ctx->m_n = len;
+  return 0;
 }
 
 void aes_cmac_final(FAR uint8_t *digest,
-                    FAR AES_CMAC_CTX *ctx)
+                    FAR void *priv)
 {
+  FAR AES_CMAC_CTX *ctx = priv;
   uint8_t K[16];
 
   /* generate subkey K1 */

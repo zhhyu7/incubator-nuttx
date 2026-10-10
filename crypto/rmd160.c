@@ -115,8 +115,10 @@ static u_char PADDING[64] =
  * Public Functions
  ****************************************************************************/
 
-void rmd160init(FAR RMD160_CTX *ctx)
+void rmd160init(FAR void *priv)
 {
+  FAR RMD160_CTX *ctx = priv;
+
   ctx->count = 0;
   ctx->state[0] = H0;
   ctx->state[1] = H1;
@@ -163,8 +165,9 @@ void rmd160update(FAR RMD160_CTX *ctx,
     }
 }
 
-void rmd160final(FAR u_char *digest, FAR RMD160_CTX *ctx)
+void rmd160final(FAR u_char *digest, FAR void *priv)
 {
+  FAR RMD160_CTX *ctx = priv;
   int i;
   u_char size[8];
   uint32_t padlen;

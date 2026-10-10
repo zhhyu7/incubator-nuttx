@@ -60,8 +60,9 @@
  * Public Functions
  ****************************************************************************/
 
-void des_ecb3_encrypt(FAR des_cblock *input, FAR des_cblock *output,
-                      caddr_t ks1, caddr_t ks2, caddr_t ks3, int encrypt)
+void des_ecb3_encrypt(FAR uint8_t *input, FAR uint8_t *output,
+                      FAR void *ks1, FAR void *ks2, FAR void *ks3,
+                      int encrypt)
 {
   register uint32_t l0;
   register uint32_t l1;

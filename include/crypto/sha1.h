@@ -25,13 +25,13 @@ typedef struct
   unsigned char buffer[SHA1_BLOCK_LENGTH];
 } SHA1_CTX;
 
-void sha1init(FAR SHA1_CTX * context);
+void sha1init(FAR void *context);
 void sha1transform(FAR uint32_t *state,
                    FAR const unsigned char *buffer);
 void sha1update(FAR SHA1_CTX *context,
                 FAR const void *data,
                 unsigned int len);
 void sha1final(FAR unsigned char *digest,
-               FAR SHA1_CTX *context);
+               FAR void *context);
 
 #endif /* __INCLUDE_CRYPTO_SHA1_H */

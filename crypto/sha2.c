@@ -302,8 +302,10 @@ const static uint64_t sha512_initial_hash_value[8] =
 
 /* SHA-256: */
 
-void sha256init(FAR SHA2_CTX *context)
+void sha256init(FAR void *priv)
 {
+  FAR SHA2_CTX *context = priv;
+
   memcpy(context->state.st32,
          sha256_initial_hash_value,
          SHA256_DIGEST_LENGTH);
@@ -651,8 +653,10 @@ void sha256last(FAR SHA2_CTX *context)
   sha256transform(context->state.st32, context->buffer);
 }
 
-void sha256final(FAR uint8_t *digest, FAR SHA2_CTX *context)
+void sha256final(FAR uint8_t *digest, FAR void *priv)
 {
+  FAR SHA2_CTX *context = priv;
+
   sha256last(context);
 
 #if BYTE_ORDER == LITTLE_ENDIAN
@@ -677,8 +681,10 @@ void sha256final(FAR uint8_t *digest, FAR SHA2_CTX *context)
 
 /* SHA-224: */
 
-void sha224init(FAR SHA2_CTX *context)
+void sha224init(FAR void *priv)
 {
+  FAR SHA2_CTX *context = priv;
+
   memcpy(context->state.st32,
          sha224_initial_hash_value,
          SHA256_DIGEST_LENGTH);
@@ -692,8 +698,10 @@ void sha224update(FAR SHA2_CTX *context, FAR const void *data, size_t len)
   sha256update(context, data, len);
 }
 
-void sha224final(FAR uint8_t *digest, FAR SHA2_CTX *context)
+void sha224final(FAR uint8_t *digest, FAR void *priv)
 {
+  FAR SHA2_CTX *context = priv;
+
   sha256last(context);
 
 #if BYTE_ORDER == LITTLE_ENDIAN
@@ -718,8 +726,10 @@ void sha224final(FAR uint8_t *digest, FAR SHA2_CTX *context)
 
 /* SHA-512: */
 
-void sha512init(FAR SHA2_CTX *context)
+void sha512init(FAR void *priv)
 {
+  FAR SHA2_CTX *context = priv;
+
   memcpy(context->state.st64, sha512_initial_hash_value,
          SHA512_DIGEST_LENGTH);
   memset(context->buffer, 0, SHA512_BLOCK_LENGTH);
@@ -1065,8 +1075,10 @@ void sha512last(FAR SHA2_CTX *context)
   sha512transform(context->state.st64, context->buffer);
 }
 
-void sha512final(FAR uint8_t *digest, FAR SHA2_CTX *context)
+void sha512final(FAR uint8_t *digest, FAR void *priv)
 {
+  FAR SHA2_CTX *context = priv;
+
   sha512last(context);
 
   /* Save the hash data for output: */
@@ -1092,8 +1104,10 @@ void sha512final(FAR uint8_t *digest, FAR SHA2_CTX *context)
 
 /* SHA-384: */
 
-void sha384init(FAR SHA2_CTX *context)
+void sha384init(FAR void *priv)
 {
+  FAR SHA2_CTX *context = priv;
+
   memcpy(context->state.st64, sha384_initial_hash_value,
       SHA512_DIGEST_LENGTH);
   memset(context->buffer, 0, SHA384_BLOCK_LENGTH);
@@ -1105,8 +1119,10 @@ void sha384update(FAR SHA2_CTX *context, FAR const void *data, size_t len)
   sha512update(context, data, len);
 }
 
-void sha384final(FAR uint8_t *digest, FAR SHA2_CTX *context)
+void sha384final(FAR uint8_t *digest, FAR void *priv)
 {
+  FAR SHA2_CTX *context = priv;
+
   sha512last(context);
 
   /* Save the hash data for output: */

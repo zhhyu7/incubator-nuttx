@@ -61,7 +61,7 @@
  * Public Functions
  ****************************************************************************/
 
-void des_encrypt2(FAR uint32_t *data, caddr_t ks, int encrypt)
+void des_encrypt2(FAR uint32_t *data, FAR void *ks, int encrypt)
 {
   register uint32_t l;
   register uint32_t r;

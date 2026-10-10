@@ -68,8 +68,10 @@ static uint8_t PADDING[MD5_BLOCK_LENGTH] =
  * initialization constants.
  */
 
-void md5init(FAR MD5_CTX *ctx)
+void md5init(FAR void *priv)
 {
+  FAR MD5_CTX *ctx = priv;
+
   ctx->count = 0;
   ctx->state[0] = 0x67452301;
   ctx->state[1] = 0xefcdab89;
@@ -129,8 +131,9 @@ void md5update(FAR MD5_CTX *ctx, FAR const void *inputptr, size_t len)
  * 1 0* (64-bit count of bits processed, MSB-first)
  */
 
-void md5final(FAR unsigned char *digest, FAR MD5_CTX *ctx)
+void md5final(FAR unsigned char *digest, FAR void *priv)
 {
+  FAR MD5_CTX *ctx = priv;
   uint8_t count[8];
   size_t padlen;
   int i;
