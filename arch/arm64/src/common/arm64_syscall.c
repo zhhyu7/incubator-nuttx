@@ -282,7 +282,7 @@ uint64_t *arm64_syscall(uint64_t *regs)
 
           regs[REG_ELR]        = rtcb->xcp.sigreturn;
           spsr                 = regs[REG_SPSR] & ~SPSR_MODE_MASK;
-          regs[REG_SPSR]       = spsr | SPSR_MODE_EL1H;
+          regs[REG_SPSR]       = spsr | SPSR_MODE_ELX;
           rtcb->xcp.sigreturn  = 0;
 
 #ifdef CONFIG_ARCH_KERNEL_STACK

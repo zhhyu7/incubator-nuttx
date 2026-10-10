@@ -56,16 +56,14 @@ static void arm64_init_signal_process(struct tcb_s *tcb, uint64_t *regs)
 
   tcb->xcp.regs[REG_ELR]    = (uint64_t)arm64_sigdeliver;
 
-  /* Keep using SP_EL1 */
+  /* Keep using the current exception-level stack pointer. */
 
-#if CONFIG_ARCH_ARM64_EXCEPTION_LEVEL == 3
-  tcb->xcp.regs[REG_SPSR]   = SPSR_MODE_EL3H | DAIF_FIQ_BIT | DAIF_IRQ_BIT;
-#else
-  tcb->xcp.regs[REG_SPSR]   = SPSR_MODE_EL1H | DAIF_FIQ_BIT | DAIF_IRQ_BIT;
-#endif
+  tcb->xcp.regs[REG_SPSR]   = SPSR_MODE_ELX |
+                              DAIF_FIQ_BIT | DAIF_IRQ_BIT;
 
 #ifdef CONFIG_ARM64_MTE
-  tcb->xcp.regs[REG_SCTLR_EL1] = read_sysreg(sctlr_el1) | SCTLR_TCF1_BIT;
+  tcb->xcp.regs[REG_SCTLR_ELX] =
+    read_sysreg(sctlr_elx) | SCTLR_TCF1_BIT;
 #endif
 
 #ifdef CONFIG_ARCH_KERNEL_STACK

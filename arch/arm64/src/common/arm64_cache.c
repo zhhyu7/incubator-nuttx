@@ -635,7 +635,7 @@ void up_clean_dcache_all(void)
 
 void up_enable_dcache(void)
 {
-  uint64_t value = read_sysreg(sctlr_el1);
+  uint64_t value = read_sysreg(sctlr_elx);
 
   /* Check if the D-Cache is enabled */
 
@@ -646,8 +646,8 @@ void up_enable_dcache(void)
 
   up_invalidate_dcache_all();
 
-  value = read_sysreg(sctlr_el1);
-  write_sysreg((value | SCTLR_C_BIT), sctlr_el1);
+  value = read_sysreg(sctlr_elx);
+  write_sysreg((value | SCTLR_C_BIT), sctlr_elx);
   UP_ISB();
 }
 
@@ -667,8 +667,9 @@ void up_enable_dcache(void)
 
 void up_disable_dcache(void)
 {
-  uint64_t value = read_sysreg(sctlr_el1);
-  write_sysreg((value & ~SCTLR_C_BIT), sctlr_el1);
+  uint64_t value = read_sysreg(sctlr_elx);
+
+  write_sysreg((value & ~SCTLR_C_BIT), sctlr_elx);
   UP_ISB();
 }
 

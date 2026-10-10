@@ -130,10 +130,6 @@
  *
  */
 
-#define TCR_EL1_IPS_SHIFT           32U
-#define TCR_EL2_PS_SHIFT            16U
-#define TCR_EL3_PS_SHIFT            16U
-
 #define TCR_T0SZ_SHIFT              0U
 #define TCR_T0SZ(x)                 ((64 - (x)) << TCR_T0SZ_SHIFT)
 
@@ -409,7 +405,7 @@ static inline void mmu_invalidate_tlb_by_vaddr(uintptr_t vaddr)
   __asm__ __volatile__
     (
       "dsb ishst\n"
-      "tlbi vale1is, %0\n"
+      TLBI_VALEXIS ", %0\n"
       "dsb ish\n"
       "isb"
       :
@@ -431,7 +427,7 @@ static inline void mmu_invalidate_tlbs(void)
   __asm__ __volatile__
     (
       "dsb nshst\n"
-      "tlbi vmalle1\n"
+      TLBI_ALLEX "\n"
       "dsb nsh\n"
       "isb"
       :
@@ -453,7 +449,7 @@ static inline void mmu_invalidate_tlbs(void)
 
 static inline void mmu_write_ttbr0(uintptr_t reg)
 {
-  write_sysreg(reg, ttbr0_el1);
+  write_sysreg(reg, ttbr0_elx);
   mmu_invalidate_tlbs();
 }
 
@@ -470,7 +466,7 @@ static inline void mmu_write_ttbr0(uintptr_t reg)
 
 static inline uintptr_t mmu_read_ttbr0(void)
 {
-  return read_sysreg(ttbr0_el1);
+  return read_sysreg(ttbr0_elx);
 }
 
 /****************************************************************************
@@ -548,7 +544,7 @@ static inline uintptr_t mmu_ttbr_to_paddr(uintptr_t ttbr)
 
 static inline uintptr_t mmu_get_ttbr0_pgbase(void)
 {
-  return mmu_ttbr_to_paddr(read_sysreg(ttbr0_el1));
+  return mmu_ttbr_to_paddr(read_sysreg(ttbr0_elx));
 }
 
 /****************************************************************************

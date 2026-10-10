@@ -217,18 +217,15 @@ pid_t arm64_fork(const struct fork_s *context)
   child->xcp.regs[REG_X18]    = child->shadow_base_ptr + stackutil;
 #endif
 
-#if CONFIG_ARCH_ARM64_EXCEPTION_LEVEL == 3
-  child->xcp.regs[REG_SPSR]   = SPSR_MODE_EL3H;
-#else
-  child->xcp.regs[REG_SPSR]   = SPSR_MODE_EL1H;
-#endif
+  child->xcp.regs[REG_SPSR]   = SPSR_MODE_ELX;
 
 #ifdef CONFIG_SUPPRESS_INTERRUPTS
   child->xcp.regs[REG_SPSR]  |= (DAIF_IRQ_BIT | DAIF_FIQ_BIT);
 #endif /* CONFIG_SUPPRESS_INTERRUPTS */
 
 #ifdef CONFIG_ARM64_MTE
-  child->xcp.regs[REG_SCTLR_EL1] = read_sysreg(sctlr_el1) | SCTLR_TCF1_BIT;
+  child->xcp.regs[REG_SCTLR_ELX] =
+    read_sysreg(sctlr_elx) | SCTLR_TCF1_BIT;
 #endif
 
   child->xcp.regs[REG_ELR]    = (uint64_t)context->lr;

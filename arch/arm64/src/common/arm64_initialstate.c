@@ -75,16 +75,13 @@ void arm64_new_task(struct tcb_s * tcb)
 
   xcp->regs[REG_ELR]       = (uint64_t)tcb->start;
 
-  /* Keep using SP_EL1 or SP_EL3 */
+  /* Keep using the current exception-level stack pointer. */
 
-#if CONFIG_ARCH_ARM64_EXCEPTION_LEVEL == 3
-  xcp->regs[REG_SPSR]      = SPSR_MODE_EL3H;
-#else
-  xcp->regs[REG_SPSR]      = SPSR_MODE_EL1H;
-#endif
+  xcp->regs[REG_SPSR]      = SPSR_MODE_ELX;
 
 #ifdef CONFIG_ARM64_MTE
-  xcp->regs[REG_SCTLR_EL1] = read_sysreg(sctlr_el1) | SCTLR_TCF1_BIT;
+  xcp->regs[REG_SCTLR_ELX] =
+    read_sysreg(sctlr_elx) | SCTLR_TCF1_BIT;
 #endif
 
 #ifdef CONFIG_ARCH_SHADOW_STACK
