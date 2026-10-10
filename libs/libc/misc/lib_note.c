@@ -723,18 +723,74 @@ static inline_function size_t note_type_size(uint8_t type)
 }
 
 /****************************************************************************
+ * Name: note_printf_is_valid
+ ****************************************************************************/
+
+static bool note_printf_is_valid(FAR struct note_dump_stream_s *stream)
+{
+  FAR struct note_common_s *hdr = &stream->note.cmn;
+  struct note_printf_s npt;
+  uint32_t index = stream->pos;
+  size_t rest = SIZEOF_NOTE_PRINTF(0) - sizeof(struct note_common_s);
+
+  /* npt_fmt sits past the common header, so read the fixed printf header
+   * before judging it; a frame too short to hold it is bogus.
+   */
+
+  if (hdr->nc_length < SIZEOF_NOTE_PRINTF(0) ||
+      ring_mpmc_peek(stream->ring, (FAR uint8_t *)&npt.npt_ip,
+                     rest, &index) != rest)
+    {
+      return false;
+    }
+
+  if (npt.npt_fmt == 0)
+    {
+      /* A self-contained record; the dump path never dereferences
+       * npt_fmt, so nothing here can fault.
+       */
+
+      return true;
+    }
+
+#if defined(CONFIG_STREAM_BSPRINTF_EMBED_FORMAT)
+  /* Native frames carry npt_fmt == 0, so a nonzero one is a foreign
+   * record whose address this image cannot own.
+   */
+
+  return false;
+#elif defined(CONFIG_DRIVERS_NOTE_STRIP_FORMAT)
+  /* Native frames carry type != 0 and the dump path only prints their
+   * npt_fmt; a type == 0 frame is a foreign non-strip record the dump
+   * path would instead dereference through npt_fmt.
+   */
+
+  return NOTE_META_TYPE(npt.npt_meta) != 0;
+#else
+  /* Native frames carry type == 0; a type != 0 frame is a foreign strip
+   * record.
+   */
+
+  return NOTE_META_TYPE(npt.npt_meta) == 0;
+#endif
+}
+
+/****************************************************************************
  * Name: note_is_valid
  *
  * Description:
- *   Check whether a common note header read at some ring offset is
- *   plausible: a real type, a CPU within range, and a length that fits the
- *   remaining bytes.  For a fixed-length type the length must match exactly.
+ *   Check whether a note read at some ring offset is plausible: a real
+ *   type, a CPU within range, and a length that fits the remaining bytes.
+ *   For a fixed-length type the length must match exactly.  A printf frame
+ *   is additionally rejected when its format pointer cannot belong to this
+ *   image, which the dump path would otherwise dereference.
  *
  ****************************************************************************/
 
 static inline_function bool
-note_is_valid(FAR const struct note_common_s *hdr)
+note_is_valid(FAR struct note_dump_stream_s *stream)
 {
+  FAR struct note_common_s *hdr = &stream->note.cmn;
   size_t size;
 
   if (hdr->nc_type <= NOTE_ALL || hdr->nc_type >= NOTE_TYPE_LAST ||
@@ -745,7 +801,18 @@ note_is_valid(FAR const struct note_common_s *hdr)
     }
 
   size = note_type_size(hdr->nc_type);
-  return size == 0 || hdr->nc_length == size;
+  if (size != 0 && hdr->nc_length != size)
+    {
+      return false;
+    }
+
+  if (hdr->nc_type == NOTE_DUMP_PRINTF &&
+      !note_printf_is_valid(stream))
+    {
+      return false;
+    }
+
+  return true;
 }
 
 /****************************************************************************
@@ -780,7 +847,7 @@ note_read(FAR struct note_dump_stream_s *stream)
               return 0;
             }
 
-          if (note_is_valid(cmn))
+          if (note_is_valid(stream))
             {
               break;
             }
