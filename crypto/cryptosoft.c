@@ -1158,25 +1158,24 @@ int swcr_authcompute(FAR struct cryptop *crp,
     {
       err = axf->update(&sw->sw_ctx, (FAR uint8_t *)buf + crd->crd_skip,
                         crd->crd_len);
-      if (err)
-        {
-          return err;
-        }
     }
   else
     {
-      axf->final((FAR uint8_t *)crp->crp_mac, &sw->sw_ctx);
-      return 0;
+      if (crd->crd_flags & CRD_F_ESN)
+        {
+          axf->update(&sw->sw_ctx, crd->crd_esn, 4);
+        }
+
+      axf->final(aalg, &sw->sw_ctx);
+      bcopy(sw->sw_octx, &sw->sw_ctx, axf->ctxsize);
+      err = axf->update(&sw->sw_ctx, aalg, axf->hashsize);
+      if (err == 0)
+        {
+          axf->final((FAR uint8_t *)crp->crp_mac, &sw->sw_ctx);
+        }
     }
 
-  if (crd->crd_flags & CRD_F_ESN)
-    {
-      axf->update(&sw->sw_ctx, crd->crd_esn, 4);
-    }
-
-  axf->final(aalg, &sw->sw_ctx);
-  bcopy(sw->sw_octx, &sw->sw_ctx, axf->ctxsize);
-  return axf->update(&sw->sw_ctx, aalg, axf->hashsize);
+  return err;
 }
 
 static int swcr_hash(FAR struct cryptop *crp,
