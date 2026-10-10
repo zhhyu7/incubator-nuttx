@@ -695,13 +695,19 @@ void up_secure_irq(int irq, bool secure)
 #if defined(CONFIG_ARCH_TRUSTZONE_SECURE)
   /* In dual security state, IGROUPMODR selects between:
    *   secure:     IGROUPR=0, IGROUPMODR=1 -> Group 1 Secure (IRQ)
-   *   non-secure: IGROUPR=1, IGROUPMODR=1 -> Group 1 Non-secure
-   * Keep IGROUPMODR=1 for both cases so secure interrupts are
-   * delivered as IRQ (Group 1 Secure) rather than FIQ (Group 0).
+   *   non-secure: IGROUPR=1, IGROUPMODR=0 -> Group 1 Non-secure
    */
 
   val = getreg32(IGROUPMODR(base, idx));
-  val |= mask;
+  if (secure)
+    {
+      val |= mask;
+    }
+  else
+    {
+      val &= ~mask;
+    }
+
   putreg32(val, IGROUPMODR(base, idx));
 #endif
 }

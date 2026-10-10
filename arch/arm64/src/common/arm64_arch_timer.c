@@ -44,115 +44,80 @@
  * Pre-processor Definitions
  ****************************************************************************/
 
-#ifdef CONFIG_ARCH_TRUSTZONE_SECURE
-/* Secure world (TEE): use Secure Physical Timer */
-#  define ARM_ARCH_TIMER_IRQ                GIC_IRQ_STM
-#elif defined(CONFIG_ARCH_TRUSTZONE_NONSECURE)
-/* Non-Secure world (REE): use Non-Secure Physical Timer */
-#  define ARM_ARCH_TIMER_IRQ                GIC_IRQ_PTM
-#else
-/* Plain EL1 (no TrustZone): use Virtual Timer */
-#  define ARM_ARCH_TIMER_IRQ                GIC_IRQ_VTM
-#endif
+/* The timer registers and the timer interrupt are both selected by the
+ * configured exception level and TrustZone state -- never by the level the
+ * CPU happens to be running at.  EL3 and Secure EL1 share the same Secure
+ * physical timer, whose control registers are the EL1 secure bank in both
+ * cases.  The counter is read through the physical counter everywhere the
+ * two agree; only the virtual timer needs its own read, since it is the
+ * one an offset can be applied to.
+ */
 
-#define ARM_ARCH_TIMER_PRIO                 IRQ_DEFAULT_PRIORITY
-#define ARM_ARCH_TIMER_FLAGS                IRQ_TYPE_LEVEL
+#if CONFIG_ARCH_ARM64_EXCEPTION_LEVEL == 2
+/* NuttX runs directly at NS-EL2: EL2 hypervisor timer. */
+
+#  define ARM64_ARCH_TIMER_IRQ              GIC_IRQ_HTM
+#  define ARM64_TIMER_CVAL                  cnthp_cval_el2
+#  define ARM64_TIMER_TVAL                  cnthp_tval_el2
+#  define ARM64_TIMER_CTL                   cnthp_ctl_el2
+#  define ARM64_TIMER_COUNT                 cntpct_el0
+#elif CONFIG_ARCH_ARM64_EXCEPTION_LEVEL == 3 || \
+      defined(CONFIG_ARCH_TRUSTZONE_SECURE)
+/* Secure physical timer. */
+
+#  define ARM64_ARCH_TIMER_IRQ              GIC_IRQ_STM
+#  define ARM64_TIMER_CVAL                  cntps_cval_el1
+#  define ARM64_TIMER_TVAL                  cntps_tval_el1
+#  define ARM64_TIMER_CTL                   cntps_ctl_el1
+#  define ARM64_TIMER_COUNT                 cntpct_el0
+#elif defined(CONFIG_ARCH_TRUSTZONE_NONSECURE)
+/* Non-secure physical timer. */
+
+#  define ARM64_ARCH_TIMER_IRQ              GIC_IRQ_PTM
+#  define ARM64_TIMER_CVAL                  cntp_cval_el0
+#  define ARM64_TIMER_TVAL                  cntp_tval_el0
+#  define ARM64_TIMER_CTL                   cntp_ctl_el0
+#  define ARM64_TIMER_COUNT                 cntpct_el0
+#else
+/* Plain EL1 with neither EL2 nor TrustZone: virtual timer. */
+
+#  define ARM64_ARCH_TIMER_IRQ              GIC_IRQ_VTM
+#  define ARM64_TIMER_CVAL                  cntv_cval_el0
+#  define ARM64_TIMER_TVAL                  cntv_tval_el0
+#  define ARM64_TIMER_CTL                   cntv_ctl_el0
+#  define ARM64_TIMER_COUNT                 cntvct_el0
+#endif
 
 /****************************************************************************
  * Inline Functions
  ****************************************************************************/
 
-#ifdef CONFIG_ARCH_TRUSTZONE_SECURE
-/* Secure world: use Secure Physical Timer registers (cntps_* at S-EL1) */
-
 static inline void arm64_arch_timer_set_compare(uint64_t value)
 {
-  write_sysreg(value, cntps_cval_el1);
+  write_sysreg(value, ARM64_TIMER_CVAL);
 }
 
 static inline void arm64_arch_timer_set_relative(uint64_t value)
 {
-  write_sysreg(value, cntps_tval_el1);
+  write_sysreg(value, ARM64_TIMER_TVAL);
 }
 
 static inline void arm64_arch_timer_enable(bool enable)
 {
   modify_sysreg(enable ? CNTP_CTL_ENABLE_BIT : 0u,
-                CNTP_CTL_ENABLE_BIT, cntps_ctl_el1);
+                CNTP_CTL_ENABLE_BIT, ARM64_TIMER_CTL);
 }
 
 static inline void arm64_arch_timer_set_irq_mask(bool mask)
 {
   modify_sysreg(mask ? CNTP_CTL_IMASK_BIT : 0u,
-                CNTP_CTL_IMASK_BIT, cntps_ctl_el1);
+                CNTP_CTL_IMASK_BIT, ARM64_TIMER_CTL);
 }
 
 static inline uint64_t arm64_arch_timer_count(void)
 {
-  return read_sysreg(cntpct_el0);
+  return read_sysreg(ARM64_TIMER_COUNT);
 }
-
-#elif defined(CONFIG_ARCH_TRUSTZONE_NONSECURE)
-/* Non-Secure world (REE): use Non-Secure Physical Timer registers */
-
-static inline void arm64_arch_timer_set_compare(uint64_t value)
-{
-  write_sysreg(value, cntp_cval_el0);
-}
-
-static inline void arm64_arch_timer_set_relative(uint64_t value)
-{
-  write_sysreg(value, cntp_tval_el0);
-}
-
-static inline void arm64_arch_timer_enable(bool enable)
-{
-  modify_sysreg(enable ? CNTP_CTL_ENABLE_BIT : 0u,
-                CNTP_CTL_ENABLE_BIT, cntp_ctl_el0);
-}
-
-static inline void arm64_arch_timer_set_irq_mask(bool mask)
-{
-  modify_sysreg(mask ? CNTP_CTL_IMASK_BIT : 0u,
-                CNTP_CTL_IMASK_BIT, cntp_ctl_el0);
-}
-
-static inline uint64_t arm64_arch_timer_count(void)
-{
-  return read_sysreg(cntpct_el0);
-}
-
-#else
-/* Plain EL1 (no TrustZone): use Virtual Timer (original default) */
-
-static inline void arm64_arch_timer_set_compare(uint64_t value)
-{
-  write_sysreg(value, cntv_cval_el0);
-}
-
-static inline void arm64_arch_timer_set_relative(uint64_t value)
-{
-  write_sysreg(value, cntv_tval_el0);
-}
-
-static inline void arm64_arch_timer_enable(bool enable)
-{
-  modify_sysreg(enable ? CNTV_CTL_ENABLE_BIT : 0u,
-                CNTV_CTL_ENABLE_BIT, cntv_ctl_el0);
-}
-
-static inline void arm64_arch_timer_set_irq_mask(bool mask)
-{
-  modify_sysreg(mask ? CNTV_CTL_IMASK_BIT : 0u,
-                CNTV_CTL_IMASK_BIT, cntv_ctl_el0);
-}
-
-static inline uint64_t arm64_arch_timer_count(void)
-{
-  return read_sysreg(cntvct_el0);
-}
-
-#endif /* CONFIG_ARCH_TRUSTZONE_SECURE */
 
 static inline uint64_t arm64_arch_timer_get_cntfrq(void)
 {
@@ -241,6 +206,7 @@ static void arm64_oneshot_initialize_per_cpu(void)
 
 #ifdef CONFIG_ARCH_TRUSTZONE_SECURE
   up_secure_irq(GIC_IRQ_PTM, false);
+  up_secure_irq(GIC_IRQ_HTM, false);
 
   /* Release the virtual timer too. A NuttX non-secure world uses the
    * non-secure physical timer (PTM), but a Linux REE entered at EL1NS and
@@ -266,7 +232,7 @@ static void arm64_oneshot_initialize_per_cpu(void)
 
   /* Now safe to enable the IRQ line in GIC */
 
-  up_enable_irq(ARM_ARCH_TIMER_IRQ);
+  up_enable_irq(ARM64_ARCH_TIMER_IRQ);
 }
 
 /****************************************************************************
@@ -313,8 +279,7 @@ struct oneshot_lowerhalf_s *arm64_oneshot_initialize(void)
 
   /* Attach handler */
 
-  irq_attach(ARM_ARCH_TIMER_IRQ,
-             arm64_arch_timer_compare_isr, priv);
+  irq_attach(ARM64_ARCH_TIMER_IRQ, arm64_arch_timer_compare_isr, priv);
 
   arm64_oneshot_initialize_per_cpu();
 
