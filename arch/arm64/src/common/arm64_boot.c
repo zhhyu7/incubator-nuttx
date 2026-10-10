@@ -60,6 +60,10 @@ extern void *_vector_table[];
 
 void arm64_boot_elx_init(void)
 {
+  /* Initialize percpu reg */
+
+  zero_sysreg(tpidr_elx);
+
   /* Before we disable dcache, we should flush all dcache. */
 
   up_flush_dcache_all();

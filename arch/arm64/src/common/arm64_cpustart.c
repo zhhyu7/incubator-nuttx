@@ -238,7 +238,7 @@ int up_cpu_start(int cpu)
 void arm64_boot_secondary_c_routine(void)
 {
 #ifdef CONFIG_PERCPU_SECTION
-  write_sysreg(this_cpu() * PERCPU_OFFSET, tpidr_el1);
+  write_sysreg(this_cpu() * PERCPU_OFFSET, tpidr_elx);
 #  ifdef CONFIG_BUILD_PROTECTED
   write_sysreg(this_cpu() * USERSPACE->us_offset_percpu, tpidrro_el0);
 #  endif
