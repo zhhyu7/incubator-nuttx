@@ -122,10 +122,15 @@ void tcp_appsend(FAR struct net_driver_s *dev, FAR struct tcp_conn_s *conn,
        *    traffic and better performance but seems non-compliant.
        */
 
+      /* TCP_ACKDATA only reports that the peer acknowledged outgoing data.
+       * It does not require an immediate ACK for the incoming data.
+       */
+
       if (conn->rx_unackseg == 0 && dev->d_sndlen == 0 &&
-          result == TCP_SNDACK && (conn->tcpstateflags == TCP_ESTABLISHED ||
-                                   conn->tcpstateflags == TCP_FIN_WAIT_1 ||
-                                   conn->tcpstateflags == TCP_FIN_WAIT_2))
+          (result & ~TCP_ACKDATA) == TCP_SNDACK &&
+          (conn->tcpstateflags == TCP_ESTABLISHED ||
+           conn->tcpstateflags == TCP_FIN_WAIT_1 ||
+           conn->tcpstateflags == TCP_FIN_WAIT_2))
         {
           /* This is only an ACK and there is no pending delayed ACK and
            * no TX data is being sent.  Indicate that there is one un-ACKed
