@@ -70,14 +70,6 @@
 #define COREDUMP_NAME_MAX           64
 #define COREDUMP_DEVPATH_MAX        64
 
-/* Number of regions the coredump facility always emits by itself. */
-
-#if CONFIG_ARCH_INTERRUPTSTACK > 0
-#  define COREDUMP_BUILTIN_REGIONS  2
-#else
-#  define COREDUMP_BUILTIN_REGIONS  1
-#endif
-
 /****************************************************************************
  * Private Types
  ****************************************************************************/
@@ -108,7 +100,6 @@ struct coredump_procfs_file_s
 struct elf_dumpinfo_s
 {
   FAR const struct memory_region_s *regions;
-  struct memory_region_s builtin_regions[COREDUMP_BUILTIN_REGIONS];
   FAR struct lib_outstream_s *stream;
   FAR struct tcb_s           *tcb;
   int                         stksegs;
@@ -624,19 +615,14 @@ static void elf_emit_stack(FAR struct elf_dumpinfo_s *cinfo)
 
 static void elf_emit_memory(FAR struct elf_dumpinfo_s *cinfo)
 {
-  FAR const struct memory_region_s *region;
   int i;
 
   for (i = 0; i < cinfo->memsegs; i++)
     {
-      region = i < COREDUMP_BUILTIN_REGIONS ?
-               &cinfo->builtin_regions[i] :
-               &cinfo->regions[i - COREDUMP_BUILTIN_REGIONS];
-
-      if (region->flags & PF_REGISTER)
+      if (cinfo->regions[i].flags & PF_REGISTER)
         {
-          FAR uintptr_t *start = (FAR uintptr_t *)region->start;
-          FAR uintptr_t *end = (FAR uintptr_t *)region->end;
+          FAR uintptr_t *start = (FAR uintptr_t *)cinfo->regions[i].start;
+          FAR uintptr_t *end = (FAR uintptr_t *)cinfo->regions[i].end;
           uintptr_t buf[64];
           size_t offset = 0;
 
@@ -658,8 +644,8 @@ static void elf_emit_memory(FAR struct elf_dumpinfo_s *cinfo)
         }
       else
         {
-          elf_emit(cinfo, (FAR void *)region->start,
-                   region->end - region->start);
+          elf_emit(cinfo, (FAR void *)cinfo->regions[i].start,
+                   cinfo->regions[i].end - cinfo->regions[i].start);
         }
 
       /* Align to page */
@@ -773,7 +759,6 @@ static void elf_emit_phdr(FAR struct elf_dumpinfo_s *cinfo)
 {
   off_t offset = cinfo->written + sizeof(Elf_Phdr) *
                  (cinfo->stksegs + cinfo->memsegs + 1 + 1);
-  FAR const struct memory_region_s *region;
   FAR struct tcb_s *tcb;
   Elf_Phdr phdr;
   int i;
@@ -820,17 +805,13 @@ static void elf_emit_phdr(FAR struct elf_dumpinfo_s *cinfo)
 
   for (i = 0; i < cinfo->memsegs; i++)
     {
-      region = i < COREDUMP_BUILTIN_REGIONS ?
-               &cinfo->builtin_regions[i] :
-               &cinfo->regions[i - COREDUMP_BUILTIN_REGIONS];
-
       phdr.p_type   = PT_LOAD;
       phdr.p_offset = ALIGN_UP(offset, ELF_PAGESIZE);
-      phdr.p_vaddr  = region->start;
+      phdr.p_vaddr  = cinfo->regions[i].start;
       phdr.p_paddr  = phdr.p_vaddr;
-      phdr.p_filesz = region->end - region->start;
+      phdr.p_filesz = cinfo->regions[i].end - cinfo->regions[i].start;
       phdr.p_memsz  = phdr.p_filesz;
-      phdr.p_flags  = region->flags;
+      phdr.p_flags  = cinfo->regions[i].flags;
       offset       += ALIGN_UP(phdr.p_memsz, ELF_PAGESIZE);
       elf_emit(cinfo, &phdr, sizeof(phdr));
     }
@@ -909,20 +890,6 @@ static int elf_setup_dumpinfo(FAR struct elf_dumpinfo_s *cinfo,
              cinfo->regions[cinfo->memsegs].end; cinfo->memsegs++);
     }
 
-  cinfo->memsegs += COREDUMP_BUILTIN_REGIONS;
-
-  cinfo->builtin_regions[0].start = (uintptr_t)this_cpu_var(g_last_regs);
-  cinfo->builtin_regions[0].end   = cinfo->builtin_regions[0].start +
-                                    sizeof(last_regs_t);
-  cinfo->builtin_regions[0].flags = PF_R;
-
-#if CONFIG_ARCH_INTERRUPTSTACK > 0
-  cinfo->builtin_regions[1].start = up_get_intstackbase(this_cpu());
-  cinfo->builtin_regions[1].end   = cinfo->builtin_regions[1].start +
-                                    CONFIG_ARCH_INTERRUPTSTACK;
-  cinfo->builtin_regions[1].flags = PF_R;
-#endif
-
   return OK;
 }
 
@@ -973,7 +940,10 @@ static int coredump_with_tcb(FAR const struct memory_region_s *regions,
 
   /* Dump memory segments */
 
-  elf_emit_memory(&cinfo);
+  if (cinfo.memsegs > 0)
+    {
+      elf_emit_memory(&cinfo);
+    }
 
   /* Emit core info note */
 
