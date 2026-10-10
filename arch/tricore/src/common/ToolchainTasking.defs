@@ -108,20 +108,39 @@ LDFLAGS          += -lrt
 # ctc W527: ["stdlib/lib_strtold.c" 565/23] constant of type "double" saturated
 # ctc W526: ["include/sys/epoll.h" 87/5] enumeration constant shall be representable as 'int'
 # ctc W529: ["wchar/lib_mbrtowc.c" 88/35] overflow in constant expression of type "unsigned long int"
+# ctc W536: ["libuv/src/unix/internal.h" 382/1] unused static function (libuv/lmbench)
+# ctc W537: ["mbedtls/library/alignment.h" 389/23] unused variable (mbedtls/lmbench)
 # ctc W544: ["wqueue/kwork_thread.c" 210/32] unreachable code
 # ctc W549: ["unistd/lib_getopt_common.c" 544/15] condition is always true
 # ctc W553: ["vfs/fs_fcntl.c" 231/7] no 'break' or comment before case label
 # ctc W557: ["common/tricore_main.c" 58/11] possible infinite loop
 # ctc W560: ["tmpfs/fs_tmpfs.c" 232/25] possible truncation at implicit conversion to type "unsigned short int"
 # ctc W562: ["mm_heap/mm_memalign.c" 70/20] unary minus applied to unsigned value
-# ctc W558: ["include/nuttx/power/regulator.h" 224/36] struct/union/enum definition in parameter declaration
 # ctc W587: ["stdlib/lib_strtold.c" 571/23] underflow on constant of type "double"
 # ctc W588: ["misc/lib_glob.c" 150/13] dead assignment to "i" eliminated
+# ctc W523: ["include/crypto/asn1.h" 120/30] conversion from pointer to smaller integer type (crypto/lmbench)
+# ctc W545: ["libuv/src/unix/stream.c" 1120/1] missing return value (libuv/lmbench/mbedtls)
+# ctc W547: ["micar" ...] rvalue has no effect (micar/avb/mbedtls/adb)
 # ctc W589: ["inode/fs_inodesearch.c" 72/8] pointer assumed to be nonzero - test removed
+# ctc W515: ["nx_start.c" 632/42] side effects of sizeof operand ignored (per-cpu macro false positive)
+# ctc W534: ["tricore_cxx_initialize.c" 38/53] array assumed to have one element (linker symbol)
+# ctc W548: ["mm_initialize.c" 198/3] uninitialized variable replaced by zero (function param false positive)
+# ctc W575: ["group_setupidlefiles.c" 116/2] #warning directive
+# cptc W0161: ["SmartCode/ctc/include/math.h" 390] unrecognized #pragma
+# cptc W0177: ["libcxxabi/src/cxa_demangle.cpp" 282] declared but never referenced
+# cptc W0550: ["libcxx/src/verbose_abort.cpp" 40] variable set but never used
+# cptc W0940: ["libcxx/src/include/to_chars_floating_point.h" 1073] missing return statement at end of non-void function "
+# cptc W1097: ["include/libcxx/vector" 1347] unknown attribute "__visibility__"
+# cptc W1300: ["libcxxabi/src/cxa_demangle.cpp" 231] a class type that is not trivially copyable passed through ellipsis
+# cptc W1315: ["include/libcxx/new" 183] function declared with "noreturn" does return (throw triggered)
+# cptc W1698: ["libcxx/src/chrono.cpp" 150] unrecognized GCC pragma
+# cptc W2964: ["libcxx/src/include/to_chars_floating_point.h" 994] constexpr if statements are a C++17 feature
 
-TASKING_WARNINGS  = 500,507,508,525,526,527,529,544,549,553,560,562,557,558,587,588,589
+TASKING_WARNINGS     = 500,507,508,515,523,525,526,527,529,534,536,537,544,545,547,548,549,553,557,560,562,575,587,588,589
+TASKING_CXX_WARNINGS = 161,177,550,940,1097,1300,1315,1698,2964
 
 ARCHOPTIMIZATION += --pass-c=--no-warnings=$(TASKING_WARNINGS)
+CXXFLAGS         += --pass-c++=--no-warnings=$(TASKING_CXX_WARNINGS)
 
 # Loadable module definitions
 
