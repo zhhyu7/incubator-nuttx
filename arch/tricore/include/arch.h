@@ -98,6 +98,8 @@
  * Public Types
  ****************************************************************************/
 
+#ifndef __ASSEMBLY__
+
 #ifdef CONFIG_ARCH_ADDRENV
 /* The task group resources are retained in a single structure, task_group_s
  * that is defined in the header file nuttx/include/nuttx/sched.h. The type
@@ -203,5 +205,7 @@ extern "C"
 #ifdef __cplusplus
 }
 #endif
+
+#endif /* __ASSEMBLY__ */
 
 #endif /* __ARCH_TRICORE_INCLUDE_ARCH_H */

@@ -1653,6 +1653,8 @@ noreturn_function static inline void code_unreachable(void)
 
 /* Compiler/language utility mappings to NuttX libc or TASKING equivalents */
 
+#ifndef __ASSEMBLY__
+
 extern void up_exit(int status);
 #define __builtin_abort()             up_exit(1)
 void __builtin_unreachable(void);
@@ -1813,6 +1815,8 @@ float __builtin_scalblnf(float x, long int n);
 long double __builtin_scalblnl(long double x, long int n);
 float __builtin_tgammaf(float x);
 long double __builtin_tgammal(long double x);
+
+#endif  // __ASSEMBLY__
 
 #endif  // __TASKING__
 

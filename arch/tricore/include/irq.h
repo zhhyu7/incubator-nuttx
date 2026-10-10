@@ -99,7 +99,7 @@
 #define REG_LPC             REG_LA11
 
 #define TC_CONTEXT_REGS     (16)
-#define TC_CONTEXT_SIZE     (sizeof(void *) * TC_CONTEXT_REGS)
+#define TC_CONTEXT_SIZE     (4 * TC_CONTEXT_REGS)
 #define TC_CONTEXT_ALIGNED(addr) \
   (((uintptr_t)(addr) & (TC_CONTEXT_SIZE - 1)) == 0)
 
