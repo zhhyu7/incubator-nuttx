@@ -93,6 +93,17 @@ static int file_vioctl(FAR struct file *filep, int req, va_list ap)
       return -EBADF;
     }
 
+  /* A driver ioctl may report success for FIOC_FILEPATH without
+   * filling the caller's buffer (only -ENOTTY triggers the
+   * inode_getpath() fallback below), so start from a terminated
+   * empty path instead of stale heap memory.
+   */
+
+  if (req == FIOC_FILEPATH && arg != 0)
+    {
+      *(FAR char *)(uintptr_t)arg = '\0';
+    }
+
   /* Does the driver support the ioctl method? */
 
   if (inode->u.i_ops != NULL && inode->u.i_ops->ioctl != NULL)
