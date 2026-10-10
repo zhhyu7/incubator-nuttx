@@ -361,8 +361,7 @@ static int virtio_crypto_fill_crtlq_request(
         ctrl->op_flf.mac.algo = algo;
         ctrl->op_flf.mac.hash_result_len =
               virtio_crypto_get_hash_result_len(algo);
-        ctrl->op_flf.mac.auth_key_len =
-              virtio_crypto_get_auth_key_len(algo);
+        ctrl->op_flf.mac.auth_key_len = cri->cri_klen / 8;
         break;
       case VIRTIO_CRYPTO_SERVICE_AEAD:
         ctrl->header.opcode = VIRTIO_CRYPTO_AEAD_CREATE_SESSION;

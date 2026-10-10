@@ -208,6 +208,8 @@ static int vhost_crypto_create_session_sym(
         break;
 
       case VIRTIO_CRYPTO_MAC_CREATE_SESSION:
+        keylen = ctrl->op_flf.mac.auth_key_len;
+
         thash = virtio_crypto_get_mac_alg(ctrl->header.algo);
         if (thash < 0)
           {
@@ -217,6 +219,14 @@ static int vhost_crypto_create_session_sym(
         if (thash == CRYPTO_AES_128_CMAC)
           {
             txform = CRYPTO_AES_CMAC;
+            if (keylen == 16)
+              {
+                thash = CRYPTO_AES_128_CMAC;
+              }
+            else if (keylen == 32)
+              {
+                thash = CRYPTO_AES_256_CMAC;
+              }
           }
 
         break;
@@ -705,15 +715,9 @@ static int vhost_crypto_process_mac(
   FAR void *buf;
   uint32_t len;
 
-  crda->crd_alg = virtio_crypto_get_mac_alg(data->header.algo);
-  if (crda->crd_alg < 0)
+  if (crda->crd_alg == CRYPTO_AES_128_CMAC ||
+      crda->crd_alg == CRYPTO_AES_256_CMAC)
     {
-      return crda->crd_alg;
-    }
-
-  if (crda->crd_alg == CRYPTO_AES_128_CMAC)
-    {
-      crde->crd_alg = CRYPTO_AES_CMAC;
       crda->crd_next = crde;
     }
 
