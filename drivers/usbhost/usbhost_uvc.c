@@ -361,6 +361,36 @@ static void uvc_free_devno(int devno)
     }
 }
 
+/****************************************************************************
+ * Name: uvc_priv_put
+ *
+ * Description:
+ *   Drop one reference to the class instance, freeing it and the device it
+ *   owns once the last holder is gone.
+ *
+ * Input Parameters:
+ *   priv - The class instance to release a reference on
+ *
+ * Returned Value:
+ *   None
+ *
+ ****************************************************************************/
+
+static void uvc_priv_put(FAR struct uvc_priv_s *priv)
+{
+  if (atomic_sub(&priv->crefs, 1) != 1)
+    {
+      return;
+    }
+
+  if (priv->dev != NULL)
+    {
+      kmm_free(priv->dev);
+    }
+
+  kmm_free(priv);
+}
+
 static void uvc_init_ctrlreq(FAR struct usb_ctrlreq_s *req,
                              uint8_t type, uint8_t req_code,
                              uint16_t value, uint16_t index,
@@ -437,6 +467,15 @@ static int uvc_ctrl_query(FAR struct uvc_dev_s *dev,
   struct usb_ctrlreq_s          req;
   uint8_t                       unit_id;
   uint8_t                       reqtype;
+
+  /* The cleanup worker hands the pipes back as soon as the device is gone,
+   * so a control transfer from here on can only fail in the lower half.
+   */
+
+  if (atomic_read(&priv->disconnected))
+    {
+      return -ENODEV;
+    }
 
   unit_id = map->unit_type == UVC_CTRL_UNIT_CT ?
     priv->ct_id : priv->pu_id;
@@ -942,6 +981,11 @@ static int uvc_find_format_match(FAR struct uvc_dev_s *dev,
   uint8_t                i;
   uint8_t                j;
 
+  if (atomic_read(&priv->disconnected))
+    {
+      return -ENODEV;
+    }
+
   uinfo("UVC: find format %" PRIu32 "x%" PRIu32
         " pix=0x%08" PRIx32 "\n",
         width, height, pixelformat);
@@ -1105,6 +1149,11 @@ static int uvc_imgsensor_init(FAR struct imgsensor_s *sensor)
   uint8_t                 i;
   uint8_t                 j;
 
+  if (atomic_read(&priv->disconnected))
+    {
+      return -ENODEV;
+    }
+
   num_formats = priv->format_list.num_formats;
 
   uinfo("UVC: setup imgsensor from %d formats\n", num_formats);
@@ -1264,13 +1313,13 @@ static int uvc_imgdata_uninit(FAR struct imgdata_s *data)
 
   uvc_free_formats(dev);
 
-  /* Only free dev when cleanup_worker has already marked it as
-   * disconnected. In normal close, dev stays alive for the next open.
+  /* In a normal close dev stays alive for the next open, so only hand the
+   * reference back once the device is gone for good.
    */
 
   if (atomic_read(&dev->device->disconnected))
     {
-      kmm_free(dev);
+      uvc_priv_put(dev->device);
     }
 
   return OK;
@@ -2323,6 +2372,11 @@ static int uvc_imgsensor_stop_capture(FAR struct imgsensor_s *sensor,
   FAR struct uvc_dev_s  *dev  = imgsensor_to_uvc_dev(sensor);
   FAR struct uvc_priv_s *priv = dev->device;
 
+  if (atomic_read(&priv->disconnected))
+    {
+      return OK;
+    }
+
   uinfo("UVC: stopping stream, altsetting=%d\n", priv->stream_altsetting);
   if (priv->stream_altsetting > 0)
     {
@@ -2367,7 +2421,8 @@ uvc_imgsensor_get_frame_interval(FAR struct imgsensor_s *sensor,
     }
 
   FAR struct uvc_priv_s *priv = dev->device;
-  if (priv && dev->current_format_idx < priv->format_list.num_formats)
+  if (priv && !atomic_read(&priv->disconnected) &&
+      dev->current_format_idx < priv->format_list.num_formats)
     {
       struct uvc_format_info_s *fmt =
         &priv->format_list.formats[dev->current_format_idx];
@@ -2596,25 +2651,23 @@ static void uvc_device_cleanup_worker(FAR void *arg)
   FAR struct usbhost_hubport_s  *hport = priv->usbclass.hport;
   char                           devpath[32];
 
-  DEBUGASSERT(priv->dev);
-
-  snprintf(devpath, sizeof(devpath), "/dev/video%d", priv->minor);
   if (priv->isoin && hport && hport->drvr)
     {
       DRVR_CANCEL(hport->drvr, priv->isoin);
     }
 
-  if (atomic_read(&priv->dev->thread_running))
+  /* dev is absent when connect failed before the node was registered. */
+
+  if (priv->dev != NULL && atomic_read(&priv->dev->thread_running))
     {
       uvc_imgdata_stop_capture(&priv->dev->imgdata);
     }
 
-  /* capture_unregister may free dev (via uvc_imgdata_uninit
-   * when open_num==0), do NOT access priv->dev after this.
+  /* Hand the USB side back before unregistering the node.  The node can
+   * outlive this worker, so late ioctls are expected; with the endpoints
+   * already gone they fail out of DRVR_CTRLOUT/CTRLIN rather than reaching
+   * a half-torn device.  hport belongs to the adapter and stays valid.
    */
-
-  capture_unregister(devpath);
-  priv->dev = NULL;
 
   if (priv->isoin && hport && hport->drvr)
     {
@@ -2622,16 +2675,36 @@ static void uvc_device_cleanup_worker(FAR void *arg)
       priv->isoin = NULL;
     }
 
-  uvc_free_devno(priv->minor);
-
   if (hport && hport->drvr)
     {
       DRVR_DISCONNECT(hport->drvr, hport);
       hport->funcaddr = 0;
     }
 
-  kmm_free(priv);
-  uinfo("UVC device resources released safely\n");
+  if (priv->dev != NULL)
+    {
+      snprintf(devpath, sizeof(devpath), "/dev/video%d", priv->minor);
+
+      /* Hands the v4l2 reference back when the node is not open; the one
+       * held here keeps both objects alive until the put below.
+       */
+
+      capture_unregister(devpath);
+    }
+
+  /* Only once the node is gone: a minor released earlier could be handed to
+   * a device registering the same path while this one still occupies it.
+   */
+
+  uvc_free_devno(priv->minor);
+
+  /* The hardware is handed back here, but the instance must outlive it
+   * while the v4l2 layer still holds dev: its callbacks reach priv through
+   * dev->device and rely on disconnected/isoin to refuse further work.
+   */
+
+  uinfo("UVC hardware released\n");
+  uvc_priv_put(priv);
 }
 
 static int uvc_register(FAR struct uvc_priv_s *priv)
@@ -2669,6 +2742,10 @@ static int uvc_register(FAR struct uvc_priv_s *priv)
       kmm_free(dev);
       return ret;
     }
+
+  /* The node is live now, so the v4l2 layer owns dev from here on. */
+
+  atomic_add(&priv->crefs, 1);
 
   uinfo("UVC: registered OK\n");
   return OK;
@@ -3438,6 +3515,8 @@ uvc_create(FAR struct usbhost_hubport_s *hport,
   priv->usbclass.hport        = hport;
   priv->usbclass.connect      = uvc_connect;
   priv->usbclass.disconnected = uvc_disconnected;
+
+  atomic_set(&priv->crefs, 1);
 
   priv->minor = uvc_alloc_devno();
   if (priv->minor < 0)

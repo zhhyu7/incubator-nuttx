@@ -135,6 +135,8 @@ struct uvc_priv_s
 {
   struct usbhost_class_s usbclass;
   atomic_t disconnected;
+  atomic_t crefs;
+
   FAR struct uvc_dev_s *dev;
   int minor;
 
