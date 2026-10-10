@@ -156,6 +156,52 @@
 #define MODE_EL1            (0x1)
 #define MODE_EL0            (0x0)
 
+/* Aliases for the system registers that belong to whichever exception
+ * level NuttX is configured to run at, so that a single implementation
+ * serves EL1, EL2 and EL3.  Used from assembly as well as C.
+ */
+
+#if CONFIG_ARCH_ARM64_EXCEPTION_LEVEL == 3
+#  define TLBI_VALEXIS      "tlbi vale3is"
+#  define TLBI_ALLEX        "tlbi alle3"
+#  define SPSR_MODE_ELX     SPSR_MODE_EL3H
+#  define mair_elx          mair_el3
+#  define tcr_elx           tcr_el3
+#  define ttbr0_elx         ttbr0_el3
+#  define elr_elx           elr_el3
+#  define spsr_elx          spsr_el3
+#  define sctlr_elx         sctlr_el3
+#  define vbar_elx          vbar_el3
+#  define esr_elx           esr_el3
+#  define far_elx           far_el3
+#elif CONFIG_ARCH_ARM64_EXCEPTION_LEVEL == 2
+#  define TLBI_VALEXIS      "tlbi vale2is"
+#  define TLBI_ALLEX        "tlbi alle2"
+#  define SPSR_MODE_ELX     SPSR_MODE_EL2H
+#  define mair_elx          mair_el2
+#  define tcr_elx           tcr_el2
+#  define ttbr0_elx         ttbr0_el2
+#  define elr_elx           elr_el2
+#  define spsr_elx          spsr_el2
+#  define sctlr_elx         sctlr_el2
+#  define vbar_elx          vbar_el2
+#  define esr_elx           esr_el2
+#  define far_elx           far_el2
+#else
+#  define TLBI_VALEXIS      "tlbi vale1is"
+#  define TLBI_ALLEX        "tlbi vmalle1"
+#  define SPSR_MODE_ELX     SPSR_MODE_EL1H
+#  define mair_elx          mair_el1
+#  define tcr_elx           tcr_el1
+#  define ttbr0_elx         ttbr0_el1
+#  define elr_elx           elr_el1
+#  define spsr_elx          spsr_el1
+#  define sctlr_elx         sctlr_el1
+#  define vbar_elx          vbar_el1
+#  define esr_elx           esr_el1
+#  define far_elx           far_el1
+#endif
+
 #ifndef __ASSEMBLY__
 
 /****************************************************************************
@@ -211,7 +257,7 @@
 #define SGIR_AFF1_SHIFT             (16)
 #define SGIR_AFF2_SHIFT             (32)
 #define SGIR_AFF3_SHIFT             (48)
-#define SGIR_AFF_MASK               (0xf)
+#define SGIR_AFF_MASK               (0xff)
 #define SGIR_INTID_SHIFT            (24)
 #define SGIR_INTID_MASK             (0xf)
 #define SGIR_IRM_SHIFT              (40)
@@ -251,9 +297,12 @@
 
 /* HCR_EL2, Hypervisor Configuration Register */
 
+#define HCR_VM_BIT                  BIT(0)
 #define HCR_FMO_BIT                 BIT(3)
 #define HCR_IMO_BIT                 BIT(4)
 #define HCR_AMO_BIT                 BIT(5)
+#define HCR_TWI_BIT                 BIT(13)
+#define HCR_TWE_BIT                 BIT(14)
 #define HCR_RW_BIT                  BIT(31)
 #define HCR_ATA_BIT                 BIT(56)
 

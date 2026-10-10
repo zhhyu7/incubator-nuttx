@@ -111,7 +111,7 @@
 #define REG_ELR             (32)
 #define REG_SPSR            (33)
 #define REG_SP_EL0          (34)
-#define REG_SCTLR_EL1       (35)
+#define REG_SCTLR_ELX       (35)
 
 /* In Armv8-A Architecture, the stack must align with 16 byte */
 

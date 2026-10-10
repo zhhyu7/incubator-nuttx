@@ -44,7 +44,6 @@
 #include "arm64_internal.h"
 #include "arm64_fatal.h"
 #include "arm64_mmu.h"
-#include "arm64_fatal.h"
 #include "arm64_arch_timer.h"
 
 #ifdef CONFIG_ARCH_FPU
@@ -330,31 +329,31 @@ static int default_debug_handler(uint64_t *regs, uint64_t far, uint64_t esr)
   return -1; /* "fault" */
 }
 
-static int arm64_el1_abort(uint64_t *regs, uint64_t esr)
+static int arm64_abort(uint64_t *regs, uint64_t esr)
 {
-  uint64_t                  far = read_sysreg(far_el1);
+  uint64_t                  far = read_sysreg(far_elx);
   struct fatal_handle_info *inf = g_fatal_handler + (esr & ESR_ELX_FSC);
 
   return inf->handle_fn(regs, far, esr);
 }
 
-static int arm64_el1_pc(uint64_t *regs, uint64_t esr)
+static int arm64_pc(uint64_t *regs, uint64_t esr)
 {
-  uint64_t far = read_sysreg(far_el1);
+  uint64_t far = read_sysreg(far_elx);
 
   serr("SP/PC alignment exception at 0x%" PRIx64 "\n", far);
   return -EINVAL; /* "fault" */
 }
 
-static int arm64_el1_bti(uint64_t *regs, uint64_t esr)
+static int arm64_bti(uint64_t *regs, uint64_t esr)
 {
-  uint64_t far = read_sysreg(far_el1);
+  uint64_t far = read_sysreg(far_elx);
 
   serr("BTI exception at 0x%" PRIx64 "\n", far);
   return -EINVAL; /* "fault" */
 }
 
-static int arm64_el1_undef(uint64_t *regs, uint64_t esr)
+static int arm64_undef(uint64_t *regs, uint64_t esr)
 {
   uint32_t insn;
   uint64_t elr = regs[REG_ELR];
@@ -374,9 +373,9 @@ static int arm64_el1_undef(uint64_t *regs, uint64_t esr)
   return -1;
 }
 
-static int arm64_el1_fpac(uint64_t *regs, uint64_t esr)
+static int arm64_fpac(uint64_t *regs, uint64_t esr)
 {
-  uint64_t far = read_sysreg(far_el1);
+  uint64_t far = read_sysreg(far_elx);
 
   /* Unexpected FPAC exception in the kernel. */
 
@@ -384,28 +383,27 @@ static int arm64_el1_fpac(uint64_t *regs, uint64_t esr)
   return -EINVAL;
 }
 
-static int arm64_el1_dbg(uint64_t *regs, uint64_t esr)
+static int arm64_dbg(uint64_t *regs, uint64_t esr)
 {
-  uint64_t                  far = read_sysreg(far_el1);
+  uint64_t                  far = read_sysreg(far_elx);
   struct fatal_handle_info *inf = g_debug_handler + DBG_ESR_EVT(esr);
 
   return inf->handle_fn(regs, far, esr);
 }
 
-static int arm64_el1_exception_handler(uint64_t esr,
-                                       uint64_t *regs)
+static int arm64_sync_exception_handler(uint64_t esr, uint64_t *regs)
 {
   uint32_t  ec = ESR_ELX_EC(esr);
   int       ret;
 
   switch (ec)
     {
-      /* Data/Instruction Abort at EL1 */
+      /* Data/Instruction Abort at ELx */
 
       case ESR_ELX_EC_DABT_CUR:
       case ESR_ELX_EC_IABT_CUR:
         {
-          ret = arm64_el1_abort(regs, esr);
+          ret = arm64_abort(regs, esr);
           break;
         }
 
@@ -413,7 +411,7 @@ static int arm64_el1_exception_handler(uint64_t esr,
 
       case ESR_ELX_EC_PC_ALIGN:
         {
-          ret = arm64_el1_pc(regs, esr);
+          ret = arm64_pc(regs, esr);
           break;
         }
 
@@ -424,7 +422,7 @@ static int arm64_el1_exception_handler(uint64_t esr,
       case ESR_ELX_EC_SYS64:
       case ESR_ELX_EC_UNKNOWN:
         {
-          ret = arm64_el1_undef(regs, esr);
+          ret = arm64_undef(regs, esr);
           break;
         }
 
@@ -432,7 +430,7 @@ static int arm64_el1_exception_handler(uint64_t esr,
 
       case ESR_ELX_EC_BTI:
         {
-          ret = arm64_el1_bti(regs, esr);
+          ret = arm64_bti(regs, esr);
           break;
         }
 
@@ -452,7 +450,7 @@ static int arm64_el1_exception_handler(uint64_t esr,
         {
           /* BRK instruction execution in AArch64 state */
 
-          ret = arm64_el1_dbg(regs, esr);
+          ret = arm64_dbg(regs, esr);
           break;
         }
 
@@ -462,13 +460,13 @@ static int arm64_el1_exception_handler(uint64_t esr,
            * instruction authentication failure
            */
 
-          ret = arm64_el1_fpac(regs, esr);
+          ret = arm64_fpac(regs, esr);
           break;
         }
 
       default:
         {
-          serr("64-bit el1h sync, esr = 0x%x", ec);
+          serr("sync exception, EC = 0x%" PRIx32 "\n", ec);
           ret = -EINVAL;
         }
   }
@@ -478,61 +476,23 @@ static int arm64_el1_exception_handler(uint64_t esr,
 
 static int arm64_exception_handler(uint64_t *regs)
 {
-  uint64_t    el;
-  uint64_t    esr;
-  uint64_t    elr;
-  uint64_t    far;
-  const char *el_str;
-  int         ret = -EINVAL;
+  uint64_t esr;
+  uint64_t elr;
+  uint64_t far;
+  int      el;
+  int      ret = -EINVAL;
 
   el = arm64_current_el();
 
-  switch (el)
-  {
-    case MODE_EL1:
-    {
-      el_str = "MODE_EL1";
-      esr    = read_sysreg(esr_el1);
-      far    = read_sysreg(far_el1);
-      elr    = read_sysreg(elr_el1);
-      ret    = arm64_el1_exception_handler(esr, regs);
-      break;
-    }
+  esr = read_sysreg(esr_elx);
+  far = read_sysreg(far_elx);
+  elr = read_sysreg(elr_elx);
 
-    case MODE_EL2:
-    {
-      el_str = "MODE_EL2";
-      esr    = read_sysreg(esr_el2);
-      far    = read_sysreg(far_el2);
-      elr    = read_sysreg(elr_el2);
-      break;
-    }
-
-#ifdef CONFIG_ARM64_HAVE_EL3
-    case MODE_EL3:
-    {
-      el_str = "MODE_EL3";
-      esr    = read_sysreg(esr_el3);
-      far    = read_sysreg(far_el3);
-      elr    = read_sysreg(elr_el3);
-      break;
-    }
-
-#endif
-    default:
-    {
-      el_str = "Unknown";
-
-      /* Just to keep the compiler happy */
-
-      esr = elr = far = 0;
-      break;
-    }
-  }
+  ret = arm64_sync_exception_handler(esr, regs);
 
   if (ret != 0)
     {
-      serr("CurrentEL: %s\n", el_str);
+      serr("CurrentEL: %d\n", el);
       serr("ESR_ELn: 0x%" PRIx64 "\n", esr);
       serr("FAR_ELn: 0x%" PRIx64 "\n", far);
       serr("ELR_ELn: 0x%" PRIx64 "\n", elr);

@@ -24,6 +24,7 @@
 
 #include <nuttx/config.h>
 
+#include "arm64_arch.h"
 #include "arm64_macro.inc"
 #include "arch/irq.h"
 #include "arm64_fatal.h"
@@ -105,19 +106,14 @@
     .cfi_offset x30, 8 * REG_X30 - 8 * XCPTCONTEXT_REGS
 
     /* ELR and SPSR */
-#if CONFIG_ARCH_ARM64_EXCEPTION_LEVEL == 3
-    mrs    \xreg0, elr_el3
-    mrs    \xreg1, spsr_el3
-#else
-    mrs    \xreg0, elr_el1
-    mrs    \xreg1, spsr_el1
-#endif
+    mrs    \xreg0, elr_elx
+    mrs    \xreg1, spsr_elx
     stp    \xreg0, \xreg1,  [sp, #8 * REG_ELR]
     .cfi_return_column 32 /* Use ELR as return address */
     .cfi_offset 32, 8 * REG_ELR - 8 * XCPTCONTEXT_REGS
 
-    mrs    \xreg0, sctlr_el1
-    str    \xreg0,  [sp, #8 * REG_SCTLR_EL1]
+    mrs    \xreg0, sctlr_elx
+    str    \xreg0,  [sp, #8 * REG_SCTLR_ELX]
 
     mrs    \xreg0, sp_el0
     str    \xreg0, [sp, #8 * REG_SP_EL0]
@@ -392,17 +388,12 @@ SECTION_FUNC(text, arm64_exit_exception)
     /* restore spsr and elr at el1*/
 
     ldp    x0, x1,   [sp, #8 * REG_ELR]
-#if CONFIG_ARCH_ARM64_EXCEPTION_LEVEL == 3
-    msr    elr_el3,   x0
-    msr    spsr_el3,  x1
-#else
-    msr    elr_el1,   x0
-    msr    spsr_el1,  x1
-#endif
+    msr    elr_elx,  x0
+    msr    spsr_elx, x1
 
 #ifdef CONFIG_ARM64_MTE
-    ldr    x0,   [sp, #8 * REG_SCTLR_EL1]
-    msr    sctlr_el1, x0
+    ldr    x0,   [sp, #8 * REG_SCTLR_ELX]
+    msr    sctlr_elx, x0
 #endif
 
     ldr    x0, [sp, #8 * REG_SP_EL0]

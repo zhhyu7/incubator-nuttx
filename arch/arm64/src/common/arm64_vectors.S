@@ -80,16 +80,12 @@ SECTION_FUNC(text, up_saveusercontext)
     mov    x4,  x30
 
     /* ELR and SPSR */
-#if CONFIG_ARCH_ARM64_EXCEPTION_LEVEL == 3
-    mrs    x5,  spsr_el3
-#else
-    mrs    x5,  spsr_el1
-#endif
+    mrs    x5,  spsr_elx
     stp    x4,  x5,  [x0, #8 * REG_ELR]
 
 #ifdef CONFIG_ARM64_MTE
-    mrs    x4,  sctlr_el1
-    str    x4,  [x0, #8 * REG_SCTLR_EL1]
+    mrs    x4,  sctlr_elx
+    str    x4,  [x0, #8 * REG_SCTLR_ELX]
 #endif
 
     ret
@@ -119,14 +115,14 @@ SECTION_FUNC(text, arm64_jump_to_user)
     str x1,  [sp, #8 * REG_X0]
     str x2,  [sp, #8 * REG_X1]
     str x3,  [sp, #8 * REG_SP_EL0]
-    mrs x0,  spsr_el1
+    mrs x0,  spsr_elx
     and x0,  x0, #~SPSR_MODE_MASK
     #orr x0, x0, #SPSR_MODE_EL0T # EL0T=0x00, out of range for orr
     str x0,  [sp, #8 * REG_SPSR]
 
 #ifdef CONFIG_ARM64_MTE
-    mrs x0,  sctlr_el1
-    str x0,  [sp, #8 * REG_SCTLR_EL1]
+    mrs x0,  sctlr_elx
+    str x0,  [sp, #8 * REG_SCTLR_ELX]
 #endif
 
     b arm64_exit_exception
@@ -141,14 +137,14 @@ SECTION_FUNC(text, arm64_jump_to_user)
     str x2,  [sp, #8 * REG_X1]
     str x3,  [sp, #8 * REG_X2]
     str x4,  [sp, #8 * REG_SP_EL0]
-    mrs x0,  spsr_el1
+    mrs x0,  spsr_elx
     and x0,  x0, #~SPSR_MODE_MASK
     #orr x0, x0, #SPSR_MODE_EL0T # EL0T=0x00, out of range for orr
     str x0,  [sp, #8 * REG_SPSR]
 
 #ifdef CONFIG_ARM64_MTE
-    mrs x0,  sctlr_el1
-    str x0,  [sp, #8 * REG_SCTLR_EL1]
+    mrs x0,  sctlr_elx
+    str x0,  [sp, #8 * REG_SCTLR_ELX]
 #endif
 
     b arm64_exit_exception
@@ -203,11 +199,7 @@ SECTION_FUNC(text, arm64_sync_exc)
 
     /* checking the EC value to see which exception need to be handle */
 
-#if CONFIG_ARCH_ARM64_EXCEPTION_LEVEL == 3
-    mrs    x9, esr_el3
-#else
-    mrs    x9, esr_el1
-#endif
+    mrs    x9, esr_elx
     lsr    x10, x9, #26
 
     /* 0x15 = SVC system call */
@@ -226,7 +218,7 @@ SECTION_FUNC(text, arm64_sync_exc)
 
     /* Call dispatch_syscall() on the kernel stack with interrupts enabled */
 
-    mrs    x10, spsr_el1
+    mrs    x10, spsr_elx
     and    x10, x10, #IRQ_SPSR_MASK
     cmp    x10, xzr
     bne    1f

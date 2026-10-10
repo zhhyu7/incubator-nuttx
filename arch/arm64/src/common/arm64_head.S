@@ -233,7 +233,6 @@ cpu_boot:
 switch_el:
     switch_el x0, 3f, 2f, 1f
 3:
-#ifdef CONFIG_ARM64_HAVE_EL3
     PRINT(switch_el3, "- Boot from EL3\r\n")
 
     /* EL3 init */
@@ -246,10 +245,9 @@ switch_el:
     /* Set SP_EL3 (with SPSel = 1) */
 
     mov   sp, x24
-    b     el3_boot
-#endif
-
-    /* Get next EL */
+    b     jump_to_c_entry
+#else
+    /* Move to the configured lower exception level. */
 
     adr   x0, switch_el
     bl    arm64_boot_el3_get_next_el
@@ -262,7 +260,12 @@ switch_el:
 
     bl    arm64_boot_el2_init
 
-    /* Move to EL1 with all exceptions masked */
+#if CONFIG_ARCH_ARM64_EXCEPTION_LEVEL == 2
+    msr   spsel, #1
+    mov   sp, x24
+    b     jump_to_c_entry
+#else
+    /* Move to EL1 with all exceptions masked. */
 
     mov_imm    x0, (SPSR_DAIF_MASK | SPSR_MODE_EL1T)
     msr   spsr_el2, x0
@@ -270,6 +273,7 @@ switch_el:
     adr   x0, 1f
     msr   elr_el2, x0
     eret
+#endif
 
 1:
     PRINT(switch_el1, "- Boot from EL1\r\n")
@@ -283,10 +287,8 @@ switch_el:
     msr   SPSel, #1
     msr   DAIFClr, #(DAIFCLR_ABT_BIT)
 
-el3_boot:
-    isb
-
 jump_to_c_entry:
+    isb
     PRINT(jump_to_c_entry, "- Boot to C runtime for OS Initialize\r\n")
     ret x25
 
@@ -308,12 +310,10 @@ __reset_prep_c:
 
     switch_el x0, 3f, 2f, 1f
 3:
-#ifdef CONFIG_ARM64_HAVE_EL3
     /* Reinitialize SCTLR from scratch in EL3 */
 
     ldr   w0, =(SCTLR_EL3_RES1 | SCTLR_SA_BIT)
     msr   sctlr_el3, x0
-#endif
 
     /* Set SP_EL1 */
 

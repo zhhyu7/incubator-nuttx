@@ -53,8 +53,6 @@ extern void *_vector_table[];
  * Public Functions
  ****************************************************************************/
 
-#ifdef CONFIG_ARM64_HAVE_EL3
-
 /* Some ARM aarch64 Cortex-family processors have not EL3
  * these two function should never called
  * defined to available compile error when with gcc option
@@ -124,7 +122,6 @@ void arm64_boot_el3_get_next_el(uint64_t switch_addr)
 
   write_sysreg(spsr, spsr_el3);
 }
-#endif
 
 void arm64_boot_el2_init(void)
 {
@@ -150,12 +147,28 @@ void arm64_boot_el2_init(void)
 
   reg = read_sysreg(hcr_el2);
   reg |= HCR_RW_BIT;      /* EL1 Execution state is AArch64 */
+#if CONFIG_ARCH_ARM64_EXCEPTION_LEVEL == 2
+  /* Route IRQs to the EL2 vector table when NuttX stays at EL2. */
+
+  reg |= HCR_IMO_BIT;
+#else
+  /* Let EL1 receive IRQs after the handoff from EL2. */
+
+  reg &= ~HCR_IMO_BIT;
+#endif
+
+  /* Do not trap EL1 WFI/WFE, and discard inherited stage-2 translation. */
+
+  reg &= ~(HCR_TWI_BIT | HCR_TWE_BIT);
+  reg &= ~HCR_VM_BIT;
 
 #ifdef CONFIG_ARM64_MTE
   reg |= HCR_ATA_BIT;
 #endif
 
   write_sysreg(reg, hcr_el2);
+
+  write_sysreg((uint64_t)_vector_table, vbar_el2);
 
   reg = 0U;                   /* RES0 */
   reg |= CPTR_EL2_RES1;       /* RES1 */

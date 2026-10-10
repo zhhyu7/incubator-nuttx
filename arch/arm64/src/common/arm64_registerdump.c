@@ -97,6 +97,6 @@ void up_dump_register(void *dumpregs)
   _emerg("SP:        0x%-16"PRIx64"\n", regs[REG_SP_ELX]);
 
 #ifdef CONFIG_ARM64_MTE
-  _emerg("SCTLR_EL1: 0x%-16"PRIx64"\n", regs[REG_SCTLR_EL1]);
+  _emerg("SCTLR_ELX: 0x%-16"PRIx64"\n", regs[REG_SCTLR_ELX]);
 #endif
 }
