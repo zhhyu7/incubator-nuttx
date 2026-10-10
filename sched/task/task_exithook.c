@@ -26,6 +26,7 @@
 
 #include <nuttx/config.h>
 
+#include <aio.h>
 #include <stdlib.h>
 #include <unistd.h>
 #include <signal.h>
@@ -514,6 +515,14 @@ void nxtask_exithook(FAR struct tcb_s *tcb, int status)
 #endif
 
   leave_critical_section(flags);
+
+  /* Cancel pending AIO before the task's stack is freed, so the worker
+   * thread does not dereference a stale aiocb after this task is gone.
+   * aio_cleanup() also waits for any operation already running on the
+   * worker thread.
+   */
+
+  aio_cleanup(tcb->pid);
 
   /* Leave the task group.  Perhaps discarding any un-reaped child
    * status (no zombies here!)
