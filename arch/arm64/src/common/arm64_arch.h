@@ -165,6 +165,7 @@
 #  define TLBI_VALEXIS      "tlbi vale3is"
 #  define TLBI_ALLEX        "tlbi alle3"
 #  define SPSR_MODE_ELX     SPSR_MODE_EL3H
+#  define SCTLR_ELX_RES1    SCTLR_EL3_RES1
 #  define mair_elx          mair_el3
 #  define tcr_elx           tcr_el3
 #  define TCR_ELX_IPS_SHIFT 16U
@@ -179,6 +180,7 @@
 #  define TLBI_VALEXIS      "tlbi vale2is"
 #  define TLBI_ALLEX        "tlbi alle2"
 #  define SPSR_MODE_ELX     SPSR_MODE_EL2H
+#  define SCTLR_ELX_RES1    SCTLR_EL2_RES1
 #  define mair_elx          mair_el2
 #  define tcr_elx           tcr_el2
 #  define TCR_ELX_IPS_SHIFT 16U
@@ -193,6 +195,7 @@
 #  define TLBI_VALEXIS      "tlbi vale1is"
 #  define TLBI_ALLEX        "tlbi vmalle1"
 #  define SPSR_MODE_ELX     SPSR_MODE_EL1H
+#  define SCTLR_ELX_RES1    SCTLR_EL1_RES1
 #  define mair_elx          mair_el1
 #  define tcr_elx           tcr_el1
 #  define TCR_ELX_IPS_SHIFT 32U

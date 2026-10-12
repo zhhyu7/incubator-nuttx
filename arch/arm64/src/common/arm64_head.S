@@ -238,7 +238,7 @@ switch_el:
 #if CONFIG_ARCH_ARM64_EXCEPTION_LEVEL == 3
     /* EL3 init */
 
-    bl    arm64_boot_el3_init
+    bl    arm64_boot_elx_init
 
     msr   SPSel, #1
 
@@ -257,7 +257,7 @@ switch_el:
 #if CONFIG_ARCH_ARM64_EXCEPTION_LEVEL == 2
     /* EL2 init */
 
-    bl    arm64_boot_el2_init
+    bl    arm64_boot_elx_init
 
     msr   spsel, #1
     mov   sp, x24
@@ -273,7 +273,7 @@ switch_el:
 
     /* EL1 init */
 
-    bl    arm64_boot_el1_init
+    bl    arm64_boot_elx_init
 
     /* set SP_ELx and Enable SError interrupts */
 

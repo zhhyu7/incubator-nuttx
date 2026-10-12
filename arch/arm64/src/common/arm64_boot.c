@@ -58,132 +58,74 @@ extern void *_vector_table[];
  * defined to available compile error when with gcc option
  */
 
-void arm64_boot_el3_init(void)
+void arm64_boot_elx_init(void)
 {
-  uint64_t reg;
-
-#ifndef CONFIG_ARM64_ICACHE_DISABLE
-  reg = read_sysreg(sctlr_el3);
-  reg |= SCTLR_I_BIT;
-  write_sysreg(reg, sctlr_el3);
-#endif
-
-  /* Setup vector table */
-
-  write_sysreg((uint64_t)_vector_table, vbar_el3);
-  UP_ISB();
-
-  reg = 0U;                   /* Mostly RES0 */
-  reg &= ~(CPTR_TTA_BIT |     /* Do not trap sysreg accesses */
-           CPTR_TFP_BIT |     /* Do not trap SVE, SIMD and FP */
-           CPTR_TCPAC_BIT);   /* Do not trap CPTR_EL2 CPACR_EL1 accesses */
-
-  /* CPTR_EL3, Architectural Feature Trap Register (EL3) */
-
-  write_sysreg(reg, cptr_el3);
-
-  reg = 0U;               /* Reset */
-  reg |= SCR_NS_BIT;      /* EL2 / EL3 non-secure */
-  reg |= (SCR_RES1 |      /* RES1 */
-#if CONFIG_ARCH_ARM64_EXCEPTION_LEVEL == 3
-          SCR_IRQ_BIT |   /* Route IRQs to EL3 */
-          SCR_FIQ_BIT |   /* Route FIQs to EL3 */
-          SCR_EA_BIT |    /* Route EAs to EL3 */
-#endif
-          SCR_RW_BIT |    /* EL2 execution state is AArch64 */
-          SCR_ST_BIT |    /* Do not trap EL1 accesses to timer */
-          SCR_HCE_BIT |   /* Do not trap HVC */
-          SCR_SMD_BIT);   /* Do not trap SMC */
-  write_sysreg(reg, scr_el3);
-
-#if CONFIG_ARM64_GIC_VERSION > 2
-  reg = read_sysreg(ICC_SRE_EL3);
-  reg |= (ICC_SRE_ELX_DFB_BIT |   /* Disable FIQ bypass */
-          ICC_SRE_ELX_DIB_BIT |   /* Disable IRQ bypass */
-          ICC_SRE_ELX_SRE_BIT |   /* System register interface is used */
-          ICC_SRE_EL3_EN_BIT);    /* Enables lower Exception level access to
-                                   * ICC_SRE_EL1 */
-  write_sysreg(reg, ICC_SRE_EL3);
-#endif
-
-  UP_ISB();
-}
-
-void arm64_boot_el2_init(void)
-{
-  uint64_t reg;
-
   /* Before we disable dcache, we should flush all dcache. */
 
   up_flush_dcache_all();
 
-  reg = 0U;                   /* RES0 */
-  reg = (SCTLR_EL2_RES1 |     /* RES1 */
+  /* Setup vector table */
+
+  write_sysreg((uint64_t)_vector_table, vbar_elx);
+  UP_ISB();
+
+  write_sysreg(SCTLR_ELX_RES1
 #ifndef CONFIG_ARM64_ICACHE_DISABLE
-         SCTLR_I_BIT |        /* Enable i-cache */
+              | SCTLR_I_BIT
 #endif
-         SCTLR_SA_BIT);       /* Enable SP alignment check */
-  write_sysreg(reg, sctlr_el2);
+              | SCTLR_SA_BIT, sctlr_elx);
 
-#ifdef CONFIG_ARCH_CLUSTER_PMU
-  reg = read_sysreg(actlr_el2);
-  reg |= ACTLR_CLPMU_BIT;
-  write_sysreg(reg, actlr_el2);
-#endif
+#if CONFIG_ARCH_ARM64_EXCEPTION_LEVEL == 3
+  /* CPTR_EL3 reset value: do not trap system-register, FP/SIMD,
+   * or lower-level CPTR/CPACR accesses during the EL2 handoff.
+   */
 
-  reg = read_sysreg(hcr_el2);
-  reg |= HCR_RW_BIT;      /* EL1 Execution state is AArch64 */
-#if CONFIG_ARCH_ARM64_EXCEPTION_LEVEL == 2
+  zero_sysreg(cptr_el3);
+
+  write_sysreg(SCR_RES1 | SCR_IRQ_BIT |
+               SCR_FIQ_BIT | SCR_EA_BIT, scr_el3);
+
+#  if CONFIG_ARM64_GIC_VERSION > 2
+  modify_sysreg(ICC_SRE_ELX_DFB_BIT |
+                ICC_SRE_ELX_DIB_BIT |
+                ICC_SRE_ELX_SRE_BIT |
+                ICC_SRE_EL3_EN_BIT,
+                ICC_SRE_ELX_DFB_BIT |
+                ICC_SRE_ELX_DIB_BIT |
+                ICC_SRE_ELX_SRE_BIT |
+                ICC_SRE_EL3_EN_BIT,
+                ICC_SRE_EL3);
+#  endif
+
+#elif CONFIG_ARCH_ARM64_EXCEPTION_LEVEL == 2
+
+#  ifdef CONFIG_ARCH_CLUSTER_PMU
+  modify_sysreg(ACTLR_CLPMU_BIT, ACTLR_CLPMU_BIT, actlr_el2);
+#  endif
+
   /* Route IRQs to the EL2 vector table when NuttX stays at EL2. */
 
-  reg |= HCR_IMO_BIT;
-#else
-  /* Let EL1 receive IRQs after the handoff from EL2. */
+  modify_sysreg(HCR_IMO_BIT, HCR_IMO_BIT, hcr_el2);
 
-  reg &= ~HCR_IMO_BIT;
-#endif
-
-  /* Do not trap EL1 WFI/WFE, and discard inherited stage-2 translation. */
-
-  reg &= ~(HCR_TWI_BIT | HCR_TWE_BIT);
-  reg &= ~HCR_VM_BIT;
-
-#ifdef CONFIG_ARM64_MTE
-  reg |= HCR_ATA_BIT;
-#endif
-
-  write_sysreg(reg, hcr_el2);
-
-  write_sysreg((uint64_t)_vector_table, vbar_el2);
-
-  reg = 0U;                   /* RES0 */
-  reg |= CPTR_EL2_RES1;       /* RES1 */
-  reg &= ~(CPTR_TFP_BIT |     /* Do not trap SVE, SIMD and FP */
-           CPTR_TCPAC_BIT);   /* Do not trap CPACR_EL1 accesses */
-  write_sysreg(reg, cptr_el2);
-
-  /* Enable EL1 access to timers */
-
-  reg = read_sysreg(cnthctl_el2);
-  reg |= (CNTHCTL_EL2_EL1PCEN_EN | CNTHCTL_EL2_EL1PCTEN_EN);
-  write_sysreg(reg, cnthctl_el2);
-
-  zero_sysreg(cntvoff_el2);       /* Set 64-bit virtual timer offset to 0 */
-
-#ifdef CONFIG_ARCH_ARMV8R
+#  ifdef CONFIG_ARCH_ARMV8R
   zero_sysreg(cnthps_ctl_el2);
-#else
+#  else
   zero_sysreg(cnthp_ctl_el2);
-#endif
+#  endif
 
-#ifdef CONFIG_ARCH_SET_VMPIDR_EL2
-  reg = read_sysreg(mpidr_el1);
-  write_sysreg(reg, vmpidr_el2);
-#endif
+#  ifdef CONFIG_ARCH_SET_VMPIDR_EL2
+  write_sysreg(read_sysreg(mpidr_el1), vmpidr_el2);
+#  endif
 
   /* Enable this if/when we use the hypervisor timer.
    * write_cnthp_cval_el2(~(uint64_t)0);
    */
+
+#else
+  write_sysreg(CPACR_EL1_FPEN_NOTRAP, cpacr_el1);
+
+  write_sysreg(~(uint64_t)0, cntv_cval_el0);
+#endif
 
   UP_ISB();
 }
@@ -260,44 +202,6 @@ void arm64_boot_elx_downgrade(uint64_t switch_addr)
       write_sysreg(switch_addr, elr_el3);
       write_sysreg(SPSR_DAIF_MASK | SPSR_MODE_EL2T, spsr_el3);
     }
-}
-
-void arm64_boot_el1_init(void)
-{
-  uint64_t reg;
-
-  /* Setup vector table */
-
-  write_sysreg((uint64_t)_vector_table, vbar_el1);
-  UP_ISB();
-
-  reg = 0U;                       /* RES0 */
-  reg |= CPACR_EL1_FPEN_NOTRAP;   /* Do not trap NEON/SIMD/FP initially */
-
-  /* TODO: CONFIG_FLOAT_*_FORBIDDEN */
-
-  write_sysreg(reg, cpacr_el1);
-
-  /* Before we disable dcache, we should flush all dcache. */
-
-  up_flush_dcache_all();
-
-  reg = 0U;                   /* RES0 */
-  reg = (SCTLR_EL1_RES1 |     /* RES1 */
-#ifndef CONFIG_ARM64_ICACHE_DISABLE
-         SCTLR_I_BIT |        /* Enable i-cache */
-#endif
-         SCTLR_SA_BIT);       /* Enable SP alignment check */
-  write_sysreg(reg, sctlr_el1);
-
-  write_sysreg((~(uint64_t)0), cntv_cval_el0);
-
-  /* Enable these if/when we use the corresponding timers.
-   * write_cntp_cval_el0(~(uint64_t)0);
-   * write_cntps_cval_el1(~(uint64_t)0);
-   */
-
-  UP_ISB();
 }
 
 void arm64_boot_primary_c_routine(void)
