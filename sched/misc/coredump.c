@@ -1758,48 +1758,11 @@ int coredump_add_memory_region(FAR const void *ptr, size_t size,
 
   if (g_coredump.regions != NULL)
     {
-      region = g_coredump.regions;
-
-      while (region->start < region->end)
+      for (region = g_coredump.regions; region->start < region->end;
+           region++)
         {
-          if ((uintptr_t)ptr >= region->start &&
-              (uintptr_t)ptr + size < region->end)
-            {
-              /* Already watched */
-
-              goto out;
-            }
-          else if ((uintptr_t)ptr < region->start &&
-                   (uintptr_t)ptr + size >= region->end)
-            {
-              /* start out of region, end out of region */
-
-              region->start = (uintptr_t)ptr;
-              region->end = (uintptr_t)ptr + size;
-              goto out;
-            }
-          else if ((uintptr_t)ptr < region->start &&
-                   (uintptr_t)ptr + size >= region->start)
-            {
-              /* start out of region, end in region */
-
-              region->start = (uintptr_t)ptr;
-              goto out;
-            }
-          else if ((uintptr_t)ptr < region->end &&
-                   (uintptr_t)ptr + size >= region->end)
-            {
-              /* start in region, end out of region */
-
-              region->end = (uintptr_t)ptr + size;
-              goto out;
-            }
-
           count++;
-          region++;
         }
-
-      /* Need a new region */
     }
 
   region = kmm_realloc(g_coredump.regions,
