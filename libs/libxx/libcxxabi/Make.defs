@@ -88,6 +88,12 @@ else ifeq ($(CONFIG_ARCH_TOOLCHAIN_TASKING),y)
 CPPSRCS += private_typeinfo.cpp stdlib_typeinfo.cpp
 endif
 
+# TASKING does not emit the type infos for the fundamental types
+# which are needed by private_typeinfo.cpp
+ifeq ($(CONFIG_ARCH_TOOLCHAIN_TASKING),y)
+CPPSRCS += fundamental_type_info.cpp
+endif
+
 ifeq ($(CONFIG_ARCH_TOOLCHAIN_TASKING),y)
 # Allow typeid and dynamic_cast to pass the front end
 private_typeinfo.cpp_CXXFLAGS += --pass-c++=--rtti
@@ -125,3 +131,8 @@ endif
 
 DEPPATH += --dep-path libcxxabi/libcxxabi/src
 VPATH += libcxxabi/libcxxabi/src
+
+ifeq ($(CONFIG_ARCH_TOOLCHAIN_TASKING),y)
+DEPPATH += --dep-path libcxxabi
+VPATH += libcxxabi
+endif

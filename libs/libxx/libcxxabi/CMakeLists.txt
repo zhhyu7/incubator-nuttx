@@ -113,6 +113,12 @@ if(CONFIG_LIBCXXABI)
     list(APPEND SRCS private_typeinfo.cpp stdlib_typeinfo.cpp)
   endif()
 
+  # TASKING does not emit the type infos for the fundamental types which are
+  # needed by private_typeinfo.cpp
+  if(CONFIG_ARCH_TOOLCHAIN_TASKING)
+    list(APPEND TARGET_SRCS fundamental_type_info.cpp)
+  endif()
+
   if(CONFIG_LIBCXXABI)
     add_compile_definitions(LIBCXX_BUILDING_LIBCXXABI)
   endif()
