@@ -109,20 +109,6 @@ void arm64_boot_el3_init(void)
   UP_ISB();
 }
 
-void arm64_boot_el3_get_next_el(uint64_t switch_addr)
-{
-  uint64_t spsr;
-
-  write_sysreg(switch_addr, elr_el3);
-
-  /* Mask the DAIF */
-
-  spsr = SPSR_DAIF_MASK;
-  spsr |= SPSR_MODE_EL2T;
-
-  write_sysreg(spsr, spsr_el3);
-}
-
 void arm64_boot_el2_init(void)
 {
   uint64_t reg;
@@ -200,6 +186,80 @@ void arm64_boot_el2_init(void)
    */
 
   UP_ISB();
+}
+
+void arm64_boot_elx_downgrade(uint64_t switch_addr)
+{
+  int el = arm64_current_el();
+
+  if (el == MODE_EL2)
+    {
+#ifdef CONFIG_ARCH_CLUSTER_PMU
+      modify_sysreg(ACTLR_CLPMU_BIT, ACTLR_CLPMU_BIT, actlr_el2);
+#endif
+
+#ifdef CONFIG_ARM64_MTE
+      modify_sysreg(HCR_RW_BIT | HCR_ATA_BIT,
+                    HCR_RW_BIT | HCR_ATA_BIT,
+                    hcr_el2);
+#else
+      modify_sysreg(HCR_RW_BIT, HCR_RW_BIT, hcr_el2);
+#endif
+
+      /* Keep architectural RES1 bits set and leave EL1 SIMD/FP and
+       * CPACR_EL1 accesses untrapped during the EL1 handoff.
+       */
+
+      write_sysreg(CPTR_EL2_RES1, cptr_el2);
+
+      /* Enable EL1 access to timers */
+
+      modify_sysreg(CNTHCTL_EL2_EL1PCEN_EN |
+                    CNTHCTL_EL2_EL1PCTEN_EN,
+                    CNTHCTL_EL2_EL1PCEN_EN |
+                    CNTHCTL_EL2_EL1PCTEN_EN,
+                    cnthctl_el2);
+
+      zero_sysreg(cntvoff_el2);       /* Set 64-bit virtual timer offset to 0 */
+
+#ifdef CONFIG_ARCH_ARMV8R
+      zero_sysreg(cnthps_ctl_el2);
+#else
+      zero_sysreg(cnthp_ctl_el2);
+#endif
+
+#ifdef CONFIG_ARCH_SET_VMPIDR_EL2
+      write_sysreg(read_sysreg(mpidr_el1), vmpidr_el2);
+#endif
+
+      write_sysreg(switch_addr, elr_el2);
+      write_sysreg(SPSR_DAIF_MASK | SPSR_MODE_EL1T, spsr_el2);
+    }
+  else if (el == MODE_EL3)
+    {
+      /* CPTR_EL3 reset value: do not trap system-register, FP/SIMD,
+       * or lower-level CPTR/CPACR accesses during the EL2 handoff.
+       */
+
+      zero_sysreg(cptr_el3);
+      write_sysreg(SCR_NS_BIT | SCR_RES1 | SCR_RW_BIT | SCR_ST_BIT |
+                   SCR_HCE_BIT | SCR_SMD_BIT, scr_el3);
+
+#if CONFIG_ARM64_GIC_VERSION > 2
+      modify_sysreg(ICC_SRE_ELX_DFB_BIT |
+                    ICC_SRE_ELX_DIB_BIT |
+                    ICC_SRE_ELX_SRE_BIT |
+                    ICC_SRE_EL3_EN_BIT,
+                    ICC_SRE_ELX_DFB_BIT |
+                    ICC_SRE_ELX_DIB_BIT |
+                    ICC_SRE_ELX_SRE_BIT |
+                    ICC_SRE_EL3_EN_BIT,
+                    ICC_SRE_EL3);
+#endif
+
+      write_sysreg(switch_addr, elr_el3);
+      write_sysreg(SPSR_DAIF_MASK | SPSR_MODE_EL2T, spsr_el3);
+    }
 }
 
 void arm64_boot_el1_init(void)

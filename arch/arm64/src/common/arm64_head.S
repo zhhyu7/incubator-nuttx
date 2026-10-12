@@ -235,11 +235,11 @@ switch_el:
 3:
     PRINT(switch_el3, "- Boot from EL3\r\n")
 
+#if CONFIG_ARCH_ARM64_EXCEPTION_LEVEL == 3
     /* EL3 init */
 
     bl    arm64_boot_el3_init
 
-#if CONFIG_ARCH_ARM64_EXCEPTION_LEVEL == 3
     msr   SPSel, #1
 
     /* Set SP_EL3 (with SPSel = 1) */
@@ -247,31 +247,24 @@ switch_el:
     mov   sp, x24
     b     jump_to_c_entry
 #else
-    /* Move to the configured lower exception level. */
-
-    adr   x0, switch_el
-    bl    arm64_boot_el3_get_next_el
+    adr   x0, 2f
+    bl    arm64_boot_elx_downgrade
     eret
 #endif
 2:
     PRINT(switch_el2, "- Boot from EL2\r\n")
 
+#if CONFIG_ARCH_ARM64_EXCEPTION_LEVEL == 2
     /* EL2 init */
 
     bl    arm64_boot_el2_init
 
-#if CONFIG_ARCH_ARM64_EXCEPTION_LEVEL == 2
     msr   spsel, #1
     mov   sp, x24
     b     jump_to_c_entry
 #else
-    /* Move to EL1 with all exceptions masked. */
-
-    mov_imm    x0, (SPSR_DAIF_MASK | SPSR_MODE_EL1T)
-    msr   spsr_el2, x0
-
     adr   x0, 1f
-    msr   elr_el2, x0
+    bl    arm64_boot_elx_downgrade
     eret
 #endif
 

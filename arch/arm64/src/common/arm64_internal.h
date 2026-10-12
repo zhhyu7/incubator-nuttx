@@ -272,8 +272,8 @@ void arm64_secondary_start(void);
 /* Boot sequence functions called from arm64_head.S */
 
 void arm64_boot_el3_init(void);
-void arm64_boot_el3_get_next_el(uint64_t switch_addr);
 void arm64_boot_el2_init(void);
+void arm64_boot_elx_downgrade(uint64_t switch_addr);
 void arm64_boot_el1_init(void);
 void arm64_boot_primary_c_routine(void);
 
