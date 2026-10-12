@@ -70,6 +70,17 @@
 #define COREDUMP_NAME_MAX           64
 #define COREDUMP_DEVPATH_MAX        64
 
+#ifdef CONFIG_BOARD_COREDUMP_CURRENT
+#  define COREDUMP_LEVEL_DEFAULT    COREDUMP_LEVEL_CURRENT
+#elif defined(CONFIG_BOARD_COREDUMP_THREADS)
+#  define COREDUMP_LEVEL_DEFAULT    COREDUMP_LEVEL_THREADS
+#else
+#  define COREDUMP_LEVEL_DEFAULT    COREDUMP_LEVEL_FULL
+#endif
+
+#define COREDUMP_KEEP_REGION(r, level) \
+        (PF_COREDUMP_LEVEL((r)->flags) >= (level))
+
 /****************************************************************************
  * Private Types
  ****************************************************************************/
@@ -102,6 +113,7 @@ struct elf_dumpinfo_s
   FAR const struct memory_region_s *regions;
   FAR struct lib_outstream_s *stream;
   FAR struct tcb_s           *tcb;
+  uint32_t                    level;
   int                         stksegs;
   int                         memsegs;
   off_t                       written;
@@ -137,6 +149,7 @@ struct coredump_context_s
 
   FAR struct memory_region_s *regions;
   mutex_t regions_lock;
+  uint32_t level;
   bool enabled;
 };
 
@@ -189,6 +202,13 @@ static const struct memory_region_s g_memory_region[] =
 #endif
 
 #ifdef CONFIG_FS_PROCFS_REGISTER
+static FAR const char * const g_coredump_levelname[] =
+{
+  "full",
+  "threads",
+  "current"
+};
+
 static const struct procfs_operations g_coredump_procfs_ops =
 {
   coredump_procfs_open,
@@ -623,7 +643,9 @@ static void elf_emit_stack(FAR struct elf_dumpinfo_s *cinfo)
  *   Describe the memory region of the given segment index.  A caller
  *   supplied table is used as is; otherwise the register context, the
  *   interrupt stacks, the regions registered at run time and the board
- *   table follow in that order.
+ *   table follow in that order.  A region the active dump level leaves out
+ *   consumes no index, which keeps the program header and the payload loops
+ *   in lockstep.
  *
  * Returned Value:
  *   true when the index names a region, false once past the last one.
@@ -645,7 +667,8 @@ static bool elf_get_memory(FAR struct elf_dumpinfo_s *cinfo, int index,
     {
       for (i = 0; cinfo->regions[i].start < cinfo->regions[i].end; i++)
         {
-          if (index-- == 0)
+          if (COREDUMP_KEEP_REGION(&cinfo->regions[i], cinfo->level) &&
+              index-- == 0)
             {
               *region = cinfo->regions[i];
               return true;
@@ -659,7 +682,7 @@ static bool elf_get_memory(FAR struct elf_dumpinfo_s *cinfo, int index,
     {
       region->start = (uintptr_t)this_cpu_var(g_last_regs);
       region->end   = region->start + sizeof(last_regs_t);
-      region->flags = PF_R;
+      region->flags = PF_R | PF_COREDUMP_CURRENT;
       return true;
     }
 
@@ -668,7 +691,7 @@ static bool elf_get_memory(FAR struct elf_dumpinfo_s *cinfo, int index,
     {
       region->start = up_get_intstackbase(COREDUMP_INTSTACK_CPU(index));
       region->end   = region->start + CONFIG_ARCH_INTERRUPTSTACK;
-      region->flags = PF_R;
+      region->flags = PF_R | PF_COREDUMP_CURRENT;
       return true;
     }
 
@@ -680,7 +703,8 @@ static bool elf_get_memory(FAR struct elf_dumpinfo_s *cinfo, int index,
       for (i = 0; tables[t] != NULL &&
            tables[t][i].start < tables[t][i].end; i++)
         {
-          if (index-- == 0)
+          if (COREDUMP_KEEP_REGION(&tables[t][i], cinfo->level) &&
+              index-- == 0)
             {
               *region = tables[t][i];
               return true;
@@ -929,6 +953,7 @@ static void coredump_print_memory_regions(void)
   int i;
 
   memset(&cinfo, 0, sizeof(cinfo));
+  cinfo.level = g_coredump.level;
 
   _emerg("Memory regions will be printed:\n");
   for (i = 0; elf_get_memory(&cinfo, i, &region); i++)
@@ -952,13 +977,14 @@ static void coredump_print_memory_regions(void)
 static int elf_setup_dumpinfo(FAR struct elf_dumpinfo_s *cinfo,
                               FAR const struct memory_region_s *regions,
                               FAR struct lib_outstream_s *stream,
-                              FAR struct tcb_s *tcb)
+                              FAR struct tcb_s *tcb, uint32_t level)
 {
   struct memory_region_s region;
 
   cinfo->regions = regions;
   cinfo->stream  = stream;
   cinfo->tcb     = tcb;
+  cinfo->level   = level;
   cinfo->written = 0;
 
   if (cinfo->tcb != NULL)
@@ -987,12 +1013,12 @@ static int elf_setup_dumpinfo(FAR struct elf_dumpinfo_s *cinfo,
 
 static int coredump_with_tcb(FAR const struct memory_region_s *regions,
                              FAR struct lib_outstream_s *stream,
-                             FAR struct tcb_s *tcb)
+                             FAR struct tcb_s *tcb, uint32_t level)
 {
   struct elf_dumpinfo_s cinfo;
   int ret;
 
-  ret = elf_setup_dumpinfo(&cinfo, regions, stream, tcb);
+  ret = elf_setup_dumpinfo(&cinfo, regions, stream, tcb, level);
   if (ret < 0)
     {
       return ret;
@@ -1059,7 +1085,7 @@ static void coredump_dump_netpoll(FAR struct tcb_s *tcb)
   stream = (FAR struct lib_outstream_s *)&g_lzfstream.o;
 #  endif
 
-  ret = coredump_with_tcb(NULL, stream, tcb);
+  ret = coredump_with_tcb(NULL, stream, tcb, g_coredump.level);
   if (ret < 0)
     {
       _emerg("Coredump fail %d\n", ret);
@@ -1114,7 +1140,7 @@ static void coredump_dump_syslog(FAR struct tcb_s *tcb)
 
   /* Do core dump */
 
-  coredump_with_tcb(NULL, stream, tcb);
+  coredump_with_tcb(NULL, stream, tcb, g_coredump.level);
 
 #  ifdef CONFIG_BOARD_COREDUMP_COMPRESSION
   _emerg("Coredump finish (Compression Enabled). %s formatted\n",
@@ -1186,7 +1212,7 @@ static void coredump_dump_dev(FAR struct tcb_s *tcb)
   stream = (FAR struct lib_outstream_s *)&g_lzfstream.o;
 #  endif
 
-  ret = coredump_with_tcb(NULL, stream, tcb);
+  ret = coredump_with_tcb(NULL, stream, tcb, g_coredump.level);
   if (ret < 0)
     {
       _emerg("Coredump fail %d\n", ret);
@@ -1616,7 +1642,7 @@ static int coredump_scan_path(FAR const char *path, size_t nslot)
  *
  * Description:
  *   procfs read callback for coredump/ctl.  Reports whether the coredump
- *   facility is currently enabled.
+ *   facility is currently enabled and which content level is selected.
  *
  ****************************************************************************/
 
@@ -1624,25 +1650,42 @@ static ssize_t coredump_ctl_read(FAR struct file *filep,
                                  FAR char *buffer, size_t buflen,
                                  FAR void *priv)
 {
-  if (filep->f_pos > 0 || buflen < 2)
+  char line[256];
+  size_t linesize;
+  off_t offset = filep->f_pos;
+  ssize_t ret;
+
+  linesize = procfs_snprintf(line, sizeof(line),
+                             "enable: %s\n"
+                             "level : %s\n"
+                             "usage : echo on|off > /proc/coredump/ctl\n"
+                             "        echo level <current|threads|full> > "
+                             "/proc/coredump/ctl\n"
+                             "        echo <path> <nslot> > "
+                             "/proc/coredump/ctl\n",
+                             g_coredump.enabled ? "on" : "off",
+                             g_coredump_levelname[g_coredump.level]);
+
+  ret = procfs_memcpy(line, linesize, buffer, buflen, &offset);
+  if (ret > 0)
     {
-      return 0;
+      filep->f_pos += ret;
     }
 
-  buffer[0] = g_coredump.enabled ? '1' : '0';
-  buffer[1] = '\n';
-  filep->f_pos += 2;
-  return 2;
+  return ret;
 }
 
 /****************************************************************************
  * Name: coredump_ctl_write
  *
  * Description:
- *   procfs write callback for coredump/ctl.  Accepts either:
- *     "0" / "1"        - disable / enable the coredump facility, or
- *     "<path> <nslot>" - scan the device at <path> and register each
- *                        dump in procfs.
+ *   procfs write callback for coredump/ctl.  Accepts:
+ *     "on" / "off"           - enable / disable the coredump facility,
+ *                              "1" and "0" are accepted as well,
+ *     "level <name>"         - select the content level, one of "current",
+ *                              "threads" or "full", or
+ *     "<path> <nslot>"       - scan the device at <path> and register each
+ *                              dump in procfs.
  *
  ****************************************************************************/
 
@@ -1650,10 +1693,11 @@ static ssize_t coredump_ctl_write(FAR struct file *filep,
                                   FAR const char *buffer, size_t buflen,
                                   FAR void *priv)
 {
-  char path[COREDUMP_DEVPATH_MAX];
-  size_t len = buflen;
-  FAR char *sep;
+  char cmd[COREDUMP_DEVPATH_MAX];
+  FAR char *arg;
   size_t nslot;
+  size_t len;
+  size_t i;
   int ret;
 
   if (buffer == NULL || buflen == 0)
@@ -1661,26 +1705,49 @@ static ssize_t coredump_ctl_write(FAR struct file *filep,
       return -EINVAL;
     }
 
-  if (buflen <= 2 && (buffer[0] == '0' || buffer[0] == '1'))
+  len = MIN(buflen, sizeof(cmd) - 1);
+  memcpy(cmd, buffer, len);
+  cmd[len] = '\0';
+
+  cmd[strcspn(cmd, "\r\n")] = '\0';
+
+  if (strcmp(cmd, "on") == 0 || strcmp(cmd, "1") == 0)
     {
-      g_coredump.enabled = (buffer[0] == '1');
+      g_coredump.enabled = true;
       return buflen;
     }
 
-  len = len < sizeof(path) ? len : sizeof(path) - 1;
-  memcpy(path, buffer, len);
-  path[len] = '\0';
+  if (strcmp(cmd, "off") == 0 || strcmp(cmd, "0") == 0)
+    {
+      g_coredump.enabled = false;
+      return buflen;
+    }
 
-  sep = strchr(path, ' ');
-  if (sep == NULL)
+  arg = strchr(cmd, ' ');
+  if (arg == NULL)
     {
       return -EINVAL;
     }
 
-  *sep = '\0';
-  nslot = strtoul(sep + 1, NULL, 0);
+  *arg++ = '\0';
 
-  ret = coredump_scan_path(path, nslot);
+  if (strcmp(cmd, "level") == 0)
+    {
+      for (i = 0; i < nitems(g_coredump_levelname); i++)
+        {
+          if (strcmp(arg, g_coredump_levelname[i]) == 0)
+            {
+              g_coredump.level = i;
+              return buflen;
+            }
+        }
+
+      return -EINVAL;
+    }
+
+  nslot = strtoul(arg, NULL, 0);
+
+  ret = coredump_scan_path(cmd, nslot);
   return ret < 0 ? ret : buflen;
 }
 #endif /* CONFIG_FS_PROCFS_REGISTER */
@@ -1882,6 +1949,7 @@ int coredump_initialize(void)
 #endif
     {
       g_coredump.enabled = true;
+      g_coredump.level   = COREDUMP_LEVEL_DEFAULT;
 #ifdef CONFIG_FS_PROCFS_REGISTER
       procfs_create_custom("coredump/ctl", 0644,
                            coredump_ctl_read, coredump_ctl_write, NULL);
@@ -1898,7 +1966,8 @@ int coredump_initialize(void)
  *   Do coredump of the task specified by tcb.
  *
  * Input Parameters:
- *   tcb - The TCB of the task to dump.  NULL means dump all tasks.
+ *   tcb - The crashing task.  All tasks are dumped unless the level is
+ *         CURRENT and tcb is not NULL, in which case only tcb is dumped.
  *
  ****************************************************************************/
 
@@ -1908,6 +1977,11 @@ void coredump_dump(FAR struct tcb_s *tcb)
     {
       _emerg("Coredump is disabled.\n");
       return;
+    }
+
+  if (g_coredump.level != COREDUMP_LEVEL_CURRENT)
+    {
+      tcb = NULL;
     }
 
 #ifdef CONFIG_BOARD_COREDUMP_PRINT_REGIONS
@@ -1933,14 +2007,16 @@ void coredump_dump(FAR struct tcb_s *tcb)
  *             context, the interrupt stacks, the registered regions and
  *             the board memory range.
  *   stream  - The output stream.
- *   pid     - The task ID to dump.  INVALID_PROCESS_ID means dump all
- *             tasks.
+ *   pid     - The task ID to dump, or INVALID_PROCESS_ID to dump every
+ *             task.  Independent of level.
+ *   level   - How much memory to dump, one of COREDUMP_LEVEL_CURRENT,
+ *             COREDUMP_LEVEL_THREADS or COREDUMP_LEVEL_FULL.
  *
  ****************************************************************************/
 
 int coredump(FAR const struct memory_region_s *regions,
              FAR struct lib_outstream_s *stream,
-             pid_t pid)
+             pid_t pid, uint32_t level)
 {
   FAR struct tcb_s *tcb = NULL;
   int ret;
@@ -1958,7 +2034,7 @@ int coredump(FAR const struct memory_region_s *regions,
         }
     }
 
-  ret = coredump_with_tcb(regions, stream, tcb);
+  ret = coredump_with_tcb(regions, stream, tcb, level);
 
   nxsched_put_tcb(tcb);
 

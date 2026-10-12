@@ -42,6 +42,14 @@
 #define COREDUMP_MAGIC          0x434f5245
 #define COREDUMP_INFONAME_SIZE  ALIGN_UP(CONFIG_TASK_NAME_SIZE, 8)
 
+/* Core dump levels, matching the PF_COREDUMP_* encoding so that a region is
+ * emitted when its own level is at least the active one.
+ */
+
+#define COREDUMP_LEVEL_FULL     PF_COREDUMP_LEVEL(PF_COREDUMP_FULL)
+#define COREDUMP_LEVEL_THREADS  PF_COREDUMP_LEVEL(PF_COREDUMP_THREADS)
+#define COREDUMP_LEVEL_CURRENT  PF_COREDUMP_LEVEL(PF_COREDUMP_CURRENT)
+
 /****************************************************************************
  * Public Types
  ****************************************************************************/
@@ -107,15 +115,18 @@ int coredump_get_info(FAR struct lib_sistream_s *stream, off_t base,
  *   This function for generating core dump stream.
  *
  * Input Parameters:
- *   regions - The memory regions to dump.
+ *   regions - The memory regions to dump, NULL for none.  The regions
+ *             registered with coredump_add_memory_region() are dumped
+ *             whatever this holds.
  *   stream  - The output stream.
- *   pid     - The task ID to dump.  INVALID_PROCESS_ID means dump all
- *             tasks.
+ *   pid     - The task to dump, INVALID_PROCESS_ID for all of them.
+ *   level   - The content level, one of COREDUMP_LEVEL_CURRENT,
+ *             COREDUMP_LEVEL_THREADS or COREDUMP_LEVEL_FULL.
  *
  ****************************************************************************/
 
 int coredump(FAR const struct memory_region_s *regions,
              FAR struct lib_outstream_s *stream,
-             pid_t pid);
+             pid_t pid, uint32_t level);
 
 #endif /* __INCLUDE_NUTTX_COREDUMP_H */

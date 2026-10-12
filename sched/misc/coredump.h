@@ -63,7 +63,8 @@ int coredump_initialize(void);
  *   Do coredump of the task specified by pid.
  *
  * Input Parameters:
- *   tcb - The TCB of the task to dump.  NULL means dump all tasks.
+ *   tcb - The crashing task.  All tasks are dumped unless the level is
+ *         CURRENT and tcb is not NULL, in which case only tcb is dumped.
  *
  ****************************************************************************/
 

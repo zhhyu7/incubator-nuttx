@@ -250,6 +250,19 @@
                                        */
 #define PF_REGISTER        0x00100000 /* Register, need pointer aligned access */
 
+/* Lowest core dump level at which a memory region is emitted.  The encoding
+ * descends on purpose, so the default value of zero keeps a region out of
+ * every reduced core dump.
+ */
+
+#define PF_COREDUMP_SHIFT   21
+#define PF_COREDUMP_MASK    0x00600000
+#define PF_COREDUMP_FULL    0x00000000
+#define PF_COREDUMP_THREADS 0x00200000
+#define PF_COREDUMP_CURRENT 0x00400000
+#define PF_COREDUMP_LEVEL(f) \
+        (((f) & PF_COREDUMP_MASK) >> PF_COREDUMP_SHIFT)
+
 #define PF_MASKPROC        0xf0000000 /* Unspecified */
 
 /* Figure 5-10: Dynamic Array Tags, d_tag */

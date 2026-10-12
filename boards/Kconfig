@@ -4885,12 +4885,33 @@ config BOARD_COREDUMP_NSLOTS
 		MEMDEV stores a single dump without rotation and therefore
 		does not use this option.
 
-config BOARD_COREDUMP_FULL
-	bool "Core Dump all thread registers and stacks"
-	default y
+choice
+	prompt "Core Dump content"
+	default BOARD_COREDUMP_FULL
 	depends on !BOARD_CRASHDUMP_NONE
 	---help---
-		Enable to support for the dump all task registers and stacks.
+		Select the default level.  With FS_PROCFS_REGISTER it can be
+		changed at run time by writing "level <name>" to
+		/proc/coredump/ctl.
+
+config BOARD_COREDUMP_CURRENT
+	bool "Core Dump the current thread registers and stack"
+	---help---
+		Dump the current thread only, plus the memory regions tagged
+		PF_COREDUMP_CURRENT.
+
+config BOARD_COREDUMP_THREADS
+	bool "Core Dump all threads registers and stacks"
+	---help---
+		Dump all threads, plus the memory regions tagged
+		PF_COREDUMP_THREADS or PF_COREDUMP_CURRENT.
+
+config BOARD_COREDUMP_FULL
+	bool "Core Dump all thread registers and stacks with memory regions"
+	---help---
+		Dump all threads, plus every memory region.
+
+endchoice # Core Dump content
 
 config BOARD_COREDUMP_COMPRESSION
 	bool "Enable Core Dump compression"
@@ -5206,5 +5227,8 @@ config BOARD_MEMORY_RANGE
 		Memory range of board. format: <start>,<end>,<flags>,....
 		start: start address of memory range
 		end: end address of memory range
-		flags: Executable 0x1, Writable 0x2, Readable 0x4
-		example:{0x1000,0x2000,0x4},{0x2000,0x3000,0x6},{0x3000,0x4000,0x7} ... {0x0,0x0,0x0}
+		flags: Executable 0x1, Writable 0x2, Readable 0x4. High bits
+		select the lowest core dump level that emits the region (see
+		"Core Dump content"): 0 full only, 0x200000 threads, 0x400000
+		current.
+		example:{0x1000,0x2000,0x4},{0x2000,0x3000,0x400006},{0x3000,0x4000,0x7} ... {0x0,0x0,0x0}
