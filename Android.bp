@@ -157,6 +157,7 @@ cc_library_static {
         "libs/libc/netdb/lib_getaddrinfo.c",
         "libs/libc/netdb/lib_gethostentbynamer.c",
         "libs/libc/netdb/lib_rexec.c",
+        "libs/libc/queue/queue.c",
         "libs/libc/stream/lib_dtoa_data.c",
         "libs/libc/stream/lib_dtoa_engine.c",
         "libs/libc/stream/lib_libosprintf.c",
