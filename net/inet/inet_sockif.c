@@ -1087,6 +1087,17 @@ static int inet_connect(FAR struct socket *psock,
         {
           FAR struct tcp_conn_s *conn = psock->s_conn;
 
+          /* A NULL addr is only meaningful for SOCK_DGRAM disconnection.
+           * A TCP connect always requires a destination address, otherwise
+           * addr would be dereferenced below and again inside
+           * psock_tcp_connect().
+           */
+
+          if (addr == NULL)
+            {
+              return -EFAULT;
+            }
+
           /* Verify that the socket is not already connected */
 
           if (_SS_ISCONNECTED(conn->sconn.s_flags))
