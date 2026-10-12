@@ -42,6 +42,7 @@
 #include <nuttx/mm/kmap.h>
 #include <nuttx/mm/mm.h>
 #include <nuttx/kmalloc.h>
+#include <nuttx/percpu.h>
 #include <nuttx/pgalloc.h>
 #include <nuttx/sched_note.h>
 #include <nuttx/trace.h>
@@ -252,10 +253,14 @@ static int reboot_trace_callback(FAR struct notifier_block *nb,
   return 0;
 }
 
-static struct notifier_block g_reboot_trace_nb =
-{
-  .notifier_call = reboot_trace_callback,
-};
+/* The reboot chain links through notifier_block::next, so one node shared
+ * by all BMP cores gets spliced into every core's chain and the competing
+ * writes to that single next field corrupt them.  The chain head
+ * (g_reboot_notifier_list) is per-CPU, so the node has to be too.
+ */
+
+static DEFINE_PER_CPU_BSS_BMP(struct notifier_block, g_reboot_trace_nb);
+#define g_reboot_trace_nb this_cpu_var_bmp(g_reboot_trace_nb)
 #endif
 
 /****************************************************************************
@@ -871,6 +876,7 @@ void nx_start(void)
 
   /* Register reboot trace notifier for DFX reset event reporting */
 
+  g_reboot_trace_nb.notifier_call = reboot_trace_callback;
   register_reboot_notifier(&g_reboot_trace_nb);
 #endif
 
