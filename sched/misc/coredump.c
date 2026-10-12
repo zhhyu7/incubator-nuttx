@@ -135,7 +135,7 @@ struct coredump_context_s
   off_t    next;
 #endif
 
-  FAR const struct memory_region_s *regions;
+  FAR struct memory_region_s *regions;
   mutex_t regions_lock;
   bool enabled;
 };
@@ -175,6 +175,17 @@ static const struct memory_region_s g_memory_region[] =
   {
     CONFIG_BOARD_MEMORY_RANGE
   };
+#  define COREDUMP_BOARD_REGIONS   g_memory_region
+#else
+#  define COREDUMP_BOARD_REGIONS   NULL
+#endif
+
+#ifdef CONFIG_SMP
+#  define COREDUMP_NINTSTACKS      CONFIG_NCPUS
+#  define COREDUMP_INTSTACK_CPU(i) (i)
+#else
+#  define COREDUMP_NINTSTACKS      1
+#  define COREDUMP_INTSTACK_CPU(i) this_cpu()
 #endif
 
 #ifdef CONFIG_FS_PROCFS_REGISTER
@@ -606,6 +617,81 @@ static void elf_emit_stack(FAR struct elf_dumpinfo_s *cinfo)
 }
 
 /****************************************************************************
+ * Name: elf_get_memory
+ *
+ * Description:
+ *   Describe the memory region of the given segment index.  A caller
+ *   supplied table is used as is; otherwise the register context, the
+ *   interrupt stacks, the regions registered at run time and the board
+ *   table follow in that order.
+ *
+ * Returned Value:
+ *   true when the index names a region, false once past the last one.
+ *
+ ****************************************************************************/
+
+static bool elf_get_memory(FAR struct elf_dumpinfo_s *cinfo, int index,
+                           FAR struct memory_region_s *region)
+{
+  size_t t;
+  int i;
+  FAR const struct memory_region_s * const tables[] =
+    {
+      g_coredump.regions,
+      COREDUMP_BOARD_REGIONS
+    };
+
+  if (cinfo->regions != NULL)
+    {
+      for (i = 0; cinfo->regions[i].start < cinfo->regions[i].end; i++)
+        {
+          if (index-- == 0)
+            {
+              *region = cinfo->regions[i];
+              return true;
+            }
+        }
+
+      return false;
+    }
+
+  if (index-- == 0)
+    {
+      region->start = (uintptr_t)this_cpu_var(g_last_regs);
+      region->end   = region->start + sizeof(last_regs_t);
+      region->flags = PF_R;
+      return true;
+    }
+
+#if CONFIG_ARCH_INTERRUPTSTACK > 0
+  if (index < COREDUMP_NINTSTACKS)
+    {
+      region->start = up_get_intstackbase(COREDUMP_INTSTACK_CPU(index));
+      region->end   = region->start + CONFIG_ARCH_INTERRUPTSTACK;
+      region->flags = PF_R;
+      return true;
+    }
+
+  index -= COREDUMP_NINTSTACKS;
+#endif
+
+  for (t = 0; t < nitems(tables); t++)
+    {
+      for (i = 0; tables[t] != NULL &&
+           tables[t][i].start < tables[t][i].end; i++)
+        {
+          if (index-- == 0)
+            {
+              *region = tables[t][i];
+              return true;
+            }
+        }
+    }
+
+  return false;
+}
+
+/****************************************************************************
  * Name: elf_emit_memory
  *
  * Description:
@@ -615,14 +701,15 @@ static void elf_emit_stack(FAR struct elf_dumpinfo_s *cinfo)
 
 static void elf_emit_memory(FAR struct elf_dumpinfo_s *cinfo)
 {
+  struct memory_region_s region;
   int i;
 
-  for (i = 0; i < cinfo->memsegs; i++)
+  for (i = 0; elf_get_memory(cinfo, i, &region); i++)
     {
-      if (cinfo->regions[i].flags & PF_REGISTER)
+      if (region.flags & PF_REGISTER)
         {
-          FAR uintptr_t *start = (FAR uintptr_t *)cinfo->regions[i].start;
-          FAR uintptr_t *end = (FAR uintptr_t *)cinfo->regions[i].end;
+          FAR uintptr_t *start = (FAR uintptr_t *)region.start;
+          FAR uintptr_t *end = (FAR uintptr_t *)region.end;
           uintptr_t buf[64];
           size_t offset = 0;
 
@@ -644,8 +731,8 @@ static void elf_emit_memory(FAR struct elf_dumpinfo_s *cinfo)
         }
       else
         {
-          elf_emit(cinfo, (FAR void *)cinfo->regions[i].start,
-                   cinfo->regions[i].end - cinfo->regions[i].start);
+          elf_emit(cinfo, (FAR void *)region.start,
+                   region.end - region.start);
         }
 
       /* Align to page */
@@ -759,6 +846,7 @@ static void elf_emit_phdr(FAR struct elf_dumpinfo_s *cinfo)
 {
   off_t offset = cinfo->written + sizeof(Elf_Phdr) *
                  (cinfo->stksegs + cinfo->memsegs + 1 + 1);
+  struct memory_region_s region;
   FAR struct tcb_s *tcb;
   Elf_Phdr phdr;
   int i;
@@ -803,15 +891,15 @@ static void elf_emit_phdr(FAR struct elf_dumpinfo_s *cinfo)
 
   /* Write program headers for segments dump */
 
-  for (i = 0; i < cinfo->memsegs; i++)
+  for (i = 0; elf_get_memory(cinfo, i, &region); i++)
     {
       phdr.p_type   = PT_LOAD;
       phdr.p_offset = ALIGN_UP(offset, ELF_PAGESIZE);
-      phdr.p_vaddr  = cinfo->regions[i].start;
+      phdr.p_vaddr  = region.start;
       phdr.p_paddr  = phdr.p_vaddr;
-      phdr.p_filesz = cinfo->regions[i].end - cinfo->regions[i].start;
+      phdr.p_filesz = region.end - region.start;
       phdr.p_memsz  = phdr.p_filesz;
-      phdr.p_flags  = cinfo->regions[i].flags;
+      phdr.p_flags  = region.flags;
       offset       += ALIGN_UP(phdr.p_memsz, ELF_PAGESIZE);
       elf_emit(cinfo, &phdr, sizeof(phdr));
     }
@@ -834,24 +922,21 @@ static void elf_emit_phdr(FAR struct elf_dumpinfo_s *cinfo)
  ****************************************************************************/
 
 #ifdef CONFIG_BOARD_COREDUMP_PRINT_REGIONS
-static void
-coredump_print_memory_regions(FAR const struct memory_region_s *regions)
+static void coredump_print_memory_regions(void)
 {
+  struct elf_dumpinfo_s cinfo;
+  struct memory_region_s region;
   int i;
 
-  if (regions == NULL)
-    {
-      _emerg("No memory regions defined.\n");
-      return;
-    }
+  memset(&cinfo, 0, sizeof(cinfo));
 
   _emerg("Memory regions will be printed:\n");
-  for (i = 0; regions[i].start < regions[i].end; i++)
+  for (i = 0; elf_get_memory(&cinfo, i, &region); i++)
     {
       _emerg("Region[%d] start=0x%" PRIxPTR ", end=0x%" PRIxPTR,
-             i, regions[i].start, regions[i].end);
-      *(volatile int *)regions[i].start;
-      *(volatile int *)(regions[i].end - sizeof(int));
+             i, region.start, region.end);
+      *(volatile int *)region.start;
+      *(volatile int *)(region.end - sizeof(int));
     }
 }
 #endif
@@ -869,11 +954,12 @@ static int elf_setup_dumpinfo(FAR struct elf_dumpinfo_s *cinfo,
                               FAR struct lib_outstream_s *stream,
                               FAR struct tcb_s *tcb)
 {
+  struct memory_region_s region;
+
   cinfo->regions = regions;
   cinfo->stream  = stream;
   cinfo->tcb     = tcb;
   cinfo->written = 0;
-  cinfo->memsegs = 0;
 
   if (cinfo->tcb != NULL)
     {
@@ -884,11 +970,9 @@ static int elf_setup_dumpinfo(FAR struct elf_dumpinfo_s *cinfo,
       cinfo->stksegs = elf_get_ntcb();
     }
 
-  if (cinfo->regions != NULL)
-    {
-      for (; cinfo->regions[cinfo->memsegs].start <
-             cinfo->regions[cinfo->memsegs].end; cinfo->memsegs++);
-    }
+  for (cinfo->memsegs = 0;
+       elf_get_memory(cinfo, cinfo->memsegs, &region);
+       cinfo->memsegs++);
 
   return OK;
 }
@@ -940,10 +1024,7 @@ static int coredump_with_tcb(FAR const struct memory_region_s *regions,
 
   /* Dump memory segments */
 
-  if (cinfo.memsegs > 0)
-    {
-      elf_emit_memory(&cinfo);
-    }
+  elf_emit_memory(&cinfo);
 
   /* Emit core info note */
 
@@ -978,7 +1059,7 @@ static void coredump_dump_netpoll(FAR struct tcb_s *tcb)
   stream = (FAR struct lib_outstream_s *)&g_lzfstream.o;
 #  endif
 
-  ret = coredump_with_tcb(g_coredump.regions, stream, tcb);
+  ret = coredump_with_tcb(NULL, stream, tcb);
   if (ret < 0)
     {
       _emerg("Coredump fail %d\n", ret);
@@ -1033,7 +1114,7 @@ static void coredump_dump_syslog(FAR struct tcb_s *tcb)
 
   /* Do core dump */
 
-  coredump_with_tcb(g_coredump.regions, stream, tcb);
+  coredump_with_tcb(NULL, stream, tcb);
 
 #  ifdef CONFIG_BOARD_COREDUMP_COMPRESSION
   _emerg("Coredump finish (Compression Enabled). %s formatted\n",
@@ -1105,7 +1186,7 @@ static void coredump_dump_dev(FAR struct tcb_s *tcb)
   stream = (FAR struct lib_outstream_s *)&g_lzfstream.o;
 #  endif
 
-  ret = coredump_with_tcb(g_coredump.regions, stream, tcb);
+  ret = coredump_with_tcb(NULL, stream, tcb);
   if (ret < 0)
     {
       _emerg("Coredump fail %d\n", ret);
@@ -1125,28 +1206,6 @@ static void coredump_dump_dev(FAR struct tcb_s *tcb)
          lib_stream_nput(stream), CONFIG_BOARD_COREDUMP_DEVPATH);
 }
 #endif
-
-/****************************************************************************
- * Name: coredump_initialize_memory_region
- *
- * Description:
- *   initialize the memory region with board memory range specified in config
- *
- ****************************************************************************/
-
-noinline_function
-static int coredump_initialize_memory_region(void)
-{
-  if (g_coredump.regions == NULL)
-    {
-      nxmutex_init(&g_coredump.regions_lock);
-#ifdef CONFIG_BOARD_MEMORY_RANGE
-      g_coredump.regions = g_memory_region;
-#endif
-    }
-
-  return OK;
-}
 
 #ifdef CONFIG_FS_PROCFS_REGISTER
 /****************************************************************************
@@ -1684,19 +1743,22 @@ int coredump_add_memory_region(FAR const void *ptr, size_t size,
 {
   FAR struct memory_region_s *region;
   size_t count = 1; /* 1 for end flag */
-  int ret;
+  int ret = OK;
 
-  ret = coredump_initialize_memory_region();
-  if (ret < 0)
+  /* Registration starts before coredump_initialize(), and regions only
+   * ever goes from NULL to non-NULL, so it marks the lock as live.
+   */
+
+  if (g_coredump.regions == NULL)
     {
-      return ret;
+      nxmutex_init(&g_coredump.regions_lock);
     }
 
   nxmutex_lock(&g_coredump.regions_lock);
 
   if (g_coredump.regions != NULL)
     {
-      region = (FAR struct memory_region_s *)g_coredump.regions;
+      region = g_coredump.regions;
 
       while (region->start < region->end)
         {
@@ -1740,26 +1802,12 @@ int coredump_add_memory_region(FAR const void *ptr, size_t size,
       /* Need a new region */
     }
 
-  region = lib_malloc(sizeof(struct memory_region_s) * (count + 1));
+  region = kmm_realloc(g_coredump.regions,
+                       sizeof(struct memory_region_s) * (count + 1));
   if (region == NULL)
     {
       ret = -ENOMEM;
       goto out;
-    }
-
-  if (g_coredump.regions != NULL)
-    {
-      memcpy(region, g_coredump.regions,
-             sizeof(struct memory_region_s) * count);
-    }
-
-  if (g_coredump.regions != NULL
-#ifdef CONFIG_BOARD_MEMORY_RANGE
-    && g_coredump.regions != g_memory_region
-#endif
-    )
-    {
-      lib_free((FAR void *)g_coredump.regions);
     }
 
   region[count - 1].start = (uintptr_t)ptr;
@@ -1789,15 +1837,14 @@ int coredump_remove_memory_region(FAR const void *ptr, size_t size)
   FAR struct memory_region_s *region;
   size_t i;
 
-  nxmutex_lock(&g_coredump.regions_lock);
-
   if (g_coredump.regions == NULL)
     {
-      nxmutex_unlock(&g_coredump.regions_lock);
       return -ENOENT;
     }
 
-  region = (FAR struct memory_region_s *)g_coredump.regions;
+  nxmutex_lock(&g_coredump.regions_lock);
+
+  region = g_coredump.regions;
 
   for (i = 0; region[i].start < region[i].end; i++)
     {
@@ -1832,13 +1879,7 @@ int coredump_remove_memory_region(FAR const void *ptr, size_t size)
 
 int coredump_initialize(void)
 {
-  int ret;
-
-  ret = coredump_initialize_memory_region();
-  if (ret < 0)
-    {
-      return ret;
-    }
+  int ret = OK;
 
 #if defined(CONFIG_FS_PROCFS_REGISTER) && defined(CONFIG_BOARD_COREDUMP_NSLOTS)
   coredump_boot_scan();
@@ -1907,7 +1948,7 @@ void coredump_dump(FAR struct tcb_s *tcb)
     }
 
 #ifdef CONFIG_BOARD_COREDUMP_PRINT_REGIONS
-  coredump_print_memory_regions(g_coredump.regions);
+  coredump_print_memory_regions();
 #endif
 #ifdef CONFIG_BOARD_COREDUMP_SYSLOG
   coredump_dump_syslog(tcb);
@@ -1925,7 +1966,9 @@ void coredump_dump(FAR struct tcb_s *tcb)
  *   This function for generating core dump stream.
  *
  * Input Parameters:
- *   regions - The memory regions to dump.
+ *   regions - The memory regions to dump, or NULL for the register
+ *             context, the interrupt stacks, the registered regions and
+ *             the board memory range.
  *   stream  - The output stream.
  *   pid     - The task ID to dump.  INVALID_PROCESS_ID means dump all
  *             tasks.
