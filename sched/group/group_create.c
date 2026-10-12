@@ -159,6 +159,17 @@ int group_allocate(FAR struct tcb_s *tcb, int ttype, size_t heapsize)
         }
 
 #if defined(CONFIG_BUILD_KERNEL)
+      /* The task heap base is read from the address environment here because
+       * it is consumed later in this same function (task_init_info).  A user
+       * task in kernel build always has a valid environment by this point:
+       * exec has attached it to tcb->addrenv_curr, and fork runs before
+       * addrenv_join() so the child's is still NULL and the parent's
+       * (this_task(), still current during fork setup) is used instead,
+       * which the child goes on to share.  up_addrenv_vheap() asserts this.
+       */
+
+      group->tg_addrenv_own = tcb->addrenv_curr != NULL ?
+                              tcb->addrenv_curr : this_task()->addrenv_curr;
       up_addrenv_vheap(&group->tg_addrenv_own->addrenv,
                        (FAR void **)&group->tg_heap);
 #elif defined(CONFIG_MM_TASK_HEAP)
