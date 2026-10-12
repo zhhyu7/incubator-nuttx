@@ -79,6 +79,8 @@
 
 void up_schedule_sigaction(struct tcb_s *tcb)
 {
+  uintptr_t base = (uintptr_t)tcb->stack_alloc_ptr;
+
   sinfo("tcb=%p, rtcb=%p current_regs=%p\n", tcb, this_task(),
         this_task()->xcp.regs);
 
@@ -92,13 +94,24 @@ void up_schedule_sigaction(struct tcb_s *tcb)
   tcb->xcp.saved_regs      = tcb->xcp.regs;
 
   /* Verify that duplicating the context frame will not underflow the
-   * task stack.  The new frame is placed XCPTCONTEXT_SIZE below the
-   * current one; if it drops below the stack allocation, the memcpy
-   * below would write outside the stack.
+   * stack the frame lives on.  The new frame is placed XCPTCONTEXT_SIZE
+   * below the current one; if it drops below the stack allocation, the
+   * memcpy below would write outside the stack.  With a kernel stack a
+   * syscall/irq context is saved there, not on the user stack, so compare
+   * against the kernel stack base in that case.
    */
 
-  if ((uint32_t)tcb->xcp.regs - XCPTCONTEXT_SIZE <
-      (uint32_t)tcb->stack_alloc_ptr)
+#ifdef CONFIG_ARCH_KERNEL_STACK
+  if (tcb->xcp.kstack != NULL &&
+      (uintptr_t)tcb->xcp.regs >= (uintptr_t)tcb->xcp.kstack &&
+      (uintptr_t)tcb->xcp.regs <  (uintptr_t)tcb->xcp.kstack +
+                                  ARCH_KERNEL_STACKSIZE)
+    {
+      base = (uintptr_t)tcb->xcp.kstack;
+    }
+#endif
+
+  if ((uintptr_t)tcb->xcp.regs - XCPTCONTEXT_SIZE < base)
     {
       PANIC();
     }
