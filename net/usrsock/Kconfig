@@ -73,6 +73,26 @@ config NET_USRSOCK_NPOLLWAITERS
 	int "Number of usrsock poll waiters"
 	default 1
 
+config NET_USRSOCK_NIOVEC
+	int "The maximum number of I/O vector for sendmsg"
+	default 4
+	range 1 32
+	---help---
+		The maximum number of I/O vector (msg_iovlen) accepted by a
+		single sendmsg()/sendto() on a usrsock socket. The request
+		scatter/gather list is held in a fixed-size array on the stack,
+		so each additional entry costs sizeof(struct iovec) bytes of
+		stack. Calls carrying more entries fail with -EINVAL.
+
+		The default of 4 covers the in-tree senders, which pass one or
+		two entries except for the kvdb client at three.
+
+		Raise this if a caller passes longer vectors, for instance a
+		writev() whose iovcnt comes straight from an application, and
+		budget the stack accordingly: the upper bound of 32 already
+		puts the send path near 300 bytes, a seventh of the default
+		2048 byte task stack.
+
 config NET_USRSOCK_UDP
 	bool "User-space daemon provides UDP sockets"
 	default n

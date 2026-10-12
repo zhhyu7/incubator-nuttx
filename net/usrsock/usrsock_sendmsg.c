@@ -42,6 +42,21 @@
 #include "usrsock/usrsock.h"
 
 /****************************************************************************
+ * Pre-processor Definitions
+ ****************************************************************************/
+
+/* A sendto request is handed to the daemon as a scatter/gather list: the
+ * fixed request header first, then the destination address, then the
+ * caller's data blocks.  These name the positions in that list, so
+ * SENDTO_IOV_DATA is both the index of the first data block and the number
+ * of entries that precede it.
+ */
+
+#define SENDTO_IOV_REQ   0
+#define SENDTO_IOV_ADDR  1
+#define SENDTO_IOV_DATA  2
+
+/****************************************************************************
  * Private Functions
  ****************************************************************************/
 
@@ -142,9 +157,19 @@ static int do_sendto_request(FAR struct usrsock_conn_s *conn,
   {
   };
 
-  struct iovec bufs[2 + msg->msg_iovlen];
+  /* Fixed-size array rather than a VLA (MISRA C-2012 Rule 18.8). */
+
+  struct iovec bufs[SENDTO_IOV_DATA + CONFIG_NET_USRSOCK_NIOVEC];
   socklen_t msg_namelen = msg->msg_namelen;
+  unsigned int iovcnt;
   int i;
+
+  if (msg->msg_iovlen > CONFIG_NET_USRSOCK_NIOVEC)
+    {
+      nwarn("msg_iovlen %lu exceeds limit %d\n", msg->msg_iovlen,
+            CONFIG_NET_USRSOCK_NIOVEC);
+      return -EINVAL;
+    }
 
   if (msg_namelen > UINT16_MAX)
     {
@@ -163,14 +188,17 @@ static int do_sendto_request(FAR struct usrsock_conn_s *conn,
       req.buflen += msg->msg_iov[i].iov_len;
     }
 
-  bufs[0].iov_base = (FAR void *)&req;
-  bufs[0].iov_len  = sizeof(req);
-  bufs[1].iov_base = msg->msg_name;
-  bufs[1].iov_len  = msg_namelen;
+  bufs[SENDTO_IOV_REQ].iov_base  = &req;
+  bufs[SENDTO_IOV_REQ].iov_len   = sizeof(req);
+  bufs[SENDTO_IOV_ADDR].iov_base = msg->msg_name;
+  bufs[SENDTO_IOV_ADDR].iov_len  = msg_namelen;
 
-  memcpy(&bufs[2], msg->msg_iov, sizeof(struct iovec) * msg->msg_iovlen);
+  memcpy(&bufs[SENDTO_IOV_DATA], msg->msg_iov,
+         sizeof(struct iovec) * msg->msg_iovlen);
 
-  return usrsock_do_request(conn, bufs, nitems(bufs));
+  iovcnt = (unsigned int)(SENDTO_IOV_DATA + msg->msg_iovlen);
+
+  return usrsock_do_request(conn, bufs, iovcnt);
 }
 
 /****************************************************************************
