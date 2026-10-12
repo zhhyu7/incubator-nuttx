@@ -298,21 +298,25 @@ int group_allocate(FAR struct tcb_s *tcb, int ttype, size_t heapsize)
 void group_initialize(FAR struct tcb_s *tcb)
 {
   FAR struct task_group_s *group;
+#ifdef HAVE_GROUP_MEMBERS
+  irqstate_t flags;
+#endif
   bool kernel;
 
   DEBUGASSERT(tcb && tcb->group);
   kernel = atomic_read(&tcb->flags) & TCB_FLAG_TTYPE_KERNEL;
   group = tcb->group;
-  spin_lock_init(&group->tg_lock);
 
   /* Allocate mm_map list if required */
 
   mm_map_initialize(&group->tg_mm_map, kernel);
 
 #ifdef HAVE_GROUP_MEMBERS
-  /* Assign the PID of this new task as a member of the group. */
+  /* Match group_leave: hold tg_lock while mutating tg_members. */
 
+  flags = spin_lock_irqsave(&group->tg_lock);
   sq_addlast(&tcb->member, &group->tg_members);
+  spin_unlock_irqrestore(&group->tg_lock, flags);
 #endif
 
   /* Save the ID of the main task within the group of threads.  This needed
