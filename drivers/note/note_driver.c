@@ -1397,8 +1397,17 @@ void note_add(FAR const void *data, size_t len)
       size_t notelen = note->nc_length;
       FAR struct note_driver_s **driver;
 
-      DEBUGASSERT(notelen >= sizeof(struct note_common_s) &&
-                  len >= notelen);
+      /* nc_length comes from another core and len is unsigned, so a note
+       * claiming more than remains would wrap len and the walk would run
+       * off the payload.  Drop the rest of the packet instead.
+       */
+
+      if (notelen < sizeof(struct note_common_s) ||
+          NOTE_ALIGN(notelen) > len)
+        {
+          break;
+        }
+
       for (driver = g_note_drivers; *driver; driver++)
         {
           if (!note_driver_isenabled_type(*driver, note->nc_type))
