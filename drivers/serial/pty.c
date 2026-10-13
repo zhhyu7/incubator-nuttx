@@ -47,6 +47,7 @@
 #include <nuttx/semaphore.h>
 #include <nuttx/fs/fs.h>
 #include <nuttx/serial/pty.h>
+#include <nuttx/serial/serial.h>
 #include <nuttx/signal.h>
 
 #include "pty.h"
@@ -101,9 +102,7 @@ struct pty_dev_s
 #if defined(CONFIG_TTY_SIGINT) || defined(CONFIG_TTY_SIGTSTP)
   pid_t pd_pid;                 /* Thread PID to receive signals (-1 if none) */
 #endif
-  tcflag_t pd_iflag;            /* Terminal input modes */
-  tcflag_t pd_lflag;            /* Terminal local modes */
-  tcflag_t pd_oflag;            /* Terminal output modes */
+  struct uart_termios_s pd_termios;
   struct pty_poll_s pd_poll[CONFIG_DEV_PTY_NPOLLWAITERS];
 };
 
@@ -438,44 +437,16 @@ static ssize_t pty_read(FAR struct file *filep, FAR char *buffer, size_t len)
    *   IXON/OXOFF - No xon/xoff flow control.
    */
 
-  if (dev->pd_iflag & (INLCR | IGNCR | ICRNL))
+  if (dev->pd_termios.iflag & (INLCR | IGNCR | ICRNL))
     {
       while ((ntotal = file_read(&dev->pd_src, buffer, len)) > 0)
         {
-          for (i = j = 0; i < ntotal; i++)
+          /* Read again if every byte was an ignored CR */
+
+          ntotal = uart_termios_in_copy(&dev->pd_termios, buffer, buffer,
+                                        ntotal);
+          if (ntotal != 0)
             {
-              /* Perform input processing */
-
-              ch = buffer[i];
-
-              /* \n -> \r or \r -> \n translation? */
-
-              if (ch == '\n' && (dev->pd_iflag & INLCR) != 0)
-                {
-                  ch = '\r';
-                }
-              else if (ch == '\r' && (dev->pd_iflag & ICRNL) != 0)
-                {
-                  ch = '\n';
-                }
-
-              /* Discarding \r ?  Print character if (1) character is not \r
-               * or if (2) we were not asked to ignore \r.
-               */
-
-              if (ch != '\r' || (dev->pd_iflag & IGNCR) == 0)
-                {
-                  buffer[j++] = ch;
-                }
-            }
-
-          /* Is the buffer not empty after process? */
-
-          if (j != 0)
-            {
-              /* Yes, we are done. */
-
-              ntotal = j;
               break;
             }
         }
@@ -496,7 +467,7 @@ static ssize_t pty_read(FAR struct file *filep, FAR char *buffer, size_t len)
       ntotal = file_read(&dev->pd_src, buffer, len);
     }
 
-  if ((dev->pd_lflag & ECHO) && (ntotal > 0))
+  if ((dev->pd_termios.lflag & ECHO) && (ntotal > 0))
     {
       size_t n = 0;
 
@@ -606,7 +577,6 @@ static ssize_t pty_write(FAR struct file *filep,
 #if defined(CONFIG_TTY_SIGINT) || defined(CONFIG_TTY_SIGTSTP)
   pid_t pid;
 #endif
-  char ch;
 
   inode = filep->f_inode;
   dev   = inode->i_private;
@@ -622,10 +592,10 @@ static ssize_t pty_write(FAR struct file *filep,
 
   /* Do output post-processing */
 
-  if ((dev->pd_oflag & OPOST) != 0)
+  if ((dev->pd_termios.oflag & OPOST) != 0)
     {
       /* Output post-processing is enabled.  Locate the next byte that needs
-       * translation (CR under OCRNL, NL under ONLCR/ONLRET) or that is a tty
+       * translation (CR under OCRNL, NL under ONLCR) or that is a tty
        * control character (SIGINT/SIGTSTP), write the run of ordinary bytes
        * before it to the sink in a single call, then handle that byte.
        *
@@ -637,18 +607,25 @@ static ssize_t pty_write(FAR struct file *filep,
        */
 
       FAR const char *special;
+#if defined(CONFIG_TTY_SIGINT) || defined(CONFIG_TTY_SIGTSTP)
+      FAR const char *sig;
+      int signo = 0;
+#endif
       size_t nbulk;
+      size_t nout;
+      size_t i;
+      char out[2];
 
       while (ntotal < len)
         {
           special = NULL;
 
-          if ((dev->pd_oflag & OCRNL) != 0)
+          if ((dev->pd_termios.oflag & OCRNL) != 0)
             {
               special = memchr(&buffer[ntotal], '\r', len - ntotal);
             }
 
-          if ((dev->pd_oflag & (ONLCR | ONLRET)) != 0)
+          if ((dev->pd_termios.oflag & ONLCR) != 0)
             {
               FAR const char *nl;
 
@@ -660,27 +637,20 @@ static ssize_t pty_write(FAR struct file *filep,
             }
 
 #if defined(CONFIG_TTY_SIGINT) || defined(CONFIG_TTY_SIGTSTP)
-          if (pid > 0 && (dev->pd_lflag & ISIG) != 0)
+          sig = NULL;
+          if (pid > 0)
             {
-              FAR const char *si;
-
-#ifdef CONFIG_TTY_SIGINT
-              si = memchr(&buffer[ntotal], CONFIG_TTY_SIGINT_CHAR,
-                          len - ntotal);
-              if (si != NULL && (special == NULL || si < special))
+              sig = uart_termios_isig_find(&dev->pd_termios,
+                                           &buffer[ntotal], len - ntotal,
+                                           &signo);
+              if (sig != NULL && (special == NULL || sig < special))
                 {
-                  special = si;
+                  special = sig;
                 }
-#endif
-
-#ifdef CONFIG_TTY_SIGTSTP
-              si = memchr(&buffer[ntotal], CONFIG_TTY_SIGTSTP_CHAR,
-                          len - ntotal);
-              if (si != NULL && (special == NULL || si < special))
+              else
                 {
-                  special = si;
+                  sig = NULL;
                 }
-#endif
             }
 #endif
 
@@ -711,73 +681,32 @@ static ssize_t pty_write(FAR struct file *filep,
               break;
             }
 
-          ch = buffer[ntotal];
-
-          /* Mapping CR to NL? */
-
-          if (ch == '\r' && (dev->pd_oflag & OCRNL) != 0)
+#if defined(CONFIG_TTY_SIGINT) || defined(CONFIG_TTY_SIGTSTP)
+          if (sig != NULL)
             {
-              ch = '\n';
+              nxsig_kill(pid, signo);
+              return ntotal + 1;
             }
+#endif
 
-          /* Are we interested in newline processing? */
+          /* The inserted CR is not counted, or we would return more than
+           * len.  Write a byte at a time: a non-blocking sink pipe would
+           * accept a CR NL pair only in part and the NL would be lost.
+           *
+           * REVISIT: Should not block if the oflags include O_NONBLOCK.
+           */
 
-          if ((ch == '\n') && (dev->pd_oflag & (ONLCR | ONLRET)) != 0)
+          nout = uart_termios_out_char(&dev->pd_termios, buffer[ntotal],
+                                       out, sizeof(out));
+          for (i = 0; i < nout; i++)
             {
-              char cr = '\r';
-
-              /* Transfer the carriage return.  This will block if the
-               * sink pipe is full.
-               *
-               * REVISIT: Should not block if the oflags include O_NONBLOCK.
-               * How would we ripple the O_NONBLOCK characteristic to the
-               * contained sink pipe?  file_fcntl()?  Or FIONSPACE?  See the
-               * TODO comment at the top of this file.
-               *
-               * NOTE: The newline is not included in total number of bytes
-               * written.  Otherwise, we would return more than the
-               * requested number of bytes.
-               */
-
-              nwritten = file_write(&dev->pd_sink, &cr, 1);
+              nwritten = file_write(&dev->pd_sink, &out[i], 1);
               if (nwritten < 0)
                 {
-                  ntotal = ntotal ? ntotal : nwritten;
                   break;
                 }
             }
 
-#if defined(CONFIG_TTY_SIGINT) || defined(CONFIG_TTY_SIGTSTP)
-          if (pid > 0 && (dev->pd_lflag & ISIG) != 0)
-            {
-#ifdef CONFIG_TTY_SIGINT
-              if (ch == CONFIG_TTY_SIGINT_CHAR)
-                {
-                  nxsig_kill(pid, SIGINT);
-                  return ntotal + 1;
-                }
-#endif
-
-#ifdef CONFIG_TTY_SIGTSTP
-              if (ch == CONFIG_TTY_SIGTSTP_CHAR)
-                {
-                  nxsig_kill(pid, SIGTSTP);
-                  return ntotal + 1;
-                }
-#endif
-            }
-#endif
-
-          /* Transfer the (possibly translated) character..  This will block
-           * if the sink pipe is full
-           *
-           * REVISIT: Should not block if the oflags include O_NONBLOCK.
-           * How would we ripple the O_NONBLOCK characteristic to the
-           * contained sink pipe?  file_fcntl()?  Or FIONSPACe?  See the
-           * TODO comment at the top of this file.
-           */
-
-          nwritten = file_write(&dev->pd_sink, &ch, 1);
           if (nwritten < 0)
             {
               ntotal = ntotal ? ntotal : nwritten;
@@ -910,9 +839,7 @@ static int pty_ioctl(FAR struct file *filep, int cmd, unsigned long arg)
 
           /* And update with flags from this layer */
 
-          termiosp->c_iflag = dev->pd_iflag;
-          termiosp->c_oflag = dev->pd_oflag;
-          termiosp->c_lflag = dev->pd_lflag;
+          uart_termios_getattr(&dev->pd_termios, termiosp);
           ret = OK;
         }
         break;
@@ -929,9 +856,7 @@ static int pty_ioctl(FAR struct file *filep, int cmd, unsigned long arg)
 
           /* Update the flags we keep at this layer */
 
-          dev->pd_iflag = termiosp->c_iflag;
-          dev->pd_oflag = termiosp->c_oflag;
-          dev->pd_lflag = termiosp->c_lflag;
+          uart_termios_setattr(&dev->pd_termios, termiosp);
           ret = OK;
         }
         break;
@@ -1254,11 +1179,11 @@ int pty_register2(int minor, bool susv1)
   devpair->pp_locked            = true;
   devpair->pp_master.pd_devpair = devpair;
   devpair->pp_master.pd_master  = true;
-  devpair->pp_master.pd_oflag   = OPOST | OCRNL;
-  devpair->pp_master.pd_lflag   = ISIG;
+  devpair->pp_master.pd_termios.oflag = OPOST | OCRNL;
+  devpair->pp_master.pd_termios.lflag = ISIG;
   devpair->pp_slave.pd_devpair  = devpair;
-  devpair->pp_slave.pd_oflag    = OPOST | ONLCR;
-  devpair->pp_slave.pd_lflag    = ECHO | ICANON | ISIG;
+  devpair->pp_slave.pd_termios.oflag  = OPOST | ONLCR;
+  devpair->pp_slave.pd_termios.lflag  = ECHO | ICANON | ISIG;
 #if defined(CONFIG_TTY_SIGINT) || defined(CONFIG_TTY_SIGTSTP)
   /* Initialize  of the task that will receive SIGINT signals. */
 
