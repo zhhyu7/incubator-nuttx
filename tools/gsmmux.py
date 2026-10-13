@@ -35,15 +35,12 @@ Main features:
 """
 
 import argparse
-import fcntl
 import os
-import pty
 import select
 import signal
 import socket
 import subprocess
 import sys
-import termios
 import time
 from enum import IntEnum
 
@@ -56,13 +53,17 @@ TMUX_SESSION = "gsmmux"
 
 
 def _set_nonblocking(fd):
-    """Set a file descriptor to non-blocking mode."""
+    """Set a file descriptor to non-blocking mode (PTY/serial, Linux)."""
+    import fcntl
+
     flags = fcntl.fcntl(fd, fcntl.F_GETFL)
     fcntl.fcntl(fd, fcntl.F_SETFL, flags | os.O_NONBLOCK)
 
 
 def _set_blocking(fd):
-    """Set a file descriptor to blocking mode."""
+    """Set a file descriptor to blocking mode (PTY/serial, Linux)."""
+    import fcntl
+
     flags = fcntl.fcntl(fd, fcntl.F_GETFL)
     fcntl.fcntl(fd, fcntl.F_SETFL, flags & ~os.O_NONBLOCK)
 
@@ -718,6 +719,9 @@ class VirtualSerialPort:
 
     def open(self):
         """Create PTY device"""
+        import pty
+        import termios
+
         self.master_fd, self.slave_fd = pty.openpty()
 
         # Get slave device name
