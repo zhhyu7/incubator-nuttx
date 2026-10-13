@@ -240,6 +240,19 @@ static inline int tcp_close_disconnect(FAR struct socket *psock)
        conn->tcpstateflags == TCP_CLOSE_WAIT) &&
       (conn->clscb = tcp_callback_alloc(conn)) != NULL)
     {
+      /* If shutdown() was called before close(), its callback may set
+       * TCP_TXCLOSE when outstanding data is ACKed -- which clscb would
+       * misread as "handshake complete" and prematurely end_wait.
+       * Remove shdcb and let clscb handle the graceful close itself.
+       */
+
+      if (conn->shdcb != NULL)
+        {
+          tcp_callback_free(conn, conn->shdcb);
+          conn->shdcb = NULL;
+          conn->shutdown &= ~SHUT_WR;
+        }
+
       /* Set up to receive TCP data event callbacks */
 
       conn->clscb->flags = TCP_NEWDATA | TCP_ACKDATA |
