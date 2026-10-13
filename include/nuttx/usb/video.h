@@ -145,6 +145,49 @@
 #define UVC_PU_ANALOG_VIDEO_STANDARD_CONTROL           0x11
 #define UVC_PU_ANALOG_LOCK_STATUS_CONTROL              0x12
 
+/* Camera Terminal bmControls bit positions (UVC 1.5 Table 3-6). Not the
+ * selectors above: the spec leaves gaps (Zoom Abs is selector 0x0b, bit 9).
+ */
+
+#define UVC_CT_SCANNING_MODE_BIT            0
+#define UVC_CT_AE_MODE_BIT                  1
+#define UVC_CT_AE_PRIORITY_BIT              2
+#define UVC_CT_EXPOSURE_TIME_ABSOLUTE_BIT   3
+#define UVC_CT_EXPOSURE_TIME_RELATIVE_BIT   4
+#define UVC_CT_FOCUS_ABSOLUTE_BIT           5
+#define UVC_CT_FOCUS_RELATIVE_BIT           6
+#define UVC_CT_IRIS_ABSOLUTE_BIT            7
+#define UVC_CT_IRIS_RELATIVE_BIT            8
+#define UVC_CT_ZOOM_ABSOLUTE_BIT            9
+#define UVC_CT_ZOOM_RELATIVE_BIT            10
+#define UVC_CT_PANTILT_ABSOLUTE_BIT         11
+#define UVC_CT_PANTILT_RELATIVE_BIT         12
+#define UVC_CT_ROLL_ABSOLUTE_BIT            13
+#define UVC_CT_ROLL_RELATIVE_BIT            14
+#define UVC_CT_FOCUS_AUTO_BIT               17
+#define UVC_CT_PRIVACY_BIT                  18
+
+/* Processing Unit bmControls bit positions (UVC 1.5 Table 3-8). */
+
+#define UVC_PU_BRIGHTNESS_BIT                      0
+#define UVC_PU_CONTRAST_BIT                        1
+#define UVC_PU_HUE_BIT                             2
+#define UVC_PU_SATURATION_BIT                      3
+#define UVC_PU_SHARPNESS_BIT                       4
+#define UVC_PU_GAMMA_BIT                           5
+#define UVC_PU_WHITE_BALANCE_TEMPERATURE_BIT       6
+#define UVC_PU_WHITE_BALANCE_COMPONENT_BIT         7
+#define UVC_PU_BACKLIGHT_COMPENSATION_BIT          8
+#define UVC_PU_GAIN_BIT                            9
+#define UVC_PU_POWER_LINE_FREQUENCY_BIT            10
+#define UVC_PU_HUE_AUTO_BIT                        11
+#define UVC_PU_WHITE_BALANCE_TEMPERATURE_AUTO_BIT  12
+#define UVC_PU_WHITE_BALANCE_COMPONENT_AUTO_BIT    13
+#define UVC_PU_DIGITAL_MULTIPLIER_BIT              14
+#define UVC_PU_DIGITAL_MULTIPLIER_LIMIT_BIT        15
+#define UVC_PU_ANALOG_VIDEO_STANDARD_BIT           16
+#define UVC_PU_ANALOG_LOCK_STATUS_BIT              17
+
 /* UVC control unit types */
 
 #define UVC_CTRL_UNIT_PU            0

@@ -142,6 +142,9 @@ struct uvc_priv_s
   uint8_t pu_id;
   uint8_t ct_id;
 
+  uint32_t pu_bmcontrols;
+  uint32_t ct_bmcontrols;
+
   uint8_t stream_iface;
   uint8_t stream_altsetting;
 

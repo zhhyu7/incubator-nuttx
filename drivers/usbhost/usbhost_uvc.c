@@ -70,6 +70,7 @@ struct uvc_ctrl_map_s
   uint8_t  selector;
   uint8_t  size;
   bool     is_signed;
+  uint8_t  ctrl_bit;
 };
 
 /****************************************************************************
@@ -160,42 +161,42 @@ static const struct uvc_ctrl_map_s g_uvc_ctrl_map[] =
 {
   { IMGSENSOR_ID_BRIGHTNESS,
     UVC_CTRL_UNIT_PU, UVC_PU_BRIGHTNESS_CONTROL,
-    2, true },
+    2, true, UVC_PU_BRIGHTNESS_BIT },
   { IMGSENSOR_ID_CONTRAST,
     UVC_CTRL_UNIT_PU, UVC_PU_CONTRAST_CONTROL,
-    2, false },
+    2, false, UVC_PU_CONTRAST_BIT },
   { IMGSENSOR_ID_SATURATION,
     UVC_CTRL_UNIT_PU, UVC_PU_SATURATION_CONTROL,
-    2, false },
+    2, false, UVC_PU_SATURATION_BIT },
   { IMGSENSOR_ID_HUE,
     UVC_CTRL_UNIT_PU, UVC_PU_HUE_CONTROL,
-    2, true },
+    2, true, UVC_PU_HUE_BIT },
   { IMGSENSOR_ID_AUTO_WHITE_BALANCE,
     UVC_CTRL_UNIT_PU,
     UVC_PU_WHITE_BALANCE_TEMPERATURE_AUTO_CONTROL,
-    1, false },
+    1, false, UVC_PU_WHITE_BALANCE_TEMPERATURE_AUTO_BIT },
   { IMGSENSOR_ID_GAMMA,
     UVC_CTRL_UNIT_PU, UVC_PU_GAMMA_CONTROL,
-    2, false },
+    2, false, UVC_PU_GAMMA_BIT },
   { IMGSENSOR_ID_SHARPNESS,
     UVC_CTRL_UNIT_PU, UVC_PU_SHARPNESS_CONTROL,
-    2, false },
+    2, false, UVC_PU_SHARPNESS_BIT },
   { IMGSENSOR_ID_EXPOSURE_AUTO,
     UVC_CTRL_UNIT_CT, UVC_CT_AE_MODE_CONTROL,
-    1, false },
+    1, false, UVC_CT_AE_MODE_BIT },
   { IMGSENSOR_ID_EXPOSURE_ABSOLUTE,
     UVC_CTRL_UNIT_CT,
     UVC_CT_EXPOSURE_TIME_ABSOLUTE_CONTROL,
-    4, false },
+    4, false, UVC_CT_EXPOSURE_TIME_ABSOLUTE_BIT },
   { IMGSENSOR_ID_FOCUS_ABSOLUTE,
     UVC_CTRL_UNIT_CT, UVC_CT_FOCUS_ABSOLUTE_CONTROL,
-    2, false },
+    2, false, UVC_CT_FOCUS_ABSOLUTE_BIT },
   { IMGSENSOR_ID_FOCUS_AUTO,
     UVC_CTRL_UNIT_CT, UVC_CT_FOCUS_AUTO_CONTROL,
-    1, false },
+    1, false, UVC_CT_FOCUS_AUTO_BIT },
   { IMGSENSOR_ID_ZOOM_ABSOLUTE,
     UVC_CTRL_UNIT_CT, UVC_CT_ZOOM_ABSOLUTE_CONTROL,
-    2, false },
+    2, false, UVC_CT_ZOOM_ABSOLUTE_BIT },
 };
 
 static const struct imgdata_ops_s g_uvc_imgdata_ops =
@@ -371,6 +372,38 @@ static void uvc_init_ctrlreq(FAR struct usb_ctrlreq_s *req,
   uvc_putle16(req->value, value);
   uvc_putle16(req->index, index);
   uvc_putle16(req->len, len);
+}
+
+/* Only the low 4 bytes of bmControls are kept; every control in
+ * g_uvc_ctrl_map lives within the first 32 bits. avail bounds the read
+ * against the remaining descriptor length.
+ */
+
+static uint32_t uvc_read_bmcontrols(FAR const uint8_t *p, int n, int avail)
+{
+  uint32_t bm = 0;
+  int      i;
+
+  if (n > avail)
+    {
+      n = avail;
+    }
+
+  for (i = 0; i < n && i < 4; i++)
+    {
+      bm |= (uint32_t)p[i] << (8 * i);
+    }
+
+  return bm;
+}
+
+static bool uvc_ctrl_present(FAR struct uvc_priv_s *priv,
+                             FAR const struct uvc_ctrl_map_s *map)
+{
+  uint32_t bm = map->unit_type == UVC_CTRL_UNIT_CT ?
+                priv->ct_bmcontrols : priv->pu_bmcontrols;
+
+  return (bm >> map->ctrl_bit) & 1;
 }
 
 static FAR const struct uvc_ctrl_map_s *
@@ -2374,6 +2407,22 @@ static int uvc_query_ctrl_hw(FAR struct uvc_dev_s *dev,
 
   cache->queried = true;
 
+  /* A control not advertised in bmControls is unsupported; avoid probing it
+   * (some devices answer GET but STALL SET_CUR). Matches Linux uvcvideo.
+   */
+
+  if (!uvc_ctrl_present(dev->device, map))
+    {
+      cache->supported     = false;
+      cache->ctrl_type     = (map->size == 1) ?
+        IMGSENSOR_CTRL_TYPE_BOOLEAN : IMGSENSOR_CTRL_TYPE_INTEGER;
+      cache->minimum       = 0;
+      cache->maximum       = 0;
+      cache->step          = 1;
+      cache->default_value = 0;
+      return OK;
+    }
+
   /* Boolean controls */
 
   if (map->size == 1 &&
@@ -2819,7 +2868,15 @@ static int uvc_parse_cfgdesc(FAR struct uvc_priv_s *priv,
                 {
                   priv->pu_id = configdesc[3];
                   priv->ctrl_iface = ifno;
-                  uinfo("UVC: PU id=%d iface=%d\n", priv->pu_id, ifno);
+
+                  /* PU descriptor: bControlSize@7, bmControls@8 */
+
+                  priv->pu_bmcontrols =
+                    uvc_read_bmcontrols(&configdesc[8], configdesc[7],
+                                        desc->len - 8);
+                  uinfo("UVC: PU id=%d iface=%d bmControls=0x%08"
+                        PRIx32 "\n",
+                        priv->pu_id, ifno, priv->pu_bmcontrols);
                 }
               else if (subtype == UVC_VC_INPUT_TERMINAL && desc->len >= 8)
                 {
@@ -2828,7 +2885,19 @@ static int uvc_parse_cfgdesc(FAR struct uvc_priv_s *priv,
                     {
                       priv->ct_id = configdesc[3];
                       priv->ctrl_iface = ifno;
-                      uinfo("UVC: CT id=%d iface=%d\n", priv->ct_id, ifno);
+
+                      /* Camera Terminal: bControlSize@14, bmControls@15 */
+
+                      if (desc->len >= 15)
+                        {
+                          priv->ct_bmcontrols =
+                            uvc_read_bmcontrols(&configdesc[15],
+                                                configdesc[14],
+                                                desc->len - 15);
+                        }
+
+                      uinfo("UVC: CT id=%d iface=%d bmControls=0x%08" PRIx32
+                            "\n", priv->ct_id, ifno, priv->ct_bmcontrols);
                     }
                 }
 
