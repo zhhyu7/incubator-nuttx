@@ -873,7 +873,7 @@ struct note_perf_sample_s
 struct note_max_s
 {
   struct note_common_s cmn;
-  uint8_t data[256 - sizeof(struct note_common_s)];
+  uint8_t data[NOTE_BUFFER_SIZE - sizeof(struct note_common_s)];
 };
 
 /* Per-CPU context used by the text formatter
