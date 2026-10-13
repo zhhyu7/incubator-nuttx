@@ -177,6 +177,32 @@ static void tcp_sendcommon(FAR struct net_driver_s *dev,
   tcp->urgp[0] = 0;
   tcp->urgp[1] = 0;
 
+#ifdef CONFIG_NET_TCPURGDATA
+  /* Every segment that starts before the urgent mark carries the URG flag
+   * and the same absolute pointer, so retransmissions and pure ACKs need no
+   * special handling.  Urgent mode is over once the mark has been ACKed,
+   * which leaves snd_up equal to the sequence number of the next byte.
+   */
+
+  if (TCP_SEQ_LT(tcp_getsequence(tcp->seqno), conn->snd_up))
+    {
+      uint32_t urgp = TCP_SEQ_SUB(conn->snd_up,
+                                  tcp_getsequence(tcp->seqno));
+
+      /* Only announce a mark that fits in the 16-bit header field.  Leaving
+       * URG unset until the urgent byte is within 64KiB is simpler than
+       * clamping, and never points the receiver at the wrong byte.
+       */
+
+      if (urgp <= UINT16_MAX)
+        {
+          tcp->flags  |= TCP_URG;
+          tcp->urgp[0] = urgp >> 8;
+          tcp->urgp[1] = urgp & 0xff;
+        }
+    }
+#endif
+
   /* Update device buffer length before setup the IP header */
 
   iob_update_pktlen(dev->d_iob, dev->d_len, false);
@@ -471,6 +497,7 @@ void tcp_reset(FAR struct net_driver_s *dev, FAR struct tcp_conn_s *conn)
   else
     {
       uint32_t ackno;
+
       tcp->flags = TCP_RST | TCP_ACK;
       tcp_setsequence(tcp->seqno, 0);
       ackno = tcp_addsequence(tcp->ackno, acklen);
@@ -489,7 +516,7 @@ void tcp_reset(FAR struct net_driver_s *dev, FAR struct tcp_conn_s *conn)
   tcp->wnd[0] = 0;
   tcp->wnd[1] = 0;
   tcp->urgp[0] = 0;
-  tcp->urgp[0] = 0;
+  tcp->urgp[1] = 0;
 
   /* Update device buffer length before setup the IP header */
 

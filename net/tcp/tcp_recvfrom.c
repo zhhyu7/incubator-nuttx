@@ -118,8 +118,10 @@ static inline void tcp_update_recvlen(FAR struct tcp_recvfrom_s *pstate,
 static size_t tcp_recvfrom_newdata(FAR struct net_driver_s *dev,
                                    FAR struct tcp_recvfrom_s *pstate)
 {
+  FAR struct tcp_conn_s *conn = pstate->ir_conn;
   unsigned int offset;
   size_t recvlen;
+  int skip;
 
   /* Get the length of the data to return */
 
@@ -136,6 +138,17 @@ static size_t tcp_recvfrom_newdata(FAR struct net_driver_s *dev,
 
   offset = (dev->d_appdata - dev->d_iob->io_data) - dev->d_iob->io_offset;
 
+  /* Keep the urgent byte out of the normal stream.  The read is either
+   * shortened to stop before it, or steps over it when it comes first.
+   * It has already been copied aside by tcp_urg_input().
+   */
+
+  skip = tcp_urg_clip(conn, tcp_getsequence(conn->rcvseq), &recvlen);
+  if (skip > 0)
+    {
+      offset++;
+    }
+
   recvlen = iob_copyout(pstate->ir_buffer, dev->d_iob, recvlen, offset);
 
   /* Trim the copied buffers */
@@ -149,7 +162,11 @@ static size_t tcp_recvfrom_newdata(FAR struct net_driver_s *dev,
 
   tcp_update_recvlen(pstate, recvlen);
 
-  return pstate->ir_flags & MSG_PEEK ? 0: recvlen;
+  /* The skipped byte is consumed from the stream even though it was not
+   * returned to the application.
+   */
+
+  return pstate->ir_flags & MSG_PEEK ? 0 : recvlen + skip;
 }
 
 /****************************************************************************
@@ -255,13 +272,40 @@ static inline void tcp_readahead(struct tcp_recvfrom_s *pstate)
   while ((iob = conn->readahead) != NULL &&
           pstate->ir_buflen > 0)
     {
+      unsigned int offset = 0;
+      size_t copylen = pstate->ir_buflen;
+
       DEBUGASSERT(iob->io_pktlen > 0);
+
+      /* rcvseq is already past everything held in the read-ahead queue, so
+       * the first buffered byte sits that many bytes back.  Keep the urgent
+       * byte out of the normal stream.
+       */
+
+      if (tcp_urg_clip(conn, TCP_SEQ_SUB(tcp_getsequence(conn->rcvseq),
+                                         iob->io_pktlen), &copylen) > 0)
+        {
+          offset = 1;
+        }
+
+      if (copylen == 0)
+        {
+          /* Nothing but the urgent byte is available right now */
+
+          if ((pstate->ir_flags & MSG_PEEK) != 0)
+            {
+              break;
+            }
+
+          conn->readahead = iob_trimhead(iob, offset);
+          continue;
+        }
 
       /* Transfer that buffered data from the I/O buffer chain into
        * the user buffer.
        */
 
-      recvlen = iob_copyout(pstate->ir_buffer, iob, pstate->ir_buflen, 0);
+      recvlen = iob_copyout(pstate->ir_buffer, iob, copylen, offset);
       ninfo("Received %d bytes (of %d)\n", recvlen, iob->io_pktlen);
 
       /* Update the accumulated size of the data read */
@@ -283,7 +327,7 @@ static inline void tcp_readahead(struct tcp_recvfrom_s *pstate)
        * beginning of the I/O buffer chain.
        */
 
-      if (recvlen >= iob->io_pktlen)
+      if (recvlen + offset >= iob->io_pktlen)
         {
           /* Free free the I/O buffer chain */
 
@@ -296,7 +340,7 @@ static inline void tcp_readahead(struct tcp_recvfrom_s *pstate)
            * buffer chain.
            */
 
-          conn->readahead = iob_trimhead(iob, recvlen);
+          conn->readahead = iob_trimhead(iob, recvlen + offset);
         }
     }
 }
@@ -413,6 +457,8 @@ static uint32_t tcp_recvhandler(FAR struct net_driver_s *dev,
 
           if ((flags & TCP_ACKDATA) != 0)
             {
+              int ret;
+
               iob = iob_tryalloc(false);
               if (iob == NULL)
                 {
@@ -421,8 +467,8 @@ static uint32_t tcp_recvhandler(FAR struct net_driver_s *dev,
                 }
 
               iob_reserve(iob, CONFIG_NET_LL_GUARDSIZE);
-              int ret = iob_clone_partial(dev->d_iob, dev->d_iob->io_pktlen,
-                                          0, iob, 0, false, false);
+              ret = iob_clone_partial(dev->d_iob, dev->d_iob->io_pktlen,
+                                      0, iob, 0, false, false);
               if (ret < 0)
                 {
                   iob_free_chain(iob);
@@ -680,6 +726,62 @@ static void tcp_notify_recvcpu(FAR struct tcp_conn_s *conn)
  *
  ****************************************************************************/
 
+#ifdef CONFIG_NET_TCPURGDATA
+/****************************************************************************
+ * Name: tcp_recv_urg
+ *
+ * Description:
+ *   Handle recv(..., MSG_OOB).  BSD and POSIX require that this never
+ *   blocks:
+ *
+ *     - the urgent byte is available:  return it (1 byte);
+ *     - it was announced but has not arrived yet:  -EAGAIN;
+ *     - no urgent data, it was already read, or SO_OOBINLINE is set,
+ *       in which case the byte belongs to the normal stream:  -EINVAL.
+ *
+ * Assumptions:
+ *   The network is locked.
+ *
+ ****************************************************************************/
+
+static ssize_t tcp_recv_urg(FAR struct tcp_conn_s *conn, FAR void *buf,
+                            size_t len, int flags)
+{
+#ifdef CONFIG_NET_SOCKOPTS
+  /* With SO_OOBINLINE the byte is part of the normal stream */
+
+  if (_SO_GETOPT(conn->sconn.s_options, SO_OOBINLINE))
+    {
+      return -EINVAL;
+    }
+#endif
+
+  if (conn->urg_state == TCP_URG_NOTYET)
+    {
+      return -EAGAIN;
+    }
+
+  if (conn->urg_state != TCP_URG_VALID)
+    {
+      return -EINVAL;
+    }
+
+  if (len == 0)
+    {
+      return 0;
+    }
+
+  *(FAR uint8_t *)buf = conn->urg_data;
+
+  if ((flags & MSG_PEEK) == 0)
+    {
+      conn->urg_state = TCP_URG_READ;
+    }
+
+  return 1;
+}
+#endif /* CONFIG_NET_TCPURGDATA */
+
 static ssize_t tcp_recvfrom_one(FAR struct tcp_conn_s *conn, FAR void *buf,
                                 size_t len, FAR struct sockaddr *from,
                                 FAR socklen_t *fromlen, int flags)
@@ -687,6 +789,13 @@ static ssize_t tcp_recvfrom_one(FAR struct tcp_conn_s *conn, FAR void *buf,
   struct tcp_recvfrom_s state;
   struct tcp_callback_s info;
   ssize_t ret;
+
+#ifdef CONFIG_NET_TCPURGDATA
+  if ((flags & MSG_OOB) != 0)
+    {
+      return tcp_recv_urg(conn, buf, len, flags);
+    }
+#endif
 
   /* Initialize the state structure.  This is done with the network
    * locked because we don't want anything to happen until we are ready.

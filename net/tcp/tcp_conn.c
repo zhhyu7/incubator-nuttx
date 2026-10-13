@@ -1148,6 +1148,17 @@ FAR struct tcp_conn_s *tcp_alloc_accept(FAR struct net_driver_s *dev,
       conn->sent             = 0;
       conn->sndseq_max       = tcp_getsequence(conn->sndseq) + 1;
 #endif
+#ifdef CONFIG_NET_TCPURGDATA
+      /* No urgent data in either direction.  snd_up starts at sndseq so
+       * that the "sequence before the mark" test in tcp_sendcommon() is
+       * false until send(..., MSG_OOB) moves it.
+       */
+
+      conn->urg_state        = TCP_URG_NONE;
+      conn->urg_data         = 0;
+      conn->rcv_up           = 0;
+      conn->snd_up           = tcp_getsequence(conn->sndseq);
+#endif
 
 #ifdef CONFIG_NET_TCP_CC_NEWRENO
       /* Initialize the variables of congestion control */
@@ -1460,6 +1471,16 @@ int tcp_connect(FAR struct tcp_conn_s *conn, FAR const struct sockaddr *addr)
   conn->isn        = 0;
   conn->sent       = 0;
   conn->sndseq_max = tcp_getsequence(conn->sndseq) + 1;
+#endif
+#ifdef CONFIG_NET_TCPURGDATA
+  /* No urgent data in either direction (see tcp_conn_s and the comment in
+   * the accept path above).
+   */
+
+  conn->urg_state  = TCP_URG_NONE;
+  conn->urg_data   = 0;
+  conn->rcv_up     = 0;
+  conn->snd_up     = tcp_getsequence(conn->sndseq);
 #endif
 
   /* Save initial sndseq to rexmit_seq, otherwise it will be zero */

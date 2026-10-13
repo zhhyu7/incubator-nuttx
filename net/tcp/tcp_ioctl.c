@@ -37,6 +37,7 @@
 #include <nuttx/fs/ioctl.h>
 #include <nuttx/mm/iob.h>
 #include <nuttx/net/net.h>
+#include <nuttx/net/ioctl.h>
 
 #include "utils/utils.h"
 #include "tcp/tcp.h"
@@ -152,6 +153,25 @@ int tcp_ioctl(FAR struct tcp_conn_s *conn, int cmd, unsigned long arg)
       case FIOC_FILEPATH:
         tcp_path(conn, (FAR char *)(uintptr_t)arg, PATH_MAX);
         break;
+#ifdef CONFIG_NET_TCPURGDATA
+      case SIOCATMARK:
+        {
+          /* The socket is at the out-of-band mark when the next byte the
+           * application would read is the urgent byte.  rcvseq is the next
+           * byte expected from the peer, so the read position is that minus
+           * whatever is still sitting in the read-ahead queue.
+           */
+
+          uint32_t readseq = TCP_SEQ_SUB(tcp_getsequence(conn->rcvseq),
+                                         conn->readahead != NULL ?
+                                         conn->readahead->io_pktlen : 0);
+
+          *(FAR int *)((uintptr_t)arg) =
+            (conn->urg_state != TCP_URG_NONE &&
+             readseq == conn->rcv_up) ? 1 : 0;
+        }
+        break;
+#endif
       default:
         ret = -ENOTTY;
         break;

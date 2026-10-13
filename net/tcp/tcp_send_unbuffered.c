@@ -595,6 +595,18 @@ ssize_t psock_tcp_send(FAR struct socket *psock,
 
           conn->tx_unacked      = 0;
 
+#ifdef CONFIG_NET_TCPURGDATA
+          /* With BSD semantics only the last byte of the buffer is urgent.
+           * Mark it once here; every segment then derives its own urgent
+           * pointer in tcp_sendcommon().
+           */
+
+          if ((flags & MSG_OOB) != 0 && len > 0)
+            {
+              conn->snd_up = TCP_SEQ_ADD(state.snd_isn, len);
+            }
+#endif
+
           /* Set up the callback in the connection */
 
           state.snd_cb->flags = (TCP_ACKDATA | TCP_REXMIT | TCP_POLL |

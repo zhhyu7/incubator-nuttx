@@ -176,6 +176,15 @@ struct tcp_sack_s
   uint32_t right;   /* Right edge of the SACK */
 };
 
+#ifdef CONFIG_NET_TCPURGDATA
+/* Receive side urgent data states.  See conn->urg_state. */
+
+#  define TCP_URG_NONE     0  /* No urgent data announced */
+#  define TCP_URG_NOTYET   1  /* Announced, but the byte has not arrived */
+#  define TCP_URG_VALID    2  /* The byte is in conn->urg_data, not read yet */
+#  define TCP_URG_READ     3  /* The byte was read by recv(..., MSG_OOB) */
+#endif
+
 struct tcp_conn_s
 {
   /* Common prologue of all connection structures. */
@@ -296,6 +305,27 @@ struct tcp_conn_s
    */
 
   FAR struct iob_s *readahead;   /* Read-ahead buffering */
+
+#ifdef CONFIG_NET_TCPURGDATA
+  /* Urgent (out-of-band) data.
+   *
+   * RX: rcv_up is the sequence number of the urgent byte, valid only while
+   *     urg_state is not TCP_URG_NONE.  The byte itself is never removed
+   *     from the receive stream; it is skipped when data is copied to the
+   *     application (unless SO_OOBINLINE is set) and a copy is kept in
+   *     urg_data once it has been received.
+   *
+   * TX: snd_up is the sequence number one past the urgent byte, following
+   *     the BSD/Linux wire format.  Urgent mode is active while snd_up is
+   *     ahead of the oldest unacknowledged byte, so no separate flag is
+   *     needed.
+   */
+
+  uint8_t  urg_state;     /* Receive side state (TCP_URG_* below) */
+  uint8_t  urg_data;      /* The received urgent byte */
+  uint32_t rcv_up;        /* Sequence number of the received urgent byte */
+  uint32_t snd_up;        /* Sequence number one past the sent urgent byte */
+#endif
 
 #ifdef CONFIG_NET_TCP_OUT_OF_ORDER
 
@@ -1431,6 +1461,50 @@ uint32_t tcp_callback(FAR struct net_driver_s *dev,
 uint16_t tcp_datahandler(FAR struct net_driver_s *dev,
                          FAR struct tcp_conn_s *conn,
                          uint16_t offset);
+
+/****************************************************************************
+ * Name: tcp_urg_input, tcp_urg_clip, tcp_urg_mark
+ *
+ * Description:
+ *   Urgent (out-of-band) data handling.  See net/tcp/tcp_urg.c for details.
+ *
+ *   tcp_urg_input - Process the urgent pointer of an incoming segment and
+ *                   pick up the urgent byte once in-order data covers it.
+ *                   Pass a NULL header for a reassembled out-of-order
+ *                   segment, whose payload is given by 'iob' and 'seq'.
+ *                   Returns TCP_URGDATA when the byte becomes readable.
+ *   tcp_urg_clip  - Keep the urgent byte out of the normal receive stream
+ *                   when data is copied to the application.  Returns 1 if
+ *                   the byte at 'seq' must be skipped.
+ *   tcp_urg_mark  - Mark the last of 'pending' queued bytes as urgent.
+ *
+ * Assumptions:
+ *   The network is locked.
+ *
+ ****************************************************************************/
+
+#ifdef CONFIG_NET_TCPURGDATA
+uint32_t tcp_urg_input(FAR struct tcp_conn_s *conn,
+                       FAR struct tcp_hdr_s *tcp, FAR struct iob_s *iob,
+                       unsigned int off, uint32_t seq, uint16_t len);
+int      tcp_urg_clip(FAR struct tcp_conn_s *conn, uint32_t seq,
+                      FAR size_t *len);
+void     tcp_urg_mark(FAR struct tcp_conn_s *conn, uint32_t pending);
+
+/* tcp_urg_input() for the payload held in a device I/O buffer */
+
+#  define tcp_urg_devinput(dev,conn,tcp) \
+     tcp_urg_input(conn, tcp, (dev)->d_iob, \
+                   ((dev)->d_appdata - (dev)->d_iob->io_data) - \
+                   (dev)->d_iob->io_offset, \
+                   tcp_getsequence((conn)->rcvseq), (dev)->d_len)
+#else
+/* Compile to constants so that callers need no conditional code */
+
+#  define tcp_urg_input(conn,tcp,iob,off,seq,len) (0)
+#  define tcp_urg_devinput(dev,conn,tcp)          (0)
+#  define tcp_urg_clip(conn,seq,len)              (0)
+#endif /* CONFIG_NET_TCPURGDATA */
 
 /****************************************************************************
  * Name: tcp_backlogcreate

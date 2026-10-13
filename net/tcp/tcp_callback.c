@@ -143,6 +143,8 @@ static uint32_t tcp_ofoseg_data_event(FAR struct net_driver_s *dev,
         {
           ninfo("TCP OFOSEG input [%" PRIu32 " : %" PRIu32 " : %u]\n",
                  seg->left, seg->right, seg->data->io_pktlen);
+          flags |= tcp_urg_input(conn, NULL, seg->data, 0,
+                                 seg->left, seg->data->io_pktlen);
           rcvseq = TCP_SEQ_ADD(rcvseq,
                                seg->data->io_pktlen);
           net_incr32(conn->rcvseq, seg->data->io_pktlen);
@@ -177,6 +179,9 @@ static uint32_t tcp_ofoseg_data_event(FAR struct net_driver_s *dev,
                   ninfo("TCP OFOSEG input "
                         "[%" PRIu32 " : %" PRIu32 " : %u]\n",
                         seg->left, seg->right, seg->data->io_pktlen);
+                  flags |= tcp_urg_input(conn, NULL, seg->data, 0,
+                                         seg->left,
+                                         seg->data->io_pktlen);
                   rcvseq = TCP_SEQ_ADD(rcvseq,
                                        seg->data->io_pktlen);
                   net_incr32(conn->rcvseq, seg->data->io_pktlen);

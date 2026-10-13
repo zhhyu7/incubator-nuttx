@@ -763,6 +763,7 @@ static void tcp_input(FAR struct net_driver_s *dev, uint8_t domain,
       if ((conn->tcpstateflags & TCP_STATE_MASK) == TCP_SYN_SENT)
         {
           uint32_t ackseq;
+
           if ((tcp->flags & TCP_ACK) != 0)
             {
               ackseq = tcp_getsequence(tcp->ackno);
@@ -1221,6 +1222,7 @@ found:
            */
 
           uint32_t sndseq = tcp_getsequence(conn->sndseq);
+
           if (TCP_SEQ_LTE(sndseq, ackseq))
             {
               ninfo("sndseq: %08" PRIx32 "->%08" PRIx32
@@ -1239,6 +1241,7 @@ found:
       if (conn->nrtx == 0)
         {
           signed char m;
+
           m = conn->rto - conn->timer;
 
           /* This is taken directly from VJs original code in his paper */
@@ -1259,6 +1262,19 @@ found:
       /* Set the acknowledged flag. */
 
       flags |= TCP_ACKDATA;
+
+#ifdef CONFIG_NET_TCPURGDATA
+      /* Leave urgent mode once the mark has been acknowledged.  Keeping
+       * snd_up equal to the ACK point (rather than resetting it to zero)
+       * is what makes the sequence comparison in tcp_sendcommon() safe
+       * across sequence number wrap.
+       */
+
+      if (TCP_SEQ_GTE(ackseq, conn->snd_up))
+        {
+          conn->snd_up = ackseq;
+        }
+#endif
 
       /* Check if no packet need to retransmission, clear timer. */
 
@@ -1339,6 +1355,13 @@ skip_rtt:
             }
           else if ((conn->tcpstateflags & TCP_STATE_MASK) <= TCP_FIN_WAIT_2)
             {
+              /* Remember an urgent pointer carried by an out-of-order
+               * segment.  The byte itself is picked up when the gap has
+               * been filled and the segment joins the receive stream.
+               */
+
+              tcp_urg_input(conn, tcp, NULL, 0, seq, 0);
+
 #ifdef CONFIG_NET_TCP_OUT_OF_ORDER
               /* Queue out-of-order segments. */
 
@@ -1563,47 +1586,13 @@ skip_rtt:
             return;
           }
 
-#ifdef CONFIG_NET_TCPURGDATA
-        /* Check the URG flag.  If this is set, the segment carries urgent
-         * data that we must pass to the application.
+        /* Check the urgent pointer and pick up the urgent byte if it is
+         * covered by the in-order data of this segment.  The payload is
+         * left alone; the byte is skipped when the data is handed to the
+         * application.
          */
 
-        if ((tcp->flags & TCP_URG) != 0)
-          {
-            dev->d_urglen = (tcp->urgp[0] << 8) | tcp->urgp[1];
-            if (dev->d_urglen > dev->d_len)
-              {
-                /* There is more urgent data in the next segment to come. */
-
-                dev->d_urglen = dev->d_len;
-              }
-
-             /* The d_len field contains the length of the incoming data.
-              * d_urgdata points to the "urgent" data at the beginning of
-              * the payload; d_appdata field points to the any "normal" data
-              * that may follow the urgent data.
-              *
-              * NOTE: If the urgent data continues in the next packet, then
-              * d_len will be zero and d_appdata will point past the end of
-              * the payload (which is OK).
-              */
-
-            net_incr32(conn->rcvseq, dev->d_urglen);
-            dev->d_len     -= dev->d_urglen;
-            dev->d_urgdata  = dev->d_appdata;
-            dev->d_appdata += dev->d_urglen;
-          }
-        else
-          {
-            /* No urgent data */
-
-            dev->d_urglen   = 0;
-          }
-
-#else /* CONFIG_NET_TCPURGDATA */
-        /* Urgent data needs to be treated as normal data */
-#endif /* CONFIG_NET_TCPURGDATA */
-
+        flags |= tcp_urg_devinput(dev, conn, tcp);
 #ifdef CONFIG_NET_TCP_KEEPALIVE
         /* If the established socket receives an ACK or any kind of data
          * from the remote peer (whether we accept it or not), then reset
@@ -1649,7 +1638,7 @@ skip_rtt:
          * send, d_len must be set to 0.
          */
 
-        if ((flags & (TCP_NEWDATA | TCP_ACKDATA)) != 0)
+        if ((flags & (TCP_NEWDATA | TCP_ACKDATA | TCP_URGDATA)) != 0)
           {
             dev->d_sndlen = 0;
 
@@ -1711,9 +1700,13 @@ skip_rtt:
             ninfo("TCP state: TCP_FIN_WAIT_2\n");
           }
 
-        if (dev->d_len > 0)
+        /* A half-closed connection still receives, urgent data included */
+
+        flags |= tcp_urg_devinput(dev, conn, tcp);
+
+        if (dev->d_len > 0 || (flags & TCP_URGDATA) != 0)
           {
-            result = tcp_callback(dev, conn, TCP_NEWDATA);
+            result = tcp_callback(dev, conn, flags | TCP_NEWDATA);
             tcp_appsend(dev, conn, result);
             return;
           }
@@ -1735,9 +1728,13 @@ skip_rtt:
             return;
           }
 
-        if (dev->d_len > 0)
+        /* A half-closed connection still receives, urgent data included */
+
+        flags |= tcp_urg_devinput(dev, conn, tcp);
+
+        if (dev->d_len > 0 || (flags & TCP_URGDATA) != 0)
           {
-            result = tcp_callback(dev, conn, TCP_NEWDATA);
+            result = tcp_callback(dev, conn, flags | TCP_NEWDATA);
             tcp_appsend(dev, conn, result);
             return;
           }
@@ -1762,9 +1759,9 @@ skip_rtt:
       case TCP_CLOSE_WAIT:
 #ifdef CONFIG_NET_TCP_KEEPALIVE
         /* If the established socket receives an ACK or any kind of data
-        * from the remote peer (whether we accept it or not), then reset
-        * the keep alive timer.
-        */
+         * from the remote peer (whether we accept it or not), then reset
+         * the keep alive timer.
+         */
 
         if (conn->keepalive && (tcp->flags & TCP_ACK) != 0)
           {

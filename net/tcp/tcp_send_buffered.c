@@ -1666,6 +1666,38 @@ ssize_t psock_tcp_send(FAR struct socket *psock, FAR const void *buf,
             wrb, TCP_WBPKTLEN(wrb),
             conn->write_q.head, conn->write_q.tail);
 
+#ifdef CONFIG_NET_TCPURGDATA
+      /* With BSD semantics only the last byte of the buffer passed to
+       * send(..., MSG_OOB) is urgent, so mark it once the final chunk has
+       * been queued.  For a partial non-blocking write that is the last
+       * byte actually queued.
+       */
+
+      if ((flags & MSG_OOB) != 0 && chunk_result >= len)
+        {
+          FAR sq_entry_t *entry;
+          uint32_t pending = 0;
+
+          /* Everything still queued, measured from the last ACK, gives the
+           * sequence number of the byte just queued.
+           */
+
+          for (entry = sq_peek(&conn->unacked_q); entry;
+               entry = sq_next(entry))
+            {
+              pending += TCP_WBPKTLEN((FAR struct tcp_wrbuffer_s *)entry);
+            }
+
+          for (entry = sq_peek(&conn->write_q); entry;
+               entry = sq_next(entry))
+            {
+              pending += TCP_WBPKTLEN((FAR struct tcp_wrbuffer_s *)entry);
+            }
+
+          tcp_urg_mark(conn, pending);
+        }
+#endif
+
       /* Notify the device driver of the availability of TX data */
 
       tcp_send_txnotify(psock, conn);

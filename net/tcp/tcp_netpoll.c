@@ -88,6 +88,15 @@ static uint32_t tcp_poll_eventhandler(FAR struct net_driver_s *dev,
           eventset |= POLLIN;
         }
 
+      /* Urgent data.  Only report POLLPRI once the byte is actually
+       * readable, otherwise recv(..., MSG_OOB) would just return -EAGAIN.
+       */
+
+      if ((flags & TCP_URGDATA) != 0)
+        {
+          eventset |= POLLPRI;
+        }
+
       /* Non-blocking connection */
 
       if ((flags & TCP_CONNECTED) != 0)
@@ -302,6 +311,11 @@ int tcp_pollsetup(FAR struct socket *psock, FAR struct pollfd *fds)
       cb->flags |= TCP_NEWDATA | TCP_BACKLOG | TCP_RXCLOSE;
     }
 
+  if ((fds->events & POLLPRI) != 0)
+    {
+      cb->flags |= TCP_URGDATA;
+    }
+
   /* Save the reference in the poll info structure as fds private as well
    * for use during poll teardown as well.
    */
@@ -317,6 +331,15 @@ int tcp_pollsetup(FAR struct socket *psock, FAR struct pollfd *fds)
 
       eventset |= POLLRDNORM;
     }
+
+#ifdef CONFIG_NET_TCPURGDATA
+  /* An urgent byte may already be waiting */
+
+  if (conn->urg_state == TCP_URG_VALID)
+    {
+      eventset |= POLLPRI;
+    }
+#endif
 
   /* Check for a loss of connection events.  We need to be careful here.
    * There are four possibilities:

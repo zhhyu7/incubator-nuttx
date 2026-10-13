@@ -65,12 +65,23 @@ config NET_TCP_KEEPALIVE
 		Enable support for the SO_KEEPALIVE socket option
 
 config NET_TCPURGDATA
-	bool "Urgent data"
+	bool "TCP urgent (out-of-band) data"
 	default n
 	---help---
-		Determines if support for TCP urgent data notification should be
-		compiled in. Urgent data (out-of-band data) is a rarely used TCP feature
-		that is very seldom would be required.
+		Determines if support for TCP urgent (out-of-band) data should be
+		compiled in.  Urgent data lets an application send and receive a
+		single out-of-band byte using the MSG_OOB flag of send() and
+		recv(), and be notified of its arrival through poll(POLLPRI).
+
+		BSD/Linux semantics are used (equivalent to tcp_stdurg=0): the
+		urgent pointer points one byte past the urgent byte.
+
+		At most one unread urgent byte is tracked per connection.  The
+		byte is never removed from the receive stream; it is skipped when
+		data is copied to the application, so an urgent byte that is
+		superseded by a newer one is delivered as normal data instead of
+		being lost.  With SO_OOBINLINE the byte is not skipped and
+		recv(MSG_OOB) fails with EINVAL, as required by POSIX.
 
 config NET_TCP_CHECKSUMS
 	bool "TCP checksums"

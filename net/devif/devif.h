@@ -128,6 +128,10 @@
  *                   OUT: The socket layer signals that it wants to close the
  *                        connection. (TCP only)
  *
+ *   TCP_URGDATA      IN: An urgent (out-of-band) byte has been received and
+ *                        is available to recv(..., MSG_OOB). (TCP only)
+ *                   OUT: Not used
+ *
  *   NETDEV_DOWN:     IN: The network device has been taken down.
  *                   OUT: Not used
  *
@@ -187,7 +191,7 @@
  *                   OUT: Not used
  */
 
-/* Bits 0-10: Connection specific event bits */
+/* Bits 0-10: Connection specific event bits (see also bit 25) */
 
 #define TCP_ACKDATA        (1 << 0)
 #define TCP_NEWDATA        (1 << 1)
@@ -233,6 +237,16 @@
 #define ICMP_POLL          (1 << 22)
 #define ICMPv6_POLL        (1 << 23)
 #define IPFWD_POLL         (1 << 24)
+
+/* Bit 25: Connection specific event bit.  Defined as zero when urgent data
+ * support is disabled so that callers can test for it unconditionally.
+ */
+
+#ifdef CONFIG_NET_TCPURGDATA
+#  define TCP_URGDATA      (1 << 25)
+#else
+#  define TCP_URGDATA      0
+#endif
 
 /* The set of events that and implications to the TCP connection state */
 

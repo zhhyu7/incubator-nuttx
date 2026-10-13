@@ -74,6 +74,12 @@ if(CONFIG_NET_TCP AND NOT CONFIG_NET_TCP_NO_STACK)
     tcp_ioctl.c
     tcp_shutdown.c)
 
+  # TCP urgent (out-of-band) data
+
+  if(CONFIG_NET_TCPURGDATA)
+    list(APPEND SRCS tcp_urg.c)
+  endif()
+
   # TCP write buffering
 
   if(CONFIG_NET_TCP_WRITE_BUFFERS)
