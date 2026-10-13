@@ -111,6 +111,7 @@ FAR void  *memmem(FAR const void *, size_t,
 
 void explicit_bzero(FAR void *, size_t);
 int timingsafe_bcmp(FAR const void *, FAR const void *, size_t);
+int timingsafe_memcmp(FAR const void *, FAR const void *, size_t);
 
 #ifdef __KERNEL__
 #  define strdup(s)       nx_strdup(s)
