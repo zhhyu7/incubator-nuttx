@@ -1442,10 +1442,12 @@ void note_add(FAR const void *data, size_t len)
           note_do_add(*driver, note, notelen, false);
         }
 
-      /* The note data no longer has alignment padding. */
+      /* The note data from note rpmsg is aligned. When parsing
+       * the data, it is necessary to align the notelen.
+       */
 
-      data += notelen;
-      len -= notelen;
+      data += NOTE_ALIGN(notelen);
+      len -= NOTE_ALIGN(notelen);
     }
 }
 #endif

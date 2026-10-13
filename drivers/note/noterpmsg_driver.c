@@ -168,7 +168,7 @@ static inline uint8_t noterpmsg_remove(FAR struct noterpmsg_driver_s *drv)
   uint8_t notelen = drv->buffer[tail];
 
   DEBUGASSERT(notelen <= noterpmsg_length(drv));
-  drv->tail = noterpmsg_next(drv, tail, notelen);
+  drv->tail = noterpmsg_next(drv, tail, NOTE_ALIGN(notelen));
   return notelen;
 }
 
@@ -212,8 +212,8 @@ static bool noterpmsg_transfer(FAR struct noterpmsg_driver_s *drv,
           len = 0;
           while (len + notelen <= space)
             {
-              pos = noterpmsg_next(drv, pos, notelen);
-              len += notelen;
+              pos = noterpmsg_next(drv, pos, NOTE_ALIGN(notelen));
+              len += NOTE_ALIGN(notelen);
               notelen = drv->buffer[pos];
             }
         }
@@ -229,7 +229,7 @@ static bool noterpmsg_transfer(FAR struct noterpmsg_driver_s *drv,
           rpmsg_release_tx_buffer(&drv->ept, buffer);
         }
 
-      drv->tail = noterpmsg_next(drv, drv->tail, len);
+      drv->tail = noterpmsg_next(drv, drv->tail, NOTE_ALIGN(len));
       spin_unlock_irqrestore_notrace(&drv->lock, flags);
     }
 }
@@ -280,7 +280,7 @@ static ssize_t noterpmsg_add(FAR struct note_driver_s *driver,
   flags = spin_lock_irqsave_notrace(&drv->lock);
 
   space = CONFIG_DRIVERS_NOTERPMSG_BUFSIZE - noterpmsg_length(drv);
-  if (space < notelen)
+  if (space < NOTE_ALIGN(notelen))
     {
       if (!up_interrupt_context() && !sched_idletask())
         {
@@ -307,7 +307,7 @@ static ssize_t noterpmsg_add(FAR struct note_driver_s *driver,
               space = CONFIG_DRIVERS_NOTERPMSG_BUFSIZE -
                       noterpmsg_length(drv);
             }
-          while (space < notelen);
+          while (space < NOTE_ALIGN(notelen));
         }
     }
 
@@ -317,7 +317,7 @@ static ssize_t noterpmsg_add(FAR struct note_driver_s *driver,
   memcpy(drv->buffer + drv->head, note, space);
   memcpy(drv->buffer, note + space, notelen - space);
 
-  drv->head = noterpmsg_next(drv, drv->head, notelen);
+  drv->head = noterpmsg_next(drv, drv->head, NOTE_ALIGN(notelen));
   spin_unlock_irqrestore_notrace(&drv->lock, flags);
 
 #ifdef CONFIG_DRIVERS_NOTE_STATS
