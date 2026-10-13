@@ -116,3 +116,6 @@ child:
 #ifdef __ELF__
 	.size	SYMBOL(up_fork), . - SYMBOL(up_fork)
 #endif
+#ifdef __ELF__
+	.section .note.GNU-stack,"",%progbits
+#endif

@@ -81,14 +81,14 @@
 #endif
 	.data
 	.align	ALIGN
-	GLOBAL	globalNames 
+	GLOBAL	globalNames
 
 SYMBOL(globalNames):
-	SIZE	globalNames 
+	SIZE	globalNames
 
 	.align	ALIGN
 	GLOBAL	nglobals
-SYMBOL(nglobals):	
+SYMBOL(nglobals):
 	.word	0
 	SIZE	nglobals
 
@@ -96,3 +96,4 @@ SYMBOL(nglobals):
 	GLOBAL	global_table
 SYMBOL(global_table):
 	SIZE	global_table
+	.section .note.GNU-stack,"",%progbits

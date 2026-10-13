@@ -445,7 +445,9 @@ ifneq ($(CONFIG_HOST_MACOS),y)
 	         -e 's/^\(\s\+\)\(\.init_array\)/\1\2 : { }\n\1.sinit/g' \
 	         -e 's/^\(\s\+\)\(\.fini_array\)/\1\2 : { }\n\1.einit/g' \
 	         -e 's/__init_array_start/_sinit/g' -e 's/__init_array_end/_einit/g' \
-	         -e 's/__fini_array_start/_sfini/g' -e 's/__fini_array_end/_efini/g' >nuttx.ld
+	         -e 's/__fini_array_start/_sfini/g' -e 's/__fini_array_end/_efini/g' \
+	         -e 's/SEGMENT_START("text-segment", [^)]*)/SEGMENT_START("text-segment", 0x40000000)/g' \
+	         -e 's/ALIGNOF(NEXT_SECTION)/ALIGNOF(.bss)/g' >nuttx.ld
 	$(Q) echo "__init_array_start = .; __init_array_end = .; __fini_array_start = .; __fini_array_end = .;" >>nuttx.ld
 endif
 ifeq ($(CONFIG_OPTEE_OS),y)

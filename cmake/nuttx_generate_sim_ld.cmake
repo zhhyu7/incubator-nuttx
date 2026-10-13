@@ -30,6 +30,14 @@
 # Step 2 let nxtask_startup find objects need to construct
 # Step 3 cheat the host there is no object to construct
 # Note: the destructor can be fixed in the same way.
+#
+# lld rejects GNU ld's ALIGNOF(NEXT_SECTION) builtin; the next output
+# section is always .bss, so the named form is equivalent on both linkers.
+#
+# lld cannot override SEGMENT_START("text-segment", ...)'s default from the
+# command line the way GNU ld's -Ttext-segment does, so the text segment
+# base is pinned here for both linkers; GNU ld's -Ttext-segment, when
+# passed, still takes precedence.
 set(PROCESS_SIM_LD_SCRIPT
     [[
     #!/bin/sh
@@ -41,7 +49,9 @@ set(PROCESS_SIM_LD_SCRIPT
     -e 's/^\(\s\+\)\(\.init_array\)/\1\2 : { }\n\1.sinit/g' \
     -e 's/^\(\s\+\)\(\.fini_array\)/\1\2 : { }\n\1.einit/g' \
     -e 's/__init_array_start/_sinit/g' -e 's/__init_array_end/_einit/g' \
-    -e 's/__fini_array_start/_sfini/g' -e 's/__fini_array_end/_efini/g' > "$target_ld"
+    -e 's/__fini_array_start/_sfini/g' -e 's/__fini_array_end/_efini/g' \
+    -e 's/SEGMENT_START("text-segment", [^)]*)/SEGMENT_START("text-segment", 0x40000000)/g' \
+    -e 's/ALIGNOF(NEXT_SECTION)/ALIGNOF(.bss)/g' > "$target_ld"
     echo "__init_array_start = .; __init_array_end = .; __fini_array_start = .; __fini_array_end = .;" >> "$target_ld"
 ]])
 # cmake-format: on

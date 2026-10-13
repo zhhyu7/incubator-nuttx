@@ -151,3 +151,6 @@ SYMBOL(longjmp):
 #ifdef __ELF__
 	.size SYMBOL(longjmp), . - SYMBOL(longjmp)
 #endif
+#ifdef __ELF__
+	.section .note.GNU-stack,"",%progbits
+#endif
