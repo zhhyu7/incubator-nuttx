@@ -69,6 +69,7 @@
 #include <nuttx/virtio/virtio.h>
 #include <nuttx/drivers/optee.h>
 #include <nuttx/audio/audio_fake.h>
+#include <nuttx/video/video_fake.h>
 #include <nuttx/usb/usbhost.h>
 #include <nuttx/audio/audio_rpmsg.h>
 
@@ -377,6 +378,10 @@ void drivers_initialize(void)
   /* Register fake audio driver */
 
   audio_fake_initialize();
+#endif
+
+#ifdef CONFIG_VIDEO_FAKE
+  video_fake_initialize();
 #endif
 
 #ifdef CONFIG_PTP_CLOCK_DUMMY
