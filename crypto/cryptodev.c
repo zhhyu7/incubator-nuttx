@@ -152,6 +152,8 @@ static int cryptodevkey_cancel(FAR struct fcrypt *,
 static int cryptodevkey_cb(FAR struct cryptkop *);
 static int cryptodev_getkeystatus(FAR struct fcrypt *,
                                   FAR struct crypt_kop *);
+static int cryptodev_clone(FAR struct fcrypt *src,
+                           FAR struct fcrypt **dst);
 
 /****************************************************************************
  * Private Data
@@ -405,6 +407,7 @@ static int cryptof_ioctl(FAR struct file *filep,
   struct cryptoini cria;
   struct cryptoini crie;
   FAR struct fcrypt *fcr = filep->f_priv;
+  FAR struct fcrypt *fcrd;
   FAR struct csession *cse;
   FAR struct session_op *sop;
   FAR struct crypt_op *cop;
@@ -414,6 +417,7 @@ static int cryptof_ioctl(FAR struct file *filep,
   uint64_t sid;
   uint32_t ses;
   int error = 0;
+  int fd;
 
   switch (cmd)
     {
@@ -583,6 +587,23 @@ static int cryptof_ioctl(FAR struct file *filep,
         break;
       case CIOCASYMFEAT:
         error = crypto_getfeat((FAR int *)arg);
+        break;
+      case CIOCCLONE:
+        error = cryptodev_clone(fcr, &fcrd);
+        if (error < 0)
+          {
+            break;
+          }
+
+        fd = file_allocate_from_inode(&g_cryptoinode, 0, 0, fcrd, 0);
+        if (fd < 0)
+          {
+            fcrypt_put(fcrd);
+            error = fd;
+            break;
+          }
+
+        *(FAR uint32_t *)arg = fd;
         break;
       default:
         error = -ENOTTY;
@@ -1377,6 +1398,71 @@ static int cryptodev_getkeystatus(struct fcrypt *fcr, struct crypt_kop *ret)
   return OK;
 }
 
+/* Duplicate every session of src, intermediate state included, into a
+ * new fcrypt that keeps the same user-visible session ids.
+ */
+
+static int cryptodev_clone(FAR struct fcrypt *src,
+                           FAR struct fcrypt **dst)
+{
+  FAR struct fcrypt *fcrd;
+  FAR struct csession *cse;
+  FAR struct csession *csed;
+  uint64_t sid;
+  int ret = 0;
+
+  fcrd = fcrypt_alloc();
+  if (fcrd == NULL)
+    {
+      return -ENOMEM;
+    }
+
+  TAILQ_INIT(&fcrd->csessions);
+  TAILQ_INIT(&fcrd->crp_inflight);
+  TAILQ_INIT(&fcrd->crpk_inflight);
+  TAILQ_INIT(&fcrd->crp_ret);
+  TAILQ_INIT(&fcrd->crpk_ret);
+  atomic_set(&fcrd->refcount, 1);
+  spin_lock_init(&fcrd->lock);
+
+  TAILQ_FOREACH(cse, &src->csessions, next)
+    {
+      ret = crypto_clonesession(cse->sid, &sid);
+      if (ret < 0)
+        {
+          goto bail;
+        }
+
+      csed = csecreate(fcrd, sid,
+                       (caddr_t)cse->key, cse->keylen,
+                       (caddr_t)cse->mackey, cse->mackeylen,
+                       cse->cipher, cse->mac, cse->txform,
+                       cse->thash);
+      if (csed == NULL)
+        {
+          crypto_freesession(sid);
+          ret = -ENOMEM;
+          goto bail;
+        }
+
+      csed->ses = cse->ses;
+    }
+
+  fcrd->sesn = src->sesn;
+  *dst = fcrd;
+  return 0;
+
+bail:
+  while ((csed = TAILQ_FIRST(&fcrd->csessions)))
+    {
+      TAILQ_REMOVE(&fcrd->csessions, csed, next);
+      csefree(csed);
+    }
+
+  fcrypt_free(fcrd);
+  return ret;
+}
+
 /* ARGSUSED */
 
 static int cryptof_poll(FAR struct file *filep,
@@ -1440,101 +1526,22 @@ static int cryptof_close(FAR struct file *filep)
   return 0;
 }
 
-/* Clone csessions into a new fd */
-
 static int cryptof_open(FAR struct file *filep)
 {
-  FAR struct fcrypt *fcr = filep->f_priv;
-  FAR struct fcrypt *fcrd = NULL;
-  FAR struct csession *cse;
-  FAR struct csession *csed;
-  struct cryptoini cria;
-  struct cryptoini crie;
-  uint64_t sid;
-  int ret = 0;
+  FAR struct fcrypt *fcrd;
+  int ret;
 
-  if (fcr == NULL)
+  if (filep->f_priv == NULL)
     {
       return -EINVAL;
     }
 
-  /* A 'struct fcrypt' is bound to the fd of the cryptodev,
-   * which stores a list of sessions. Each encryption operation
-   * would create a context and get a session id, which can be
-   * used to find the specific encryption operation. Therefore,
-   * in order to complete the copy operation, it is necessary to
-   * create same session based on the copy fd and obtain the newly
-   * generated session id.
-   */
-
-  fcrd = fcrypt_alloc();
-  if (fcrd == NULL)
+  ret = cryptodev_clone(filep->f_priv, &fcrd);
+  if (ret == 0)
     {
-      return -ENOMEM;
+      filep->f_priv = fcrd;
     }
 
-  TAILQ_INIT(&fcrd->csessions);
-  TAILQ_INIT(&fcrd->crp_inflight);
-  TAILQ_INIT(&fcrd->crpk_inflight);
-  TAILQ_INIT(&fcrd->crp_ret);
-  TAILQ_INIT(&fcrd->crpk_ret);
-  atomic_set(&fcrd->refcount, 1);
-  spin_lock_init(&fcrd->lock);
-  TAILQ_FOREACH(cse, &fcr->csessions, next)
-    {
-      bzero(&crie, sizeof(crie));
-      bzero(&cria, sizeof(cria));
-      if (cse->txform)
-        {
-          crie.cri_alg = cse->cipher;
-          crie.cri_klen = cse->keylen * 8;
-          crie.cri_key = (caddr_t)cse->key;
-          if (cse->thash)
-            {
-              crie.cri_next = &cria;
-            }
-        }
-
-      if (cse->thash)
-        {
-          cria.cri_alg = cse->mac;
-          cria.cri_sid = cse->sid;
-          cria.cri_klen = cse->mackeylen * 8;
-          cria.cri_key = (caddr_t)cse->mackey;
-        }
-
-      ret = crypto_newsession(&sid, cse->txform ? &crie : &cria, 1);
-      if (ret < 0)
-        {
-          goto bail;
-        }
-
-      csed = csecreate(fcrd, sid,
-                        (caddr_t)cse->key, cse->keylen,
-                        (caddr_t)cse->mackey, cse->mackeylen,
-                        cse->cipher, cse->mac, cse->txform,
-                        cse->thash);
-      if (csed == NULL)
-        {
-          crypto_freesession(sid);
-          ret = -EINVAL;
-          goto bail;
-        }
-
-      csed->ses = cse->ses;
-    }
-
-  filep->f_priv = fcrd;
-  return 0;
-
-bail:
-  while ((csed = TAILQ_FIRST(&fcrd->csessions)))
-    {
-      TAILQ_REMOVE(&fcrd->csessions, csed, next);
-      csefree(csed);
-    }
-
-  fcrypt_free(fcrd);
   return ret;
 }
 
