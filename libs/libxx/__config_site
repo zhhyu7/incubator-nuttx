@@ -29,6 +29,10 @@
 // instead of checking __TASKING__ in libc++ source.
 #  define _LIBCPP_C11_ATOMIC_CONSTANT_ORDER
 
+// The __c11_atomic_ builtins take the delta of an atomic pointer as a byte
+// count rather than scaling it by the pointee size.
+#  define _LIBCPP_C11_ATOMIC_PTR_DELTA_IN_BYTES
+
 // TASKING's __dynamic_cast has different argument types (erased to void *),
 // which should be matched by libcxxabi.
 #  define _LIBCXXABI_DYNAMIC_CAST_UNTYPED_ARGS
