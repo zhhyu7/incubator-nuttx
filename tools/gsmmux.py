@@ -1138,7 +1138,9 @@ class GSMMultiplexer:
             # Some USB-CDC ACM drivers lack TIOCSSERIAL, so failure is benign.
             try:
                 self.serial_port.set_low_latency_mode(True)
-            except (ValueError, OSError, NotImplementedError) as e:
+            except (ValueError, OSError, NotImplementedError, AttributeError) as e:
+                # Windows pyserial has no set_low_latency_mode (AttributeError);
+                # some USB-CDC ACM drivers lack TIOCSSERIAL. All benign.
                 print(f"Warning: low-latency mode unavailable: {e}")
         print(f"Opened serial port: {self.device_path} @ {self.baudrate} baud")
 
