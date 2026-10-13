@@ -258,6 +258,7 @@ __start:
 	cpsid		if
 	ldr		r2, =(CHIP_MPCORE_VBASE + MPCORE_ICD_OFFSET)
 1:
+	yield				/* Let single-threaded TCG run other vCPUs */
 	ldr		r1, [r2, #0x200]
 	tst		r1, #(1 << GIC_CPU_CALL)
 	beq		1b
