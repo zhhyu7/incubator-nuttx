@@ -628,12 +628,8 @@ rpmsg_crypto_process_mac(FAR struct rpmsg_endpoint *ept,
   uint32_t result_len = msg->data.op_flf.mac.hdr.hash_result_len;
   uint32_t space;
 
-  crda->crd_alg = virtio_crypto_get_mac_alg(msg->data.header.algo);
-  if (crda->crd_alg < 0)
-    {
-      return -EINVAL;
-    }
-  else if (crda->crd_alg == CRYPTO_AES_128_CMAC)
+  if (crda->crd_alg == CRYPTO_AES_128_CMAC ||
+      crda->crd_alg == CRYPTO_AES_256_CMAC)
     {
       crde->crd_alg = CRYPTO_AES_CMAC;
       crda->crd_next = crde;
