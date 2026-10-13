@@ -540,14 +540,14 @@ static inline ssize_t uart_irqwrite(FAR uart_dev_t *dev,
    * unmodified.  cfmakeraw() relies on this - it only clears OPOST.
    */
 
-  if ((dev->tc_oflag & OPOST) == 0)
+  if ((dev->termios.oflag & OPOST) == 0)
     {
       nput = uart_putchars(dev, buffer, buflen, oktoblock);
       return (nput == 0 && buflen > 0) ? -EAGAIN : nput;
     }
 
   /* Do output post-processing: locate the next character that requires
-   * translation (CR under OCRNL, NL under ONLCR/ONLRET), emit the run of
+   * translation (CR under OCRNL, NL under ONLCR), emit the run of
    * ordinary bytes before it in one go, then emit the translation.
    */
 
@@ -555,13 +555,14 @@ static inline ssize_t uart_irqwrite(FAR uart_dev_t *dev,
     {
       FAR const char *special = NULL;
       size_t nsent = buflen - offset;
+      char out[2];
 
-      if ((dev->tc_oflag & OCRNL) != 0)
+      if ((dev->termios.oflag & OCRNL) != 0)
         {
           special = memchr(&buffer[offset], '\r', nsent);
         }
 
-      if ((dev->tc_oflag & (ONLCR | ONLRET)) != 0)
+      if ((dev->termios.oflag & ONLCR) != 0)
         {
           FAR const char *nl = memchr(&buffer[offset], '\n', nsent);
           if (nl != NULL && (special == NULL || nl < special))
@@ -589,23 +590,11 @@ static inline ssize_t uart_irqwrite(FAR uart_dev_t *dev,
           break;
         }
 
-      if (buffer[offset] == '\r')
+      nsent = uart_termios_out_char(&dev->termios, buffer[offset],
+                                    out, sizeof(out));
+      if (uart_putchars(dev, out, nsent, oktoblock) != nsent)
         {
-          /* OCRNL: map CR to NL (the CR itself is dropped). */
-
-          if (uart_putchars(dev, "\n", 1, oktoblock) == 0)
-            {
-              return offset > 0 ? offset : -EAGAIN;
-            }
-        }
-      else
-        {
-          /* ONLCR/ONLRET: prepend CR before the NL. */
-
-          if (uart_putchars(dev, "\r\n", 2, oktoblock) != 2)
-            {
-              return offset > 0 ? offset : -EAGAIN;
-            }
+          return offset > 0 ? offset : -EAGAIN;
         }
 
       offset += 1;
@@ -1190,28 +1179,12 @@ static ssize_t uart_readv(FAR struct file *filep, FAR struct uio *uio)
 
           /* Do input processing if any is enabled */
 
-          if (dev->tc_iflag & (INLCR | IGNCR | ICRNL))
+          if (!uart_termios_in_char(&dev->termios, &ch))
             {
-              /* \n -> \r or \r -> \n translation? */
-
-              if ((ch == '\n') && (dev->tc_iflag & INLCR))
-                {
-                  ch = '\r';
-                }
-              else if ((ch == '\r') && (dev->tc_iflag & ICRNL))
-                {
-                  ch = '\n';
-                }
-
-              /* Discarding \r ? */
-
-              if ((ch == '\r') && (dev->tc_iflag & IGNCR))
-                {
-                  continue;
-                }
+              continue;
             }
 
-          if ((dev->tc_lflag & ICANON) &&
+          if ((dev->termios.lflag & ICANON) &&
               (ch == ASCII_BS || ch == ASCII_DEL))
             {
               if (recvd > 0)
@@ -1219,7 +1192,7 @@ static ssize_t uart_readv(FAR struct file *filep, FAR struct uio *uio)
                   static const char zero = '\0';
                   uio_copyfrom(uio, recvd, &zero, 1);
                   recvd--;
-                  if (dev->tc_lflag & ECHO)
+                  if (dev->termios.lflag & ECHO)
                     {
                       nxmutex_lock(&dev->xmit.lock);
                       uart_putxmitchar(dev, '\b', true);
@@ -1253,7 +1226,7 @@ static ssize_t uart_readv(FAR struct file *filep, FAR struct uio *uio)
           uio_copyfrom(uio, recvd, &ch, 1);
           recvd++;
 
-          if (dev->tc_lflag & ECHO)
+          if (dev->termios.lflag & ECHO)
             {
               if (ch == ASCII_ESC)
                 {
@@ -1328,7 +1301,7 @@ static ssize_t uart_readv(FAR struct file *filep, FAR struct uio *uio)
                    * sequence received, but enable the tx interrupt.
                    */
 
-                  if (dev->tc_lflag & ICANON)
+                  if (dev->termios.lflag & ICANON)
                     {
 #ifdef CONFIG_SERIAL_TXDMA
                       flags = uart_spinlock(dev, true);
@@ -1344,7 +1317,7 @@ static ssize_t uart_readv(FAR struct file *filep, FAR struct uio *uio)
                 }
             }
 
-          if ((dev->tc_lflag & ICANON) && ch == '\n')
+          if ((dev->termios.lflag & ICANON) && ch == '\n')
             {
               break;
             }
@@ -1426,7 +1399,7 @@ static ssize_t uart_readv(FAR struct file *filep, FAR struct uio *uio)
                * anything to the caller?
                */
 
-              else if (recvd > 0 && !(dev->tc_lflag & ICANON))
+              else if (recvd > 0 && !(dev->termios.lflag & ICANON))
                 {
                   /* Yes.. break out of the loop and return the number
                    * of bytes received up to the wait condition.
@@ -1480,7 +1453,7 @@ static ssize_t uart_readv(FAR struct file *filep, FAR struct uio *uio)
                    * thread goes to sleep.
                    */
 
-                  if (dev->tc_lflag & ICANON)
+                  if (dev->termios.lflag & ICANON)
                     {
 #ifdef CONFIG_SERIAL_TERMIOS
                       dev->minrecv = 0;
@@ -1663,7 +1636,9 @@ static ssize_t uart_writev(FAR struct file *filep, FAR struct uio *uio)
   bool              oktoblock;
   irqstate_t        flags;
   int               ret;
-  char              ch;
+  char              out[2];
+  size_t            nout;
+  size_t            i;
 
   /* Can the caller block waiting for TX space?  Computed here because the
    * interrupt-context branch below needs it too: an O_NONBLOCK note sink
@@ -1758,7 +1733,7 @@ static ssize_t uart_writev(FAR struct file *filep, FAR struct uio *uio)
   uart_disabletxint(dev);
 
   /* Copy the payload into the TX buffer.  Output post-processing only needs
-   * to translate CR (when OCRNL is set) and NL (when ONLCR/ONLRET is set);
+   * to translate CR (when OCRNL is set) and NL (when ONLCR is set);
    * every other byte is copied verbatim.  So within each iovec segment,
    * locate the next byte that needs translation, bulk-copy everything before
    * it with uart_putxmitbuffer(), then handle that one byte.  When no
@@ -1794,13 +1769,12 @@ static ssize_t uart_writev(FAR struct file *filep, FAR struct uio *uio)
        * raw-mode payloads must go out unmodified).
        */
 
-      if ((dev->tc_oflag & (OPOST | OCRNL)) == (OPOST | OCRNL))
+      if ((dev->termios.oflag & (OPOST | OCRNL)) == (OPOST | OCRNL))
         {
           special = memchr(&segbuf[nseg], '\r', nsent);
         }
 
-      if ((dev->tc_oflag & OPOST) != 0 &&
-          (dev->tc_oflag & (ONLCR | ONLRET)) != 0)
+      if ((dev->termios.oflag & (OPOST | ONLCR)) == (OPOST | ONLCR))
         {
           FAR const char *nl = memchr(&segbuf[nseg], '\n', nsent);
           if (nl != NULL && (special == NULL || nl < special))
@@ -1851,27 +1825,11 @@ static ssize_t uart_writev(FAR struct file *filep, FAR struct uio *uio)
        *   ONOCR  - low-speed interactive optimization
        */
 
-      ch = segbuf[nseg];
-
-      /* Mapping CR to NL? */
-
-      if ((ch == '\r') && (dev->tc_oflag & OCRNL) != 0)
+      nout = uart_termios_out_char(&dev->termios, segbuf[nseg],
+                                   out, sizeof(out));
+      for (i = 0, ret = 0; i < nout && ret >= 0; i++)
         {
-          ch = '\n';
-        }
-
-      /* Are we interested in newline processing? */
-
-      if ((ch == '\n') && (dev->tc_oflag & (ONLCR | ONLRET)) != 0)
-        {
-          ret = uart_putxmitchar(dev, '\r', oktoblock);
-        }
-
-      /* Put the (translated) character into the transmit buffer. */
-
-      if (ret >= 0)
-        {
-          ret = uart_putxmitchar(dev, ch, oktoblock);
+          ret = uart_putxmitchar(dev, out[i], oktoblock);
         }
 
       /* uart_putxmitchar() might return an error under one of three
@@ -2171,9 +2129,7 @@ static int uart_ioctl(FAR struct file *filep, int cmd, unsigned long arg)
 
               /* And update with flags from this layer */
 
-              termiosp->c_iflag = dev->tc_iflag;
-              termiosp->c_oflag = dev->tc_oflag;
-              termiosp->c_lflag = dev->tc_lflag;
+              uart_termios_getattr(&dev->termios, termiosp);
 #ifdef CONFIG_SERIAL_TERMIOS
               termiosp->c_cc[VTIME] = dev->timeout;
               termiosp->c_cc[VMIN] = dev->minread;
@@ -2193,9 +2149,7 @@ static int uart_ioctl(FAR struct file *filep, int cmd, unsigned long arg)
 
               /* Update the flags we keep at this layer */
 
-              dev->tc_iflag = termiosp->c_iflag;
-              dev->tc_oflag = termiosp->c_oflag;
-              dev->tc_lflag = termiosp->c_lflag;
+              uart_termios_setattr(&dev->termios, termiosp);
 #ifdef CONFIG_SERIAL_TERMIOS
               dev->timeout = termiosp->c_cc[VTIME];
               dev->minread = termiosp->c_cc[VMIN];
@@ -2531,15 +2485,15 @@ int uart_register(FAR const char *path, FAR uart_dev_t *dev)
     {
       /* Enable signals and echo by default */
 
-      dev->tc_lflag |= ISIG | ECHO | ICANON;
+      dev->termios.lflag |= ISIG | ECHO | ICANON;
 
       /* Enable \n -> \r\n translation for the console */
 
-      dev->tc_oflag = OPOST | ONLCR;
+      dev->termios.oflag = OPOST | ONLCR;
 
       /* Convert CR to LF by default for console */
 
-      dev->tc_iflag |= ICRNL;
+      dev->termios.iflag |= ICRNL;
 
       /* Clear escape counter */
 
@@ -2733,7 +2687,7 @@ void uart_reset_sem(FAR uart_dev_t *dev)
     defined(CONFIG_TTY_FORCE_PANIC) || defined(CONFIG_TTY_LAUNCH)
 int uart_check_special(FAR uart_dev_t *dev, FAR const char *buf, size_t size)
 {
-  if ((dev->tc_lflag & ISIG) == 0)
+  if ((dev->termios.lflag & ISIG) == 0)
     {
       return 0;
     }
@@ -2748,6 +2702,10 @@ int uart_check_special(FAR uart_dev_t *dev, FAR const char *buf, size_t size)
     {
       FAR const char *special = NULL;
       FAR const char *tmp;
+#if defined(CONFIG_TTY_SIGINT) || defined(CONFIG_TTY_SIGTSTP)
+      FAR const char *sig = NULL;
+      int signo = 0;
+#endif
 
 #ifdef CONFIG_TTY_FORCE_PANIC
       tmp = memchr(buf, CONFIG_TTY_FORCE_PANIC_CHAR, size);
@@ -2768,21 +2726,12 @@ int uart_check_special(FAR uart_dev_t *dev, FAR const char *buf, size_t size)
 #if defined(CONFIG_TTY_SIGINT) || defined(CONFIG_TTY_SIGTSTP)
       if (dev->pid > 0)
         {
-#ifdef CONFIG_TTY_SIGINT
-          tmp = memchr(buf, CONFIG_TTY_SIGINT_CHAR, size);
+          tmp = uart_termios_isig_find(&dev->termios, buf, size, &signo);
           if (tmp != NULL && (special == NULL || tmp < special))
             {
               special = tmp;
+              sig     = tmp;
             }
-#endif
-
-#ifdef CONFIG_TTY_SIGTSTP
-          tmp = memchr(buf, CONFIG_TTY_SIGTSTP_CHAR, size);
-          if (tmp != NULL && (special == NULL || tmp < special))
-            {
-              special = tmp;
-            }
-#endif
         }
 #endif
 
@@ -2824,17 +2773,10 @@ int uart_check_special(FAR uart_dev_t *dev, FAR const char *buf, size_t size)
         }
 #endif
 
-#ifdef CONFIG_TTY_SIGINT
-      if (*special == CONFIG_TTY_SIGINT_CHAR)
+#if defined(CONFIG_TTY_SIGINT) || defined(CONFIG_TTY_SIGTSTP)
+      if (special == sig)
         {
-          return SIGINT;
-        }
-#endif
-
-#ifdef CONFIG_TTY_SIGTSTP
-      if (*special == CONFIG_TTY_SIGTSTP_CHAR)
-        {
-          return SIGTSTP;
+          return signo;
         }
 #endif
 

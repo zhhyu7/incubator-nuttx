@@ -348,9 +348,7 @@ struct uart_dev_s
 
   /* Terminal control flags */
 
-  tcflag_t             tc_iflag;     /* Input modes */
-  tcflag_t             tc_oflag;     /* Output modes */
-  tcflag_t             tc_lflag;     /* Local modes */
+  struct uart_termios_s termios;
 
   /* Semaphores & mutex */
 
