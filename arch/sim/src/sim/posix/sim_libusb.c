@@ -392,16 +392,27 @@ static int host_libusb_ep0outhandle(struct host_libusb_hostdev_s *dev,
             case USB_REQ_SET_CONFIGURATION:
               {
                 struct libusb_config_descriptor *config = NULL;
+                int cfg = 0;
                 int i;
 
-                ret = host_uninterruptible(libusb_set_configuration,
-                                           dev->handle,
-                                           ctrlreq->wValue);
-                if (ret < 0 && ret != LIBUSB_ERROR_NOT_FOUND &&
-                    ret != LIBUSB_ERROR_BUSY)
+                /* Switching configuration fails once an interface is claimed
+                 * or while usbfs holds the device; only switch when not yet
+                 * in the requested configuration.
+                 */
+
+                ret = host_uninterruptible(libusb_get_configuration,
+                                           dev->handle, &cfg);
+                if (ret == LIBUSB_SUCCESS && cfg != ctrlreq->wValue)
                   {
-                    ERROR("set_configuration failed: %d\n", ret);
-                    return ret;
+                    ret = host_uninterruptible(libusb_set_configuration,
+                                               dev->handle,
+                                               ctrlreq->wValue);
+                    if (ret < 0 && ret != LIBUSB_ERROR_NOT_FOUND &&
+                        ret != LIBUSB_ERROR_BUSY)
+                      {
+                        ERROR("set_configuration failed: %d\n", ret);
+                        return ret;
+                      }
                   }
 
                 /* Claim all interfaces so that SET_INTERFACE can
@@ -431,6 +442,14 @@ static int host_libusb_ep0outhandle(struct host_libusb_hostdev_s *dev,
               ret = host_uninterruptible(libusb_set_interface_alt_setting,
                                          dev->handle, ctrlreq->wIndex,
                                          ctrlreq->wValue);
+              break;
+            case USB_REQ_SET_ADDRESS:
+
+              /* The host kernel owns addressing; just ack so enumeration
+               * proceeds past the addressing phase.
+               */
+
+              ret = LIBUSB_SUCCESS;
               break;
             default:
               ERROR("Unsupported standard request: 0x%02X\n",
