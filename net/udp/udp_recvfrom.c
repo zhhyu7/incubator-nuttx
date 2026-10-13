@@ -186,13 +186,15 @@ static inline void udp_readahead(struct udp_recvfrom_s *pstate)
       int recvlen;
       int offset = 0;
       uint16_t datalen = 0;
-      uint8_t src_addr_size;
+      uint8_t src_addr_size = 0;
       uint8_t ifindex;
 #ifdef CONFIG_NET_IPv6
       uint8_t srcaddr[sizeof(struct sockaddr_in6)];
 #else
       uint8_t srcaddr[sizeof(struct sockaddr_in)];
 #endif
+
+      memset(srcaddr, 0, sizeof(srcaddr));
 
       /* Unflatten saved connection information
        * Layout: |datalen|ifindex|src_addr_size|src_addr|[timestamp]|data|
