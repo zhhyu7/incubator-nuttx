@@ -1037,7 +1037,7 @@ struct sensor_voltage       /* Type: Voltage */
 struct sensor_current       /* Type: Current */
 {
   uint64_t timestamp;       /* Unit is microseconds */
-  float current;            /* in SI units A, signed */
+  float current_a;          /* in SI units A, signed */
 };
 
 struct sensor_power         /* Type: Power */
