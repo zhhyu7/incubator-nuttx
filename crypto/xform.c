@@ -166,7 +166,7 @@ struct aes_xts_ctx
 struct aes_ofb_ctx
 {
   AES_CTX ac_key;
-  FAR uint8_t *iv;
+  uint8_t iv[AESOFB_IVSIZE];
 };
 
 struct crc8_ctx
@@ -882,7 +882,7 @@ void aes_ofb_reinit(FAR void *key, FAR uint8_t *iv)
   FAR struct aes_ofb_ctx *ctx;
 
   ctx = key;
-  ctx->iv = iv;
+  bcopy(iv, ctx->iv, AESOFB_IVSIZE);
 }
 
 void aes_cfb8_encrypt(FAR void *key, FAR uint8_t *data, size_t len)
