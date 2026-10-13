@@ -2152,7 +2152,19 @@ skip_rtt:
             if ((conn->shutdown & SHUT_DEAD) != 0)
               {
                 nwarn("WARNING: Data received after close in FIN_WAIT_2\n");
-                goto reset;
+
+                /* The RST tells the peer the connection is gone, which also
+                 * strips its ability to ever send us a FIN (an RST moves a
+                 * peer sitting in CLOSE_WAIT straight to CLOSED).  Tear the
+                 * local end down with it instead of staying in FIN_WAIT_2
+                 * waiting for a FIN that can no longer arrive, which would
+                 * hold the port for the whole FIN_WAIT_2 timeout.
+                 */
+
+                conn->tcpstateflags = TCP_CLOSED;
+                tcp_callback(dev, conn, TCP_ABORT);
+                tcp_reset(dev, conn);
+                return;
               }
 
             result = tcp_callback(dev, conn, TCP_NEWDATA);
