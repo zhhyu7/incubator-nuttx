@@ -575,6 +575,26 @@ int fdt_sp804_devices_register(FAR const void *fdt, int irqbase);
 #endif
 
 /****************************************************************************
+ * Name: fdt_pl031_devices_register
+ *
+ * Description:
+ *   This function scans the device tree for nodes with compatible
+ *   "arm,pl031" and registers each as an RTC character device (/dev/rtcN).
+ *
+ * Input Parameters:
+ *   fdt      - Device tree handle
+ *   irqbase  - Interrupt base number
+ *
+ * Returned Value:
+ *   Return 0 if success, negative if failed
+ *
+ ****************************************************************************/
+
+#if defined(CONFIG_RTC_PL031)
+int fdt_pl031_devices_register(FAR const void *fdt, int irqbase);
+#endif
+
+/****************************************************************************
  * Name: fdt_imx_gpt_devices_register
  *
  * Description:

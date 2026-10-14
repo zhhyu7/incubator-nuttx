@@ -53,6 +53,10 @@ if(CONFIG_DEVICE_TREE)
     list(APPEND SRCS fdt_cmsdk_wdt.c)
   endif()
 
+  if(CONFIG_RTC_PL031)
+    list(APPEND SRCS fdt_pl031.c)
+  endif()
+
   if(CONFIG_QEMU_FWCFG)
     list(APPEND SRCS fdt_qemu_fwcfg.c)
   endif()

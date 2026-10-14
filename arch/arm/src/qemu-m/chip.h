@@ -34,4 +34,18 @@
 
 #define ARM_PERIPHERAL_INTERRUPTS NR_IRQS
 
+/* The QEMU virt-m machine writes the generated device tree into guest RAM at
+ * this fixed base (VIRT_M_DTB_BASE in the QEMU machine); it is registered in
+ * the chip boot path (qemu_m_start.c) and consumed by the board FDT hooks.
+ */
+
+#define QEMU_M_DTB_BASE           0x20000000
+
+/* NVIC external interrupts start at vector 16, so the guest IRQ number of a
+ * device is its DTB "interrupts" line + 16.  This mirrors the A/R chip's
+ * QEMU_SPI_IRQ_BASE (32 for the GIC); the fdt_* hooks are reused unchanged.
+ */
+
+#define QEMU_M_IRQ_BASE           16
+
 #endif /* __ARCH_ARM_SRC_QEMU_M_CHIP_H */

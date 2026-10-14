@@ -30,3 +30,7 @@ CHIP_CSRCS += qemu_m_irq.c
 CHIP_CSRCS += qemu_m_timer.c
 CHIP_CSRCS += qemu_m_allocateheap.c
 CHIP_CSRCS += qemu_m_cpuindex.c
+
+ifeq ($(CONFIG_RTC),y)
+CHIP_CSRCS += qemu_m_rtc.c
+endif

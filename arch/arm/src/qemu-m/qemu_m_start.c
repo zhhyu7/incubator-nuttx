@@ -27,7 +27,12 @@
 
 #include <arch/board/board.h>
 
+#if defined(CONFIG_LIBC_FDT) && defined(CONFIG_DEVICE_TREE)
+#  include <nuttx/fdt.h>
+#endif
+
 #include "arm_internal.h"
+#include "chip.h"
 #include "nvic.h"
 #include "mpu.h"
 
@@ -123,6 +128,16 @@ void __start(void)
    */
 
   mpu_control(true, false, true);
+#endif
+
+  /* Register the QEMU-generated device tree so the board FDT hooks can
+   * discover the peripherals later in bring-up.  Same role as the A/R chip's
+   * qemu_boot.c fdt_register(); M-profile has no bootloader-supplied DTB
+   * pointer, so the base is the fixed VIRT_M_DTB_BASE.
+   */
+
+#if defined(CONFIG_LIBC_FDT) && defined(CONFIG_DEVICE_TREE)
+  fdt_register((const char *)QEMU_M_DTB_BASE);
 #endif
 
   /* Then start NuttX */

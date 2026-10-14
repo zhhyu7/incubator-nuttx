@@ -57,6 +57,10 @@ ifeq ($(CONFIG_WATCHDOG_CMSDK),y)
   CSRCS += fdt_cmsdk_wdt.c
 endif
 
+ifeq ($(CONFIG_RTC_PL031),y)
+  CSRCS += fdt_pl031.c
+endif
+
 ifeq ($(CONFIG_QEMU_FWCFG),y)
   CSRCS += fdt_qemu_fwcfg.c
 endif

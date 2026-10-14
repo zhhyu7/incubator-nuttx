@@ -25,4 +25,8 @@
 set(SRCS qemu_m_start.c qemu_m_serial.c qemu_m_irq.c qemu_m_timer.c
          qemu_m_allocateheap.c qemu_m_cpuindex.c)
 
+if(CONFIG_RTC)
+  list(APPEND SRCS qemu_m_rtc.c)
+endif()
+
 target_sources(arch PRIVATE ${SRCS})
