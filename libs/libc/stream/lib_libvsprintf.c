@@ -98,6 +98,8 @@
 #define FL_FLTEXP          0x4000
 #define FL_FLTFIX          0x8000
 
+#define FL_LONGDOUBLE      0x10000
+
 #define TYPE_INT           1
 #define TYPE_LONG          2
 #define TYPE_LONG_LONG     3
@@ -160,7 +162,7 @@ static int vsprintf_internal(FAR struct lib_outstream_s *stream,
                              FAR const IPTR char *fmt, va_list ap)
 {
   unsigned char c; /* Holds a char from the format string */
-  uint16_t flags;
+  uint32_t flags;
   int width;
   int prec;
   union
@@ -448,6 +450,16 @@ static int vsprintf_internal(FAR struct lib_outstream_s *stream,
                   flags |= FL_LONG;
                 }
 
+              /* The uppercase 'L' modifier selects long double for
+               * floating-point conversions.  Record it separately so the
+               * float argument is fetched with the correct size.
+               */
+
+              if (c == 'L')
+                {
+                  flags |= FL_LONGDOUBLE;
+                }
+
               flags &= ~FL_SHORT;
               continue;
             }
@@ -619,13 +631,30 @@ flt_oper:
             {
               value = arglist->value[argnumber - 1].d;
             }
+          else if ((flags & FL_LONGDOUBLE) != 0)
+            {
+              /* Fetch the argument as a long double so the stack is advanced
+               * by the correct size, then narrow to double for formatting.
+               * On targets where long double == double this is a no-op.
+               */
+
+              value = (double)va_arg(ap, long double);
+            }
           else
             {
               value = va_arg(ap, double);
             }
 #else
-          value = va_arg(ap, double);
+          if ((flags & FL_LONGDOUBLE) != 0)
+            {
+              value = (double)va_arg(ap, long double);
+            }
+          else
+            {
+              value = va_arg(ap, double);
+            }
 #endif
+
           ndigs = __dtoa_engine(value, &_dtoa, ndigs,
                                 ndecimal, radix);
           exp = _dtoa.exp;
