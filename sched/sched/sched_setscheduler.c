@@ -175,6 +175,16 @@ int nxsched_set_scheduler(pid_t pid, int policy,
            * while we set up scheduling policy.
            */
 
+#if CONFIG_RR_INTERVAL > 0
+          /* Cancel any on-going round-robin scheduling */
+
+          if ((atomic_read(&tcb->flags) & TCB_FLAG_POLICY_MASK) ==
+              TCB_FLAG_SCHED_RR)
+            {
+              nxsched_stop_roundrobin(tcb);
+            }
+#endif
+
 #ifdef CONFIG_SCHED_SPORADIC
           uint32_t flags =
 #endif
@@ -203,21 +213,17 @@ int nxsched_set_scheduler(pid_t pid, int policy,
                   }
 #endif
 
-                /* Set the new policy flag */
+#if CONFIG_RR_INTERVAL > 0
+                if (policy == SCHED_RR)
+                  {
+                    nxsched_start_roundrobin(tcb);
+                    break;
+                  }
+#endif
 
-                atomic_or(&tcb->flags,
-                                policy << TCB_FLAG_POLICY_SHIFT);
-
-                /* Configure timeslice based on policy */
+                atomic_or(&tcb->flags, TCB_FLAG_SCHED_FIFO);
 #if CONFIG_RR_INTERVAL > 0 || defined(CONFIG_SCHED_SPORADIC)
-                if (policy == SCHED_FIFO)
-                  {
-                    tcb->timeslice = 0;
-                  }
-                else
-                  {
-                    tcb->timeslice = MSEC2TICK(CONFIG_RR_INTERVAL);
-                  }
+                tcb->timeslice = 0;
 #endif
                 break;
 

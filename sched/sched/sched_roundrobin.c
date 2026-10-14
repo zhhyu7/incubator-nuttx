@@ -336,3 +336,139 @@ void nxsched_suspend_roundrobin(FAR struct tcb_s *tcb, clock_t now)
 }
 
 #endif /* CONFIG_SCHED_TICKLESS */
+
+#if defined(CONFIG_SMP) && defined(CONFIG_SCHED_TICKLESS)
+struct roundrobin_policy_s
+{
+  FAR struct tcb_s *tcb;
+  bool              rr;
+};
+#endif
+
+/* Must run on the CPU of a running task, in a critical section, so that
+ * neither the timer callback nor a switch sees the policy change half
+ * done.
+ */
+
+static void roundrobin_set_policy(FAR struct tcb_s *tcb, bool rr)
+{
+#ifdef CONFIG_SCHED_TICKLESS
+  bool    running = tcb == this_task();
+  clock_t now     = clock_systime_ticks();
+
+  if (running && (atomic_read(&tcb->flags) & TCB_FLAG_POLICY_MASK) ==
+                 TCB_FLAG_SCHED_RR)
+    {
+      nxsched_suspend_roundrobin(tcb, now);
+    }
+#endif
+
+  atomic_and(&tcb->flags, ~TCB_FLAG_POLICY_MASK);
+  if (rr)
+    {
+      atomic_or(&tcb->flags, TCB_FLAG_SCHED_RR);
+      tcb->timeslice = MSEC2TICK(CONFIG_RR_INTERVAL);
+    }
+  else
+    {
+      tcb->timeslice = 0;
+    }
+
+#ifdef CONFIG_SCHED_TICKLESS
+  if (running && rr)
+    {
+      nxsched_resume_roundrobin(tcb, now);
+    }
+#endif
+}
+
+#if defined(CONFIG_SMP) && defined(CONFIG_SCHED_TICKLESS)
+static int roundrobin_policy_handler(FAR void *cookie)
+{
+  FAR struct roundrobin_policy_s *arg = cookie;
+  irqstate_t flags = enter_critical_section();
+
+  roundrobin_set_policy(arg->tcb, arg->rr);
+  leave_critical_section(flags);
+  return OK;
+}
+#endif
+
+static void roundrobin_switch_policy(FAR struct tcb_s *tcb, bool rr)
+{
+  irqstate_t flags = enter_critical_section();
+
+#if defined(CONFIG_SMP) && defined(CONFIG_SCHED_TICKLESS)
+  /* The RR timer is per-CPU, so a task running on another CPU is updated
+   * there.  It stays pinned to that CPU until the call has completed.
+   */
+
+  if (tcb->task_state == TSTATE_TASK_RUNNING && tcb->cpu != this_cpu())
+    {
+      struct roundrobin_policy_s arg;
+      bool locked;
+
+      arg.tcb = tcb;
+      arg.rr  = rr;
+      locked  = (atomic_or(&tcb->flags, TCB_FLAG_CPU_LOCKED) &
+                 TCB_FLAG_CPU_LOCKED) != 0;
+
+      if (nxsched_cpu_call_single(tcb->cpu, roundrobin_policy_handler,
+                                  &arg) < 0)
+        {
+          roundrobin_set_policy(tcb, rr);
+        }
+
+      if (!locked)
+        {
+          atomic_and(&tcb->flags, ~TCB_FLAG_CPU_LOCKED);
+        }
+    }
+  else
+#endif
+    {
+      roundrobin_set_policy(tcb, rr);
+    }
+
+  leave_critical_section(flags);
+}
+
+/****************************************************************************
+ * Name:  nxsched_start_roundrobin
+ *
+ * Description:
+ *   Switch a thread to round-robin scheduling.  If the thread is running,
+ *   the round-robin timer of its CPU is armed for it immediately.
+ *
+ * Input Parameters:
+ *   tcb - The TCB of the thread to start.
+ *
+ * Returned Value:
+ *   None
+ *
+ ****************************************************************************/
+
+void nxsched_start_roundrobin(FAR struct tcb_s *tcb)
+{
+  roundrobin_switch_policy(tcb, true);
+}
+
+/****************************************************************************
+ * Name:  nxsched_stop_roundrobin
+ *
+ * Description:
+ *   Terminate round-robin scheduling on a thread.  If the thread is
+ *   running, the round-robin timer of its CPU is dropped immediately.
+ *
+ * Input Parameters:
+ *   tcb - The TCB of the thread to stop.
+ *
+ * Returned Value:
+ *   None
+ *
+ ****************************************************************************/
+
+void nxsched_stop_roundrobin(FAR struct tcb_s *tcb)
+{
+  roundrobin_switch_policy(tcb, false);
+}
