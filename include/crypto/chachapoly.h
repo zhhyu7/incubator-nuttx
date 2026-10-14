@@ -33,9 +33,9 @@ struct chacha20_ctx
 };
 
 int chacha20_setkey(FAR void *, FAR uint8_t *, int);
-void chacha20_reinit(FAR void *, FAR uint8_t *);
+void chacha20_reinit(FAR void *, FAR uint8_t *, uint16_t);
 void chacha20_crypt(FAR void *, FAR uint8_t *, size_t);
-void chachapoly_reinit(FAR void *, FAR uint8_t *);
+void chachapoly_reinit(FAR void *, FAR uint8_t *, uint16_t);
 
 #define POLY1305_KEYLEN 64
 #define POLY1305_TAGLEN 16

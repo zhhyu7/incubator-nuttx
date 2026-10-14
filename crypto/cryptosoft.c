@@ -1044,7 +1044,7 @@ int swcr_encdec(FAR struct cryptop *crp, FAR struct cryptodesc *crd,
 
   if (exf->reinit && !(crd->crd_flags & CRD_F_UPDATE))
     {
-      exf->reinit(sw->sw_kschedule, iv);
+      exf->reinit(sw->sw_kschedule, iv, ivlen);
     }
 
   i = crd->crd_len;
@@ -1272,6 +1272,11 @@ int swcr_authenc(FAR struct cryptop *crp)
 
   if (crp->crp_iv)
     {
+      if (crp->crp_ivlen > 0)
+        {
+          ivlen = crp->crp_ivlen;
+        }
+
       if (axf->reinit)
         {
           swa->sw_aadlen = 0;
@@ -1282,7 +1287,7 @@ int swcr_authenc(FAR struct cryptop *crp)
         {
           swe->sw_enclen = 0;
           exf->reinit(swe->sw_kschedule,
-                      (FAR uint8_t *)crp->crp_iv);
+                      (FAR uint8_t *)crp->crp_iv, ivlen);
         }
     }
 
@@ -1311,6 +1316,13 @@ int swcr_authenc(FAR struct cryptop *crp)
           bcopy(crda->crd_esn, blk + 4, 4);
           oskip = iskip + 4; /* offset output buffer blk by 8 */
         }
+      else
+        {
+          /* The MAC pads the AAD itself, so it may be split over requests */
+
+          axf->update(&ctx, (FAR uint8_t *)aad, crp->crp_aadlen);
+          iskip = crp->crp_aadlen;
+        }
 
       for (i = iskip; i < crp->crp_aadlen; i += axf->hashsize)
         {
@@ -1328,6 +1340,13 @@ int swcr_authenc(FAR struct cryptop *crp)
 
   if (buf)
     {
+      /* An empty update closes the AAD before the first payload block */
+
+      if (swe->sw_enclen == 0)
+        {
+          axf->update(&ctx, NULL, 0);
+        }
+
       swe->sw_enclen += crde->crd_len;
       for (i = 0; i < crde->crd_len; i += blksz)
         {

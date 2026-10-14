@@ -75,7 +75,7 @@ struct enc_xform
   CODE void (*encrypt)(FAR void *, FAR uint8_t *, size_t);
   CODE void (*decrypt)(FAR void *, FAR uint8_t *, size_t);
   CODE int  (*setkey)(FAR void *, FAR uint8_t *, int len);
-  CODE void (*reinit)(FAR void *, FAR uint8_t *);
+  CODE void (*reinit)(FAR void *, FAR uint8_t *, uint16_t);
 };
 
 struct comp_algo

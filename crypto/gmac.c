@@ -32,6 +32,7 @@
 
 #include <assert.h>
 #include <endian.h>
+#include <string.h>
 #include <strings.h>
 #include <sys/param.h>
 #include <crypto/aes.h>
@@ -150,14 +151,7 @@ void aes_gmac_reinit(FAR void *xctx, FAR const uint8_t *iv, uint16_t ivlen)
 {
   FAR AES_GMAC_CTX *ctx = xctx;
 
-  /* Standard GCM uses 12-byte IV */
-
-  DEBUGASSERT(ivlen <= GMAC_BLOCK_LEN);
-  bcopy(iv, ctx->J, MIN(ivlen, GMAC_BLOCK_LEN));
-  ctx->J[12] = 0;
-  ctx->J[13] = 0;
-  ctx->J[14] = 0;
-  ctx->J[15] = 1;
+  aes_gcm_j0(ctx->ghash.H, iv, ivlen, ctx->J);
 }
 
 int aes_gmac_update(FAR void *xctx, FAR const uint8_t *data, size_t len)
@@ -209,7 +203,6 @@ void aes_gmac_final(FAR uint8_t *digest, FAR void *xctx)
 
   /* do one round of GCTR */
 
-  ctx->J[GMAC_BLOCK_LEN - 1] = 1;
   aes_encrypt(&ctx->K, ctx->J, keystream);
   for (i = 0; i < GMAC_DIGEST_LEN; i++)
     {
@@ -217,4 +210,45 @@ void aes_gmac_final(FAR uint8_t *digest, FAR void *xctx)
     }
 
   explicit_bzero(keystream, sizeof(keystream));
+}
+
+/* Pre-counter block J0 (NIST SP 800-38D 7.1): IV || 0^31 || 1 for a
+ * 96-bit IV, GHASH_H(IV || 0^s || 0^64 || [len(IV)]64) otherwise.
+ */
+
+void aes_gcm_j0(FAR const uint8_t *h, FAR const uint8_t *iv, size_t ivlen,
+                FAR uint8_t *j0)
+{
+  uint8_t blk[GMAC_BLOCK_LEN];
+  GHASH_CTX ghash;
+  uint64_t bits;
+  size_t off;
+  size_t n;
+
+  if (ivlen == 12)
+    {
+      memcpy(j0, iv, ivlen);
+      memset(j0 + ivlen, 0, GMAC_BLOCK_LEN - ivlen - 1);
+      j0[GMAC_BLOCK_LEN - 1] = 1;
+      return;
+    }
+
+  memset(&ghash, 0, sizeof(ghash));
+  memcpy(ghash.H, h, GMAC_BLOCK_LEN);
+
+  for (off = 0; off < ivlen; off += n)
+    {
+      n = MIN(ivlen - off, GMAC_BLOCK_LEN);
+      memset(blk, 0, sizeof(blk));
+      memcpy(blk, iv + off, n);
+      (*ghash_update)(&ghash, blk, GMAC_BLOCK_LEN);
+    }
+
+  memset(blk, 0, sizeof(blk));
+  bits = htobe64((uint64_t)ivlen * 8);
+  memcpy(blk + 8, &bits, sizeof(bits));
+  (*ghash_update)(&ghash, blk, GMAC_BLOCK_LEN);
+
+  memcpy(j0, ghash.S, GMAC_BLOCK_LEN);
+  explicit_bzero(&ghash, sizeof(ghash));
 }

@@ -55,5 +55,7 @@ void aes_gmac_setkey(FAR void *, FAR const uint8_t *, uint16_t);
 void aes_gmac_reinit(FAR void *, FAR const uint8_t *, uint16_t);
 int aes_gmac_update(FAR void *, FAR const uint8_t *, size_t);
 void aes_gmac_final(FAR uint8_t *, FAR void *);
+void aes_gcm_j0(FAR const uint8_t *, FAR const uint8_t *, size_t,
+                FAR uint8_t *);
 
 #endif /* __INCLUDE_CRYPTO_GMAC_H */

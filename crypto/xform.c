@@ -122,11 +122,11 @@ void aes_cfb128_decrypt(FAR void *, FAR uint8_t *, size_t);
 
 void aes_ctr_crypt(FAR void *, FAR uint8_t *, size_t);
 
-void aes_reinit_xform(FAR void *, FAR uint8_t *);
-void aes_ctr_reinit(FAR void *, FAR uint8_t *);
-void aes_xts_reinit(FAR void *, FAR uint8_t *);
-void aes_gcm_reinit(FAR void *, FAR uint8_t *);
-void aes_ofb_reinit(FAR void *, FAR uint8_t *);
+void aes_reinit_xform(FAR void *, FAR uint8_t *, uint16_t);
+void aes_ctr_reinit(FAR void *, FAR uint8_t *, uint16_t);
+void aes_xts_reinit(FAR void *, FAR uint8_t *, uint16_t);
+void aes_gcm_reinit(FAR void *, FAR uint8_t *, uint16_t);
+void aes_ofb_reinit(FAR void *, FAR uint8_t *, uint16_t);
 
 void null_init(FAR void *);
 void poly1305_setkey(FAR void *, FAR const uint8_t *, uint16_t);
@@ -154,6 +154,8 @@ struct aes_ctr_ctx
 {
   AES_CTX ac_key;
   uint8_t ac_block[AESCTR_BLOCKSIZE];
+  uint8_t ac_ks[AESCTR_BLOCKSIZE];
+  uint8_t ac_ksoff;
 };
 
 struct aes_xts_ctx
@@ -689,7 +691,7 @@ int aes_setkey_xform(FAR void *sched, FAR uint8_t *key, int len)
   return aes_setkey(sched, key, len);
 }
 
-void aes_reinit_xform(FAR void *key, FAR uint8_t *iv)
+void aes_reinit_xform(FAR void *key, FAR uint8_t *iv, uint16_t ivlen)
 {
   FAR AES_CTX *ctx;
 
@@ -697,59 +699,75 @@ void aes_reinit_xform(FAR void *key, FAR uint8_t *iv)
   bcopy(iv, ctx->iv, RIJNDAEL128_BLOCK_LEN);
 }
 
-void aes_ctr_reinit(FAR void *key, FAR uint8_t *iv)
+void aes_ctr_reinit(FAR void *key, FAR uint8_t *iv, uint16_t ivlen)
 {
   FAR struct aes_ctr_ctx *ctx;
 
   ctx = key;
   bcopy(iv, ctx->ac_block, AESCTR_BLOCKSIZE);
+  ctx->ac_ksoff = AESCTR_BLOCKSIZE;
 }
 
-void aes_gcm_reinit(FAR void *key, FAR uint8_t *iv)
+void aes_gcm_reinit(FAR void *key, FAR uint8_t *iv, uint16_t ivlen)
 {
   FAR struct aes_ctr_ctx *ctx;
-
-  ctx = key;
-  bcopy(iv, ctx->ac_block, AESCTR_NONCESIZE + AESCTR_IVSIZE);
-
-  /* reset counter */
-
-  bzero(ctx->ac_block + AESCTR_NONCESIZE + AESCTR_IVSIZE, 4);
-
-  /* In standard GCM, the tag uses J0 = ...||1, while payload GCTR uses
-   * counter after generating the keystream, we must start the counter at 2.
-   */
-
-  ctx->ac_block[AESCTR_BLOCKSIZE - 1] = 2;
-}
-
-void aes_ctr_crypt(FAR void *key, FAR uint8_t *data, size_t len)
-{
-  FAR struct aes_ctr_ctx *ctx;
-  uint8_t keystream[AESCTR_BLOCKSIZE];
+  uint8_t h[AESCTR_BLOCKSIZE];
   int i;
 
   ctx = key;
 
-  aes_encrypt(&ctx->ac_key, ctx->ac_block, keystream);
-  for (i = 0; i < AESCTR_BLOCKSIZE; i++)
+  /* The tag uses J0; the payload GCTR starts at inc32(J0). */
+
+  memset(h, 0, sizeof(h));
+  if (ivlen != 12)
     {
-      data[i] ^= keystream[i];
+      aes_encrypt(&ctx->ac_key, h, h);
     }
 
-  explicit_bzero(keystream, sizeof(keystream));
-
-  /* increment counter */
+  aes_gcm_j0(h, iv, ivlen, ctx->ac_block);
+  explicit_bzero(h, sizeof(h));
 
   for (i = AESCTR_BLOCKSIZE - 1;
-        i >= AESCTR_NONCESIZE + AESCTR_IVSIZE; i--)
-    {
-      /* continue on overflow */
+       i >= AESCTR_NONCESIZE + AESCTR_IVSIZE && ++ctx->ac_block[i] == 0;
+       i--);
 
-      if (++ctx->ac_block[i])
+  ctx->ac_ksoff = AESCTR_BLOCKSIZE;
+}
+
+/* Keep the unused tail of the keystream block, so that a request ending
+ * mid-block is continued by the next request on the same session.
+ */
+
+void aes_ctr_crypt(FAR void *key, FAR uint8_t *data, size_t len)
+{
+  FAR struct aes_ctr_ctx *ctx;
+  size_t n;
+  int i;
+
+  ctx = key;
+
+  for (n = 0; n < len; n++)
+    {
+      if (ctx->ac_ksoff >= AESCTR_BLOCKSIZE)
         {
-          break;
+          aes_encrypt(&ctx->ac_key, ctx->ac_block, ctx->ac_ks);
+          ctx->ac_ksoff = 0;
+
+          /* increment counter */
+
+          for (i = AESCTR_BLOCKSIZE - 1;
+                i >= AESCTR_NONCESIZE + AESCTR_IVSIZE; i--)
+            {
+              /* continue on overflow */
+
+              if (++ctx->ac_block[i])
+                {
+                  break;
+                }
+            }
         }
+
+      data[n] ^= ctx->ac_ks[ctx->ac_ksoff++];
     }
 }
 
@@ -769,10 +787,11 @@ int aes_ctr_setkey(FAR void *sched, FAR uint8_t *key, int len)
     }
 
   bcopy(key + len - AESCTR_NONCESIZE, ctx->ac_block, AESCTR_NONCESIZE);
+  ctx->ac_ksoff = AESCTR_BLOCKSIZE;
   return 0;
 }
 
-void aes_xts_reinit(FAR void *key, FAR uint8_t *iv)
+void aes_xts_reinit(FAR void *key, FAR uint8_t *iv, uint16_t ivlen)
 {
   FAR struct aes_xts_ctx *ctx = key;
 
@@ -877,7 +896,7 @@ int aes_ofb_setkey(FAR void *sched, FAR uint8_t *key, int len)
   return 0;
 }
 
-void aes_ofb_reinit(FAR void *key, FAR uint8_t *iv)
+void aes_ofb_reinit(FAR void *key, FAR uint8_t *iv, uint16_t ivlen)
 {
   FAR struct aes_ofb_ctx *ctx;
 
