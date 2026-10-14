@@ -388,8 +388,8 @@ int  nxsched_reprioritize(FAR struct tcb_s *tcb, int sched_priority);
 /* Scheduler policy support */
 
 #if CONFIG_RR_INTERVAL > 0
-clock_t nxsched_process_roundrobin(FAR struct tcb_s *tcb, clock_t ticks,
-                                   bool noswitches);
+void nxsched_process_roundrobin(FAR struct tcb_s *tcb, clock_t ticks,
+                                bool noswitches);
 #  ifdef CONFIG_SCHED_TICKLESS
 void nxsched_suspend_roundrobin(FAR struct tcb_s *tcb, clock_t now);
 void nxsched_resume_roundrobin(FAR struct tcb_s *tcb, clock_t now);

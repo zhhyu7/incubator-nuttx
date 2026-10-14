@@ -110,15 +110,7 @@ static int nxsched_roundrobin_handler(FAR void *cookie)
  *   noswitches - True: Can't do context switches now.
  *
  * Returned Value:
- *   The number if ticks remaining until the next time slice expires.
- *   CLOCK_MAX is returned if there is no time slicing (i.e., the task at
- *   the head of the ready-to-run list does not support round robin
- *   scheduling).
- *
- *   The value one may returned under certain circumstances that probably
- *   can't happen.  The value one is the minimal timer setup and it means
- *   that a context switch is needed now, but cannot be performed because
- *   noswitches == true.
+ *   None
  *
  * Assumptions:
  *   - Interrupts are disabled
@@ -127,11 +119,10 @@ static int nxsched_roundrobin_handler(FAR void *cookie)
  *
  ****************************************************************************/
 
-clock_t nxsched_process_roundrobin(FAR struct tcb_s *tcb, clock_t ticks,
-                                   bool noswitches)
+void nxsched_process_roundrobin(FAR struct tcb_s *tcb, clock_t ticks,
+                                bool noswitches)
 {
   FAR struct tcb_s *ptcb;  /* Pointer to the next ready-to-run TCB */
-  clock_t ret;
   int decr;
 
   /* How much can we decrement the timeslice delay?  If 'ticks' is greater
@@ -152,26 +143,19 @@ clock_t nxsched_process_roundrobin(FAR struct tcb_s *tcb, clock_t ticks,
 
   /* Did decrementing the timeslice counter cause the timeslice to expire? */
 
-  ret = tcb->timeslice;
   if (tcb->timeslice <= 0)
     {
       /* The timeslice expired but the reset (and the possible rotation)
        * cannot be performed if the scheduler is locked or the caller is
-       * mid-switch.  Return CLOCK_MAX: nothing is to be timed;
-       * sched_unlock() (or the resume path) resets the timeslice and
-       * re-arms the scheduler event timer.
+       * mid-switch.  The timeslice is left expired: sched_unlock() (or the
+       * resume path) resets the timeslice and re-arms the roundrobin timer.
        */
 
-      if (nxsched_islocked_tcb(tcb) || noswitches)
-        {
-          ret = 0u;
-        }
-      else
+      if (!nxsched_islocked_tcb(tcb) && !noswitches)
         {
           /* Reset the timeslice. */
 
           tcb->timeslice = MSEC2TICK(CONFIG_RR_INTERVAL);
-          ret = tcb->timeslice;
 
           /* We know we are at the head of the ready to run prioritized
            * list.  We must be the highest priority task eligible for
@@ -209,7 +193,6 @@ clock_t nxsched_process_roundrobin(FAR struct tcb_s *tcb, clock_t ticks,
                                             nxsched_roundrobin_handler,
                                             call);
                       nxsched_cpu_call_single_async(tcb->cpu, &call->data);
-                      ret = 0u;
                     }
                 }
               else if (nxsched_switch_running(tcb->cpu, true))
@@ -222,18 +205,10 @@ clock_t nxsched_process_roundrobin(FAR struct tcb_s *tcb, clock_t ticks,
                    */
 
                   nxsched_switch(this_task(), rtcb);
-                  ret = 0u;
                 }
             }
         }
     }
-
-  /* If a context switch occurred, the roundrobin timer has been
-   * re-armed by nxsched_resume_roundrobin() for the new task.
-   * Return 0 to prevent the caller from re-arming it again.
-   */
-
-  return ret;
 }
 
 #ifdef CONFIG_SCHED_TICKLESS
@@ -276,13 +251,21 @@ static uint64_t roundrobin_timer_expired(FAR const hrtimer_t *timer,
       event->tcb      = NULL;
       tcb->starttime  = now;
 
-      delay = nxsched_process_roundrobin(tcb, elapsed, false);
+      nxsched_process_roundrobin(tcb, elapsed, false);
 
-      if (delay != 0u)
+      /* Re-arm the roundrobin timer if the timeslice is still valid and
+       * this task is still the running task of this CPU.  Otherwise, a
+       * context switch has already re-armed the timer for the new task
+       * via nxsched_resume_roundrobin(), or the expired timeslice waits
+       * for sched_unlock() (or the resume path) to reset it.
+       */
+
+      if (tcb->timeslice > 0 && tcb->task_state == TSTATE_TASK_RUNNING)
         {
           /* Re-arm the round-robin timer. */
 
           event->tcb = tcb;
+          delay      = tcb->timeslice;
         }
     }
 
