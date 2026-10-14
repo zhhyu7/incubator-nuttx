@@ -49,70 +49,75 @@
 #define NXTAG_MASK_ZERO(mask)       memset((mask), 0, sizeof(mask))
 #define NXTAG_MASK_FILL(mask)       memset((mask), 0xff, sizeof(mask))
 
+/* Kernel tags -- single source of truth for enum nxtag_e, the tag name
+ * table and per-tag defaults.  Add new entries alphabetically.
+ */
+
+#define NXTAG_KERNEL_LIST(X)    \
+  X(GLOBAL,      "global")      \
+  X(ANALOG,      "analog")      \
+  X(AUDIO,       "audio")       \
+  X(BATTERY,     "battery")     \
+  X(BINFMT,      "binfmt")      \
+  X(CAN,         "can")         \
+  X(CAPTURE,     "capture")     \
+  X(CONTACTLESS, "contactless") \
+  X(CRYPTO,      "crypto")      \
+  X(DMA,         "dma")         \
+  X(FS,          "fs")          \
+  X(GPIO,        "gpio")        \
+  X(GRAPHICS,    "graphics")    \
+  X(HWTRACING,   "hwtracing")   \
+  X(I2C,         "i2c")         \
+  X(I2S,         "i2s")         \
+  X(I3C,         "i3c")         \
+  X(INPUT,       "input")       \
+  X(IPC,         "ipc")         \
+  X(IRQ,         "irq")         \
+  X(LCD,         "lcd")         \
+  X(LEDS,        "leds")        \
+  X(LIB,         "lib")         \
+  X(MEMCARD,     "memcard")     \
+  X(MM,          "mm")          \
+  X(MOTOR,       "motor")       \
+  X(NET,         "net")         \
+  X(PAGING,      "paging")      \
+  X(PCI,         "pci")         \
+  X(POWER,       "power")       \
+  X(PTP,         "ptp")         \
+  X(PWM,         "pwm")         \
+  X(RC,          "rc")          \
+  X(REGMAP,      "regmap")      \
+  X(RESET,       "reset")       \
+  X(RMT,         "rmt")         \
+  X(RPMSG,       "rpmsg")       \
+  X(RPTUN,       "rptun")       \
+  X(RTC,         "rtc")         \
+  X(SAFETY,      "safety")      \
+  X(SCHED,       "sched")       \
+  X(SENSORS,     "sensors")     \
+  X(SPI,         "spi")         \
+  X(STEPPER,     "stepper")     \
+  X(SYSCALL,     "syscall")     \
+  X(TEE,         "tee")         \
+  X(THERMAL,     "thermal")     \
+  X(TIMER,       "timer")       \
+  X(USB,         "usb")         \
+  X(VHOST,       "vhost")       \
+  X(VIDEO,       "video")       \
+  X(VIRTIO,      "virtio")      \
+  X(WATCHDOG,    "watchdog")    \
+  X(WIRELESS,    "wireless")
+
+#define NXTAG_ENUM_ENTRY(id, name) NXTAG_##id,
+
 /****************************************************************************
  * Public Types
  ****************************************************************************/
 
-/* Unified tag enumeration -- single source of truth for all tags.
- * Auto-numbered; add new entries alphabetically before NXTAG_KERNEL_LAST.
- */
-
 enum nxtag_e
 {
-  NXTAG_GLOBAL,
-  NXTAG_ANALOG,
-  NXTAG_AUDIO,
-  NXTAG_BATTERY,
-  NXTAG_BINFMT,
-  NXTAG_CAN,
-  NXTAG_CAPTURE,
-  NXTAG_CONTACTLESS,
-  NXTAG_CRYPTO,
-  NXTAG_DMA,
-  NXTAG_FS,
-  NXTAG_GPIO,
-  NXTAG_GRAPHICS,
-  NXTAG_HWTRACING,
-  NXTAG_I2C,
-  NXTAG_I2S,
-  NXTAG_I3C,
-  NXTAG_INPUT,
-  NXTAG_IPC,
-  NXTAG_IRQ,
-  NXTAG_LCD,
-  NXTAG_LEDS,
-  NXTAG_LIB,
-  NXTAG_MEMCARD,
-  NXTAG_MM,
-  NXTAG_MOTOR,
-  NXTAG_NET,
-  NXTAG_PAGING,
-  NXTAG_PCI,
-  NXTAG_POWER,
-  NXTAG_PTP,
-  NXTAG_PWM,
-  NXTAG_RC,
-  NXTAG_REGMAP,
-  NXTAG_RESET,
-  NXTAG_RMT,
-  NXTAG_RPMSG,
-  NXTAG_RPTUN,
-  NXTAG_RTC,
-  NXTAG_SAFETY,
-  NXTAG_SCHED,
-  NXTAG_SENSORS,
-  NXTAG_SPI,
-  NXTAG_STEPPER,
-  NXTAG_SYSCALL,
-  NXTAG_TEE,
-  NXTAG_THERMAL,
-  NXTAG_TIMER,
-  NXTAG_USB,
-  NXTAG_VHOST,
-  NXTAG_VIDEO,
-  NXTAG_VIRTIO,
-  NXTAG_WATCHDOG,
-  NXTAG_WIRELESS,
+  NXTAG_KERNEL_LIST(NXTAG_ENUM_ENTRY)
   NXTAG_KERNEL_MAX,
 
   NXTAG_USER_BASE = 128,

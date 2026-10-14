@@ -37,9 +37,11 @@
  * Public Data
  ****************************************************************************/
 
+#define NXTAG_MASK_ENTRY(id, name) CONFIG_SYSLOG_DEFAULT_MASK,
+
 uint8_t g_syslog_mask[NXTAG_KERNEL_MAX] =
 {
-  CONFIG_SYSLOG_DEFAULT_MASK
+  NXTAG_KERNEL_LIST(NXTAG_MASK_ENTRY)
 };
 
 /****************************************************************************

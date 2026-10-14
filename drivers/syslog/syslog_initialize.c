@@ -27,7 +27,6 @@
 #include <nuttx/config.h>
 
 #include <stdio.h>
-#include <string.h>
 
 #include <nuttx/syslog/ramlog.h>
 #include <nuttx/syslog/syslog.h>
@@ -69,8 +68,6 @@
 int syslog_initialize(void)
 {
   int ret = OK;
-
-  memset(g_syslog_mask, CONFIG_SYSLOG_DEFAULT_MASK, sizeof(g_syslog_mask));
 
 #ifdef CONFIG_SYSLOG_DEFAULT_PANIC_ONLY
   syslog_panic_notifier_register();
