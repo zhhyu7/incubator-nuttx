@@ -819,6 +819,15 @@ struct note_printf_s
 
 #define SIZEOF_NOTE_PRINTF(n) (offsetof(struct note_printf_s, npt_data) + (n))
 
+/* 64-bit npt_meta compiles to LDRD, which faults on any unaligned address on
+ * ARMv7-M regardless of CCR.UNALIGN_TRP; records are emitted 8-aligned so an
+ * 8-aligned in-record offset keeps in-place dereference safe.
+ */
+
+static_assert(offsetof(struct note_printf_s, npt_meta) %
+              sizeof(uint64_t) == 0,
+              "npt_meta offset must stay 8-byte aligned");
+
 struct note_event_s
 {
   struct note_common_s nev_cmn;      /* Common note parameters */

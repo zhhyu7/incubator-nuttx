@@ -963,7 +963,8 @@ static ssize_t note_dump_gets(FAR struct lib_instream_s *self,
 #endif
         {
           notelen = stream->note.cmn.nc_length;
-          if (dest + notelen > end)
+
+          if (dest + NOTE_ALIGN(notelen) > end)
             {
               /* Leave this note for the next call so it is never split. */
 
@@ -972,6 +973,7 @@ static ssize_t note_dump_gets(FAR struct lib_instream_s *self,
             }
 
           memcpy(dest, &stream->note, notelen);
+          notelen = NOTE_ALIGN(notelen);
         }
 
       dest += notelen;
