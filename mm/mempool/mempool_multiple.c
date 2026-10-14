@@ -953,8 +953,11 @@ mempool_multiple_mallinfo(FAR struct mempool_multiple_s *mpool)
 
               chunk = (FAR struct mpool_chunk_s *)
                         sq_peek(&mpool->chunk_queue);
-              info.fordblks += (uintptr_t)((FAR char *)chunk->end -
-                                           (FAR char *)chunk->next);
+              if (chunk != NULL)
+                {
+                  info.fordblks += (uintptr_t)((FAR char *)chunk->end -
+                                               (FAR char *)chunk->next);
+                }
             }
 
           nxrmutex_unlock(&mpool->lock);
