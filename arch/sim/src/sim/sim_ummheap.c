@@ -201,13 +201,13 @@ struct mm_heap_s
  * Private Data
  ****************************************************************************/
 
-static struct mm_heap_s g_heap;
+static struct mm_heap_s g_sim_heap;
 
 /****************************************************************************
  * Public Data
  ****************************************************************************/
 
-struct mm_heap_s *g_mmheap = &g_heap;
+struct mm_heap_s *g_mmheap = &g_sim_heap;
 
 #ifdef CONFIG_MM_RECORD_SEQNO
 #  undef g_mm_seqno
