@@ -37,6 +37,7 @@
 #include <nuttx/nuttx.h>
 #include <nuttx/ppccall.h>
 #include <nuttx/sched.h>
+#include <nuttx/tls.h>
 
 #include "tricore_internal.h"
 
@@ -209,7 +210,8 @@ void tricore_svcall(volatile void *trap)
 
         /* Update the TLS pointer */
 
-        tricore_set_tls_info(tcb->stack_alloc_ptr);
+        tricore_set_tls_info((uintptr_t)tcb->stack_alloc_ptr +
+                             sizeof(struct tls_info_s));
 
         *running_task = tcb;
 

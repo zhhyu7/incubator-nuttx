@@ -31,6 +31,7 @@
 #include <nuttx/arch.h>
 #include <nuttx/addrenv.h>
 #include <nuttx/board.h>
+#include <nuttx/tls.h>
 
 #include <arch/barriers.h>
 #include <arch/board/board.h>
@@ -216,7 +217,8 @@ TRICORE_INTERRUPT_DEFINE(tricore_irq_sched)
 
       /* Update the TLS pointer */
 
-      tricore_set_tls_info(tcb->stack_alloc_ptr);
+      tricore_set_tls_info((uintptr_t)tcb->stack_alloc_ptr +
+                           sizeof(struct tls_info_s));
 
       /* Record the new "running" task when context switch occurred.
        * g_running_tasks[] is only used by assertion logic for reporting

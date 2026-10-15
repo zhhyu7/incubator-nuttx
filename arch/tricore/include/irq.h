@@ -221,7 +221,7 @@
 
 /* tls_info */
 
-#define up_tls_info()  ((struct tls_info_s *)read_sysreg(a8))
+#define up_tls_info()  ((struct tls_info_s *)read_sysreg(a8) - 1)
 
 #ifndef __ASSEMBLY__
 
