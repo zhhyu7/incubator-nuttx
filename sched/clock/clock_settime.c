@@ -26,6 +26,7 @@
 
 #include <nuttx/config.h>
 
+#include <stdint.h>
 #include <time.h>
 #include <assert.h>
 #include <errno.h>
@@ -33,6 +34,8 @@
 #include <sys/time.h>
 
 #include <nuttx/arch.h>
+#include <nuttx/nuttx.h>
+#include <nuttx/sched.h>
 #include <nuttx/fs/fs.h>
 #include <nuttx/clock_notifier.h>
 #include <nuttx/irq.h>
@@ -96,6 +99,54 @@ static void nxclock_set_realtime(FAR const struct timespec *tp)
 #endif
 }
 
+#if CONFIG_SCHED_CRITMONITOR_MAXTIME_THREAD >= 0
+/* Write-side counterpart of clock_process_runtime(): expand the same group
+ * sum inline and shift tcb->run_time under the group lock so a subsequent
+ * clock_gettime() reads back *ts.
+ */
+
+static void clock_set_process_runtime(FAR struct tcb_s *tcb,
+                                      clockid_t clock_type,
+                                      FAR const struct timespec *ts)
+{
+  FAR struct task_group_s *group   = tcb->group;
+  clock_t                  current = 0u;
+  unsigned long            freq    = perf_getfreq();
+  clock_t                  target  = ((uint64_t)ts->tv_sec  * freq +
+                                      (uint64_t)ts->tv_nsec * freq /
+                                      NSEC_PER_SEC);
+  irqstate_t               flags   = spin_lock_irqsave(&group->tg_lock);
+
+# ifdef HAVE_GROUP_MEMBERS
+  if (clock_type == CLOCK_PROCESS_CPUTIME_ID)
+    {
+      FAR sq_entry_t   *curr;
+      FAR struct tcb_s *member;
+
+      sq_for_every(&group->tg_members, curr)
+        {
+          member = container_of(curr, struct tcb_s, member);
+
+          current += member->run_time;
+        }
+    }
+  else
+# endif /* HAVE_GROUP_MEMBERS */
+    {
+      current = tcb->run_time;
+    }
+
+  /* run_time is a pure accumulator the scheduler only adds to; adding
+   * (target - current) shifts the next read to target.  The delta lands
+   * on this task, a member of the summed group for the process clock.
+   */
+
+  tcb->run_time += target - current;
+
+  spin_unlock_irqrestore(&group->tg_lock, flags);
+}
+#endif
+
 /****************************************************************************
  * Public Functions
  ****************************************************************************/
@@ -132,6 +183,28 @@ int clock_settime(clockid_t clock_id, FAR const struct timespec *tp)
             {
               ret = file_ioctl(filep, PTP_CLOCK_SETTIME, tp);
               file_put(filep);
+            }
+        }
+#endif
+#if CONFIG_SCHED_CRITMONITOR_MAXTIME_THREAD >= 0
+      else if ((clock_id & CLOCK_MASK) == CLOCK_PROCESS_CPUTIME_ID ||
+               (clock_id & CLOCK_MASK) == CLOCK_THREAD_CPUTIME_ID)
+        {
+          clockid_t  clock_type = clock_id & CLOCK_MASK;
+          pid_t             pid = clock_id >> CLOCK_SHIFT;
+          FAR struct tcb_s *tcb = pid == 0 ? this_task() :
+                                             nxsched_get_tcb(pid);
+
+          if (tcb != NULL)
+            {
+              clock_set_process_runtime(tcb, clock_type, tp);
+
+              if (pid != 0)
+                {
+                  nxsched_put_tcb(tcb);
+                }
+
+              ret = 0;
             }
         }
 #endif
