@@ -753,25 +753,34 @@ static bool note_printf_is_valid(FAR struct note_dump_stream_s *stream)
       return true;
     }
 
-#if defined(CONFIG_STREAM_BSPRINTF_EMBED_FORMAT)
-  /* Native frames carry npt_fmt == 0, so a nonzero one is a foreign
-   * record whose address this image cannot own.
-   */
+  if (NOTE_META_TYPE(npt.npt_meta) != 0)
+    {
+      /* Strip frame: the dump path prints npt_fmt as a bare pointer.  It is
+       * native only when this image strips note or binary-syslog records;
+       * any other image left a corrupted or foreign record in the ring.
+       */
 
-  return false;
-#elif defined(CONFIG_DRIVERS_NOTE_STRIP_FORMAT)
-  /* Native frames carry type != 0 and the dump path only prints their
-   * npt_fmt; a type == 0 frame is a foreign non-strip record the dump
-   * path would instead dereference through npt_fmt.
-   */
-
-  return NOTE_META_TYPE(npt.npt_meta) != 0;
+#if defined(CONFIG_DRIVERS_NOTE_STRIP_FORMAT) || \
+    defined(CONFIG_BINARY_SYSLOG_STRIP_FORMAT)
+      return true;
 #else
-  /* Native frames carry type == 0; a type != 0 frame is a foreign strip
-   * record.
+      return false;
+#endif
+    }
+
+  /* Resident frame (fmt != 0, type == 0): the only shape the dump path
+   * dereferences.  Accept it only when this image leaves fmt resident:
+   * note printf outside embed and strip, or binary syslog outside strip
+   * (binary syslog ignores embed).
    */
 
-  return NOTE_META_TYPE(npt.npt_meta) == 0;
+#if (!defined(CONFIG_STREAM_BSPRINTF_EMBED_FORMAT) && \
+     !defined(CONFIG_DRIVERS_NOTE_STRIP_FORMAT)) || \
+    (defined(CONFIG_BINARY_SYSLOG) && \
+     !defined(CONFIG_BINARY_SYSLOG_STRIP_FORMAT))
+  return true;
+#else
+  return false;
 #endif
 }
 

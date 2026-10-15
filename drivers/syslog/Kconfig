@@ -39,7 +39,7 @@ endchoice
 
 config BINARY_SYSLOG_STRIP_FORMAT
 	bool "Strip format strings from binary syslog"
-	depends on BINARY_SYSLOG && !STREAM_BSPRINTF_EMBED_FORMAT
+	depends on BINARY_SYSLOG
 	default n
 	---help---
 		When enabled, syslog() routes through nx_syslog()
