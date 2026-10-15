@@ -158,13 +158,18 @@ void *sim_doirq(int irq, void *context)
 
       sim_fullcontextrestore(regs);
     }
-  else if (switch_ctx)
+  else
     {
       /* Notify ASan that fiber switch has completed, but only if we
        * actually switched to a different task.
        */
 
-      sim_asan_finish_switch();
+      if (switch_ctx)
+        {
+          sim_asan_finish_switch();
+        }
+
+      sim_sigdeliver();
     }
 
   return NULL;
