@@ -1198,6 +1198,10 @@ static int vhost_crypto_process_rsa(
           {
             krp->krp_op = CRK_RSA_PSS_SIGN;
           }
+        else
+          {
+            return -EINVAL;
+          }
 
         krp->krp_iparams = 9;
         krp->krp_oparams = 1;
@@ -1216,6 +1220,10 @@ static int vhost_crypto_process_rsa(
             krp->krp_op = CRK_RSA_PSS_VERIFY;
             krp->krp_iparams = 4;
             krp->krp_oparams = 0;
+          }
+        else
+          {
+            return -EINVAL;
           }
 
         krp->krp_optype = CRYPTO_OP_VERIFY;

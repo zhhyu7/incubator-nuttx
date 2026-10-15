@@ -1220,6 +1220,11 @@ rpmsg_crypto_kprocess_rsa(FAR struct rpmsg_endpoint *ept,
           {
             krp->krp_op = CRK_RSA_PSS_SIGN;
           }
+        else
+          {
+            ret = -EINVAL;
+            goto err;
+          }
 
         krp->krp_iparams = 9;
         krp->krp_oparams = 1;
@@ -1246,6 +1251,11 @@ rpmsg_crypto_kprocess_rsa(FAR struct rpmsg_endpoint *ept,
             krp->krp_oparams = 0;
             output = &krp->krp_param[krp->krp_iparams +
                                      krp->krp_oparams - 1];
+          }
+        else
+          {
+            ret = -EINVAL;
+            goto err;
           }
 
         krp->krp_optype = CRYPTO_OP_VERIFY;
