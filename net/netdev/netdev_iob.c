@@ -221,7 +221,15 @@ int netdev_iob_prepare(FAR struct net_driver_s *dev, bool throttled,
           return -ENOMEM;
         }
 
-      netdev_iob_replace(dev, iob);
+      /* Install the buffer directly rather than through
+       * netdev_iob_replace(): that helper also overwrites d_len with the new
+       * (empty) chain's io_pktlen, while netdev_input() carries the received
+       * frame length in d_len across this call.  Ownership and the L2 guard
+       * are already set up by netdev_iob_timedalloc().
+       */
+
+      netdev_iob_release(dev);
+      dev->d_iob = iob;
     }
   else
     {
