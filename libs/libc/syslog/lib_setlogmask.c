@@ -51,6 +51,7 @@
 
 bool syslog_is_enabled(int priority)
 {
+  FAR struct task_info_s *info = task_get_info();
   uint8_t tag = LOG_GETTAG(priority);
   uint8_t mask = LOG_MASK(LOG_GETPRI(priority));
 
@@ -59,13 +60,15 @@ bool syslog_is_enabled(int priority)
       tag = NXTAG_GLOBAL;
     }
 
-#ifdef __KERNEL__
-  return (g_syslog_mask[NXTAG_GLOBAL] & mask) != 0 &&
-         (g_syslog_mask[tag] & mask) != 0;
-#else
-  FAR struct task_info_s *info = task_get_info();
-  return info == NULL || (info->ta_syslog_mask & mask);
+#if defined(__KERNEL__) || defined(CONFIG_BUILD_FLAT)
+  if ((g_syslog_mask[NXTAG_GLOBAL] & mask) == 0 ||
+      (g_syslog_mask[tag] & mask) == 0)
+    {
+      return false;
+    }
 #endif
+
+  return info == NULL || (info->ta_syslog_mask & mask) != 0;
 }
 
 /****************************************************************************
