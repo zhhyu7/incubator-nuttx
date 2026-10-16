@@ -43,7 +43,6 @@ import signal
 import subprocess
 import sys
 import termios
-import threading
 import time
 from enum import IntEnum
 
@@ -52,6 +51,7 @@ import serial
 # Host node prefix: a world-writable dir (not /dev) so the mux needs no
 # root to create the per-DLCI symlinks.
 GSMMUX_NODE_PREFIX = "/tmp/ttyGSM"
+TMUX_SESSION = "gsmmux"
 
 
 def _set_nonblocking(fd):
@@ -1180,12 +1180,16 @@ class GSMMultiplexer:
                 if self._tx_queue:
                     self._drain_tx_queue()
 
-    def event_loop(self):
+    def event_loop(self, viewer=None):
         """Single-threaded select() loop with non-blocking TX queues.
 
         All writes (serial and VPort) are queued and drained via select().
         This prevents any write from blocking the event loop, ensuring
         bidirectional data flow on real hardware UART links.
+
+        When a foreground viewer process (minicom / tmux attach) is passed,
+        the loop also polls it and stops the mux once the user quits it, so
+        the viewer needs no thread of its own.
         """
         print("Event loop started")
         serial_fd = self.serial_port.fileno()
@@ -1222,6 +1226,9 @@ class GSMMultiplexer:
 
                 for fd in readable:
                     self._handle_readable(fd, serial_fd, fd_to_dlci)
+
+                if viewer is not None and viewer.poll() is not None:
+                    self.running = False
             except OSError as e:
                 if self.running:
                     import errno as errno_mod
@@ -1243,17 +1250,13 @@ class GSMMultiplexer:
                     time.sleep(0.1)
 
     def start(self):
-        """Start multiplexer"""
+        """Set up ports and channels; the caller drives event_loop."""
         self.running = True
 
         self.open_serial()
         self.create_virtual_ports()
         self.start_bin_decoders()
         self.gsm_initialize()
-
-        loop_thread = threading.Thread(target=self.event_loop, daemon=True)
-        loop_thread.start()
-        self.threads.append(loop_thread)
 
         print("\nGSM 07.10 multiplexer running...")
         print(f"Physical serial port: {self.device_path}")
@@ -1436,12 +1439,11 @@ def _tmux(*cmd, capture=False):
 
 
 def _run_tmux_view(ports):
-    """Bring up the tmux view for the given ports.
+    """Bring up the tmux view; return (pane_ids, viewer_proc).
 
-    In an existing tmux session this only splits the panes and returns their
-    ids, so the caller blocks on the shared mux loop and cleans them up. In a
-    plain shell it owns a session and attaches (blocking) itself, returning
-    None once the user exits.
+    Inside an existing session the panes split off and no viewer process is
+    needed, so viewer_proc is None. In a plain shell a detached session is
+    created and its attach client is returned for the caller to poll.
     """
     views = [f"{GSMMUX_NODE_PREFIX}{p}" for p in ports]
 
@@ -1461,20 +1463,17 @@ def _run_tmux_view(ports):
                 if pane_id:
                     pane_ids.append(pane_id)
             _tmux("select-layout", "even-horizontal")
-            return pane_ids
+            return pane_ids, None
 
-        # Plain shell: own a session and attach (blocks until exit).
-        session = "gsmmux"
-        _tmux("kill-session", "-t", session)
-        _tmux("new-session", "-d", "-s", session, f"minicom -D {views[0]}")
+        _tmux("kill-session", "-t", TMUX_SESSION)
+        _tmux("new-session", "-d", "-s", TMUX_SESSION, f"minicom -D {views[0]}")
         for view in views[1:]:
-            _tmux("split-window", "-t", session, f"minicom -D {view}")
-        _tmux("select-layout", "-t", session, "even-horizontal")
-        _tmux("attach", "-t", session)
-        _tmux("kill-session", "-t", session)
+            _tmux("split-window", "-t", TMUX_SESSION, f"minicom -D {view}")
+        _tmux("select-layout", "-t", TMUX_SESSION, "even-horizontal")
+        return [], subprocess.Popen(["tmux", "attach", "-t", TMUX_SESSION])
     except FileNotFoundError:
         print("Error: tmux not found (e.g. sudo apt install tmux)")
-    return None
+    return [], None
 
 
 def _parse_tmux_ports(args):
@@ -1680,31 +1679,29 @@ Examples:
     try:
         mux.start()
 
-        tmux_panes = None
-        if args.tmux is not None:
-            print("\nLaunching tmux view (mux stays in background)...")
-            tmux_panes = _run_tmux_view(tmux_ports)
-            # Plain-shell attach already blocked and returned None; in-tmux
-            # returns the panes and falls through to the shared loop below.
-            if tmux_panes is None:
-                mux.running = False
-        elif args.minicom is not None:
+        viewer = None
+        tmux_panes = []
+        if args.minicom is not None:
             node = f"{GSMMUX_NODE_PREFIX}{args.minicom}"
-            print(f"\nLaunching minicom on {node} (mux stays in background)...")
+            print(f"\nLaunching minicom on {node}...")
             try:
-                subprocess.run(["minicom", "-D", node])
+                viewer = subprocess.Popen(["minicom", "-D", node])
             except FileNotFoundError:
-                print(
-                    "Error: minicom not found, please install it "
-                    "(e.g. sudo apt install minicom)"
-                )
-            mux.running = False
+                print("Error: minicom not found (e.g. sudo apt install minicom)")
+                mux.running = False
+        elif args.tmux is not None:
+            print("\nLaunching tmux view...")
+            tmux_panes, viewer = _run_tmux_view(tmux_ports)
 
-        while mux.running:
-            time.sleep(1)
+        # main always runs the event loop and polls the foreground viewer
+        # (if any), so no mode needs a background loop thread.
+        if mux.running:
+            mux.event_loop(viewer=viewer)
 
-        for pane_id in tmux_panes or []:
+        for pane_id in tmux_panes:
             _tmux("kill-pane", "-t", pane_id)
+        if viewer is not None and args.tmux is not None:
+            _tmux("kill-session", "-t", TMUX_SESSION)
     except Exception as e:
         print(f"Error: {e}")
     finally:
