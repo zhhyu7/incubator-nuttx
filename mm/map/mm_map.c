@@ -34,6 +34,7 @@
 
 #include <stdbool.h>
 #include <stddef.h>
+#include <stdint.h>
 #include <assert.h>
 #include <debug.h>
 
@@ -48,10 +49,23 @@
 static bool in_range(FAR const void *start, size_t length,
                      FAR const void *range_start, size_t range_length)
 {
-  FAR const char *u_start = (FAR const char *)start;
-  FAR const char *u_end = u_start + length;
-  FAR const char *r_start = (FAR const char *)range_start;
-  FAR const char *r_end = r_start + range_length;
+  uintptr_t u_start = (uintptr_t)start;
+  uintptr_t r_start = (uintptr_t)range_start;
+  uintptr_t u_end;
+  uintptr_t r_end;
+
+  /* A range whose end overflows the address space can never contain a
+   * mapping, bail out instead of invoking undefined behavior.
+   */
+
+  if (length > UINTPTR_MAX - u_start ||
+      range_length > UINTPTR_MAX - r_start)
+    {
+      return false;
+    }
+
+  u_end = u_start + length;
+  r_end = r_start + range_length;
 
   return (u_start >= r_start && u_start < r_end && /* Start is in range. */
           u_end >= r_start && u_end <= r_end);     /* End is in range. */
