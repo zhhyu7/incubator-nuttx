@@ -297,6 +297,11 @@ char *sim_deviceimage(void)
    */
 
   pbuffer = kmm_malloc(bufsize);
+  if (pbuffer == NULL)
+    {
+      inflateEnd(&strm);
+      return NULL;
+    }
 
   /* Set up the input buffer */
 

@@ -2170,6 +2170,10 @@ static int nrf53_epout_configure(struct nrf53_ep_s *privep, uint8_t eptype,
   /* Allocate buffer for EPOUT */
 
   privep->rxbuff = kmm_malloc(maxpacket);
+  if (privep->rxbuff == NULL)
+    {
+      return -ENOMEM;
+    }
 
   /* Enable the interrupt for this endpoint */
 
