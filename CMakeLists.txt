@@ -554,34 +554,34 @@ add_dependencies(nuttx_context dts_generator)
 if(CONFIG_LIB_SYSCALL_WRAPPER)
   set(CMAKE_C_COMPILE_OBJECT
       ${CMAKE_C_COMPILE_OBJECT}
-      "${CMAKE_BINARY_DIR}/bin_host/wrapsymbol ${CMAKE_BINARY_DIR}/<OBJECT> @${CMAKE_BINARY_DIR}/wrapsymbol.cmd --cflags=\"<DEFINES>\""
+      "${CMAKE_BINARY_DIR}/bin_host/wrapsymbol ${CMAKE_BINARY_DIR}/<OBJECT> @${CMAKE_BINARY_DIR}/wrapsymbol.cmd --cflags='<DEFINES>'"
   )
 
   set(CMAKE_ASM_COMPILE_OBJECT
       ${CMAKE_C_COMPILE_OBJECT}
-      "${CMAKE_BINARY_DIR}/bin_host/wrapsymbol ${CMAKE_BINARY_DIR}/<OBJECT> @${CMAKE_BINARY_DIR}/wrapsymbol.cmd --cflags=\"<DEFINES>\""
+      "${CMAKE_BINARY_DIR}/bin_host/wrapsymbol ${CMAKE_BINARY_DIR}/<OBJECT> @${CMAKE_BINARY_DIR}/wrapsymbol.cmd --cflags='<DEFINES>'"
   )
 
   set(CMAKE_CXX_COMPILE_OBJECT
       ${CMAKE_CXX_COMPILE_OBJECT}
-      "${CMAKE_BINARY_DIR}/bin_host/wrapsymbol ${CMAKE_BINARY_DIR}/<OBJECT> @${CMAKE_BINARY_DIR}/wrapsymbol.cmd --cflags=\"<DEFINES>\""
+      "${CMAKE_BINARY_DIR}/bin_host/wrapsymbol ${CMAKE_BINARY_DIR}/<OBJECT> @${CMAKE_BINARY_DIR}/wrapsymbol.cmd --cflags='<DEFINES>'"
   )
 endif()
 
 if(CONFIG_DRIVERS_FAULT_INJECT)
   set(CMAKE_C_COMPILE_OBJECT
       ${CMAKE_C_COMPILE_OBJECT}
-      "${CMAKE_BINARY_DIR}/bin_host/wrapsymbol <OBJECT> @${CMAKE_BINARY_DIR}/fault_wrapsymbol.cmd --cflags=\"<DEFINES>\" --force-wrap"
+      "${CMAKE_BINARY_DIR}/bin_host/wrapsymbol <OBJECT> @${CMAKE_BINARY_DIR}/fault_wrapsymbol.cmd --cflags='<DEFINES>' --force-wrap"
   )
 
   set(CMAKE_ASM_COMPILE_OBJECT
       ${CMAKE_ASM_COMPILE_OBJECT}
-      "${CMAKE_BINARY_DIR}/bin_host/wrapsymbol <OBJECT> @${CMAKE_BINARY_DIR}/fault_wrapsymbol.cmd --cflags=\"<DEFINES>\" --force-wrap"
+      "${CMAKE_BINARY_DIR}/bin_host/wrapsymbol <OBJECT> @${CMAKE_BINARY_DIR}/fault_wrapsymbol.cmd --cflags='<DEFINES>' --force-wrap"
   )
 
   set(CMAKE_CXX_COMPILE_OBJECT
       ${CMAKE_CXX_COMPILE_OBJECT}
-      "${CMAKE_BINARY_DIR}/bin_host/wrapsymbol <OBJECT> @${CMAKE_BINARY_DIR}/fault_wrapsymbol.cmd --cflags=\"<DEFINES>\" --force-wrap"
+      "${CMAKE_BINARY_DIR}/bin_host/wrapsymbol <OBJECT> @${CMAKE_BINARY_DIR}/fault_wrapsymbol.cmd --cflags='<DEFINES>' --force-wrap"
   )
 endif()
 
