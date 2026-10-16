@@ -41,6 +41,7 @@ import signal
 import socket
 import subprocess
 import sys
+import threading
 import time
 from enum import IntEnum
 
@@ -50,10 +51,13 @@ import serial
 # root to create the per-DLCI symlinks.
 GSMMUX_NODE_PREFIX = "/tmp/ttyGSM"
 TMUX_SESSION = "gsmmux"
+_IS_WINDOWS = sys.platform == "win32"
 
 
 def _set_nonblocking(fd):
-    """Set a file descriptor to non-blocking mode (PTY/serial, Linux)."""
+    """Set a fd non-blocking; a no-op on Windows, which has no fcntl."""
+    if _IS_WINDOWS:
+        return
     import fcntl
 
     flags = fcntl.fcntl(fd, fcntl.F_GETFL)
@@ -701,6 +705,78 @@ class GSM0710Decoder:
         return self.stats.copy()
 
 
+class SerialTransport:
+    """Expose the physical serial port as a selectable fd for the event loop.
+
+    On POSIX the serial fd is selectable, so this is a thin passthrough. On
+    Windows select() accepts only sockets, not a COM handle, so a bridge
+    thread blocking-reads the port and feeds a loopback socket the loop can
+    select; uplink writes go straight to the port (low volume, write_timeout
+    bounded).
+    """
+
+    def __init__(self, serial_port):
+        self._serial = serial_port
+        self._bridge = None
+        self._rx_r = None
+        self._rx_w = None
+        if _IS_WINDOWS:
+            self._rx_r, self._rx_w = socket.socketpair()
+            self._rx_r.setblocking(False)
+            self._running = True
+            self._bridge = threading.Thread(
+                target=self._pump_rx, daemon=True, name="serial-rx-bridge"
+            )
+            self._bridge.start()
+
+    def _pump_rx(self):
+        """Windows: blocking-read the COM port, feed the loopback socket."""
+        while self._running:
+            try:
+                data = self._serial.read(1)
+                if not data:
+                    continue
+                pending = self._serial.in_waiting
+                if pending:
+                    data += self._serial.read(pending)
+                self._rx_w.sendall(data)
+            except Exception:
+                if self._running:
+                    time.sleep(0.05)
+
+    def fileno(self):
+        """Return the selectable read fd (serial on POSIX, socket on Windows)."""
+        if _IS_WINDOWS:
+            return self._rx_r.fileno()
+        return self._serial.fileno()
+
+    def read(self, size=65536):
+        """Read available RX bytes from the selectable fd."""
+        if _IS_WINDOWS:
+            try:
+                return self._rx_r.recv(size)
+            except BlockingIOError:
+                return b""
+        try:
+            return os.read(self._serial.fileno(), size)
+        except BlockingIOError:
+            return b""
+
+    def write(self, data):
+        """Write uplink bytes to the physical port."""
+        self._serial.write(data)
+
+    def close(self):
+        self._running = False
+        for s in (self._rx_r, self._rx_w):
+            if s is not None:
+                try:
+                    s.close()
+                except OSError:
+                    pass
+        self._serial.close()
+
+
 class VirtualSerialPort:
     """Virtual serial port - implemented using PTY"""
 
@@ -1046,6 +1122,7 @@ class GSMMultiplexer:
         self.num_channels = num_channels
         self.baudrate = baudrate
         self.serial_port = None
+        self.transport = None
         self.virtual_ports = {}
         self.bin_dlcis = bin_dlcis or set()
         self.elf = elf
@@ -1143,6 +1220,8 @@ class GSMMultiplexer:
                 # some USB-CDC ACM drivers lack TIOCSSERIAL. All benign.
                 print(f"Warning: low-latency mode unavailable: {e}")
         print(f"Opened serial port: {self.device_path} @ {self.baudrate} baud")
+
+        self.transport = SerialTransport(self.serial_port)
 
         # Open raw data log file
         if self.raw_log_file:
@@ -1358,16 +1437,8 @@ class GSMMultiplexer:
                 self._write_serial_all(ua_frame.encode())
 
     def _write_serial_all(self, data):
-        """Queue data for non-blocking serial write.
-
-        Before event_loop starts (_serial_fd == -1), uses blocking pyserial
-        write. After event_loop starts, queues into _tx_queue for
-        non-blocking drain via select().
-        """
-        if self._serial_fd < 0:
-            self.serial_port.write(data)
-        else:
-            self._tx_queue.extend(data)
+        """Send uplink bytes to the device."""
+        self.serial_port.write(data)
 
     def _drain_tx_queue(self, max_bytes=4096):
         """Write up to max_bytes of queued TX data without blocking.
@@ -1401,7 +1472,7 @@ class GSMMultiplexer:
             frame = GSM0710Frame(dlci=dlci, control=GSM0710.UIH, data=chunk, cr=True)
             encoded = frame.encode()
             self._debug_log(f"[Serial→] DLCI {dlci} sent frame {len(encoded)} bytes")
-            self._tx_queue.extend(encoded)
+            self._write_serial_all(encoded)
             offset += len(chunk)
 
     def _handle_readable(self, fd, serial_fd, fd_to_vport, bin_pipe_to_vport):
@@ -1410,10 +1481,7 @@ class GSMMultiplexer:
             # One-shot large read relies on the low-latency flush
             # (open_serial) to keep the kernel RX from overflowing on
             # 921600 bursts, so one thread never loses bytes.
-            try:
-                data = os.read(serial_fd, 65536)
-            except BlockingIOError:
-                return
+            data = self.transport.read(65536)
             if data:
                 self._handle_serial_data(data)
                 if self._tx_queue:
@@ -1447,11 +1515,13 @@ class GSMMultiplexer:
         the viewer needs no thread of its own.
         """
         print("Event loop started")
-        serial_fd = self.serial_port.fileno()
+        serial_fd = self.transport.fileno()
         self._serial_fd = serial_fd
         self._tx_queue = bytearray()
 
-        # Set serial fd to non-blocking for better event loop behavior
+        # The loop needs the serial fd non-blocking on POSIX; _set_nonblocking
+        # is a no-op on Windows, where the selectable fd is an already
+        # non-blocking socket.
         _set_nonblocking(serial_fd)
 
         # TCP bin pipes are stable for the run; a TCP console client fd comes
@@ -1603,9 +1673,10 @@ class GSMMultiplexer:
             except OSError:
                 pass
 
-        # Close serial port
-        if self.serial_port:
-            self.serial_port.close()
+        # Close serial port; stop() runs from main()'s finally, so transport
+        # may be None when open_serial() fails before constructing it.
+        if self.transport:
+            self.transport.close()
 
         # Close raw log file
         if self.raw_log_fd:
