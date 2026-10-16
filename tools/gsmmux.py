@@ -938,6 +938,8 @@ class TCPVirtualPort:
         self.slave_name = None
         self.running = False
         self._wbuf = bytearray()
+        # On Windows a bin pump thread fills _wbuf while the loop drains it.
+        self._wbuf_lock = threading.Lock()
         self._listen = None
         self._client = None
         self._telnet = None  # None=undetected, True=telnet, False=raw
@@ -976,25 +978,28 @@ class TCPVirtualPort:
         """Queue data to be delivered to the TCP client."""
         if not self.running:
             return 0
-        self._wbuf.extend(data)
-        if len(self._wbuf) > self.MAX_WBUF:
-            del self._wbuf[: len(self._wbuf) - self.MAX_WBUF]
+        with self._wbuf_lock:
+            self._wbuf.extend(data)
+            if len(self._wbuf) > self.MAX_WBUF:
+                del self._wbuf[: len(self._wbuf) - self.MAX_WBUF]
         return len(data)
 
     def drain_write(self):
         """Push queued data to the client socket (non-blocking)."""
-        while self._wbuf and self._client is not None:
-            try:
-                n = self._client.send(self._wbuf)
-                del self._wbuf[:n]
-            except BlockingIOError:
-                break
-            except OSError:
-                self._drop_client()
-                break
+        with self._wbuf_lock:
+            while self._wbuf and self._client is not None:
+                try:
+                    n = self._client.send(self._wbuf)
+                    del self._wbuf[:n]
+                except BlockingIOError:
+                    break
+                except OSError:
+                    self._drop_client()
+                    break
 
     def has_pending_write(self):
-        return len(self._wbuf) > 0
+        with self._wbuf_lock:
+            return len(self._wbuf) > 0
 
     def select_fds(self):
         """Listen socket is always watched; the client only while connected."""
@@ -1306,7 +1311,7 @@ class GSMMultiplexer:
                 continue
 
             cmd = [
-                "python3",
+                sys.executable,  # Windows has no 'python3' on PATH
                 "-m",
                 "nxtrace",
                 "capture",
@@ -1323,8 +1328,9 @@ class GSMMultiplexer:
             ]
             vport = self.virtual_ports[dlci]
             if self.tcp_mode:
-                # No PTY master to hand to nxtrace; pipe its decoded text and
-                # let the event loop select the pipe and relay it downlink.
+                # No PTY master to hand to nxtrace; pipe its decoded text out.
+                # POSIX selects the pipe in the event loop; Windows cannot
+                # select a pipe, so a thread relays it instead.
                 self.bin_decoders[dlci] = subprocess.Popen(
                     cmd,
                     cwd=pynuttx,
@@ -1332,6 +1338,13 @@ class GSMMultiplexer:
                     stdout=subprocess.PIPE,
                     stderr=subprocess.DEVNULL,
                 )
+                if _IS_WINDOWS:
+                    threading.Thread(
+                        target=self._pump_bin_decoder,
+                        args=(self.bin_decoders[dlci], vport),
+                        daemon=True,
+                        name=f"bin-pump-dlci{dlci}",
+                    ).start()
                 print(f"Started nxtrace decoder for DLCI {dlci} (ttyGSM{dlci - 1})")
                 continue
 
@@ -1347,6 +1360,16 @@ class GSMMultiplexer:
                 stderr=subprocess.DEVNULL,
             )
             print(f"Started nxtrace decoder for DLCI {dlci} (ttyGSM{dlci - 1})")
+
+    def _pump_bin_decoder(self, dec, vport):
+        """Relay a bin channel's decoded text on Windows, where the loop
+        cannot select the decoder pipe; a thread blocking-reads it instead.
+        """
+        while self.running and dec.poll() is None:
+            data = dec.stdout.read(4096)
+            if not data:
+                break
+            vport.write(data)
 
     def gsm_initialize(self):
         """
@@ -1525,12 +1548,15 @@ class GSMMultiplexer:
         _set_nonblocking(serial_fd)
 
         # TCP bin pipes are stable for the run; a TCP console client fd comes
-        # and goes, so the vport fd map is rebuilt each pass below.
+        # and goes, so the vport fd map is rebuilt each pass below. Windows
+        # cannot select a pipe, so there a pump thread relays it instead and
+        # the loop must not watch it.
         bin_pipe_to_vport = {}
-        for dlci, dec in self.bin_decoders.items():
-            if dec.stdout is not None:
-                _set_nonblocking(dec.stdout.fileno())
-                bin_pipe_to_vport[dec.stdout.fileno()] = self.virtual_ports[dlci]
+        if not _IS_WINDOWS:
+            for dlci, dec in self.bin_decoders.items():
+                if dec.stdout is not None:
+                    _set_nonblocking(dec.stdout.fileno())
+                    bin_pipe_to_vport[dec.stdout.fileno()] = self.virtual_ports[dlci]
 
         while self.running:
             try:
