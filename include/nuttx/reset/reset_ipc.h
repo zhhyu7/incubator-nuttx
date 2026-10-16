@@ -110,9 +110,10 @@ struct reset_ipc_ops_s
  * doubles as the peer cpu name.  local/remote are the two halves of the
  * shared status pair and stay non-NULL while registered, so the status paths
  * never check them.  shadow holds the last peer word acted on, for dedup,
- * and starts clean at every reset_ipc_register() like local does.  The two
- * notifier blocks put this channel on the panic and reboot chains, which is
- * what brings the peer down with this core.
+ * and starts clean at every reset_ipc_register() like local does.  rstc is
+ * the reset control to drive the peer with.  The two notifier blocks put
+ * this channel on the panic and reboot chains, which is what brings the
+ * peer down with this core.
  */
 
 struct reset_ipc_s
@@ -125,6 +126,7 @@ struct reset_ipc_s
   FAR uint32_t                     *remote;    /* Peer status word */
   uint32_t                          shadow;    /* Last peer word seen */
   struct work_s                     work;      /* Deferred boardctl */
+  FAR struct reset_control         *rstc;      /* Control handed out */
 };
 
 /****************************************************************************
@@ -164,28 +166,27 @@ extern "C"
  *   master  - True on the master core, false on the slave.
  *
  * Returned Value:
- *   An exclusive reset control on the channel, to drive the peer with
- *   reset_control_reset_reason(), or NULL on failure.  Release it with
- *   reset_control_put() before reset_ipc_unregister().  A NULL return leaves
- *   nothing registered, so there is nothing to undo.
+ *   OK on success, with ipc->rstc ready for reset_control_reset_reason();
+ *   reset_ipc_unregister() puts it.  A negated errno on failure, which
+ *   leaves nothing registered, so there is nothing to undo.
  *
  ****************************************************************************/
 
-FAR struct reset_control *
-reset_ipc_register(FAR struct reset_ipc_s *ipc,
-                   FAR const struct reset_ipc_ops_s *ops,
-                   FAR const char *cpuname,
-                   uintptr_t status, bool master);
+int reset_ipc_register(FAR struct reset_ipc_s *ipc,
+                       FAR const struct reset_ipc_ops_s *ops,
+                       FAR const char *cpuname,
+                       uintptr_t status, bool master);
 
 /****************************************************************************
  * Name: reset_ipc_unregister
  *
  * Description:
  *   Remove a channel from the reset framework, which also drops it from the
- *   panic/reboot fan-out, and drop its status words.  Takes a mutex, so not
- *   callable from the interrupt path.  The transport must have stopped
- *   delivering notifications first:
- *   the callback is taken back here, but one already running races with it.
+ *   panic/reboot fan-out, and drop its status words and reset control.
+ *   A channel that never registered, or is already gone, is left alone.
+ *   Takes a mutex, so not callable from the interrupt path.  The transport
+ *   must have stopped delivering notifications first: the callback is taken
+ *   back here, but one already running races with it.
  *
  ****************************************************************************/
 

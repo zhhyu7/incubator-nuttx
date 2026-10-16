@@ -400,14 +400,13 @@ static int reset_ipc_reboot_notifier(FAR struct notifier_block *nb,
  * Name: reset_ipc_register
  ****************************************************************************/
 
-FAR struct reset_control *
-reset_ipc_register(FAR struct reset_ipc_s *ipc,
-                   FAR const struct reset_ipc_ops_s *ops,
-                   FAR const char *cpuname,
-                   uintptr_t status, bool master)
+int reset_ipc_register(FAR struct reset_ipc_s *ipc,
+                       FAR const struct reset_ipc_ops_s *ops,
+                       FAR const char *cpuname,
+                       uintptr_t status, bool master)
 {
   FAR uint32_t *sts = (FAR uint32_t *)status;
-  FAR struct reset_control *rstc;
+  int ret;
 
   DEBUGASSERT(ipc != NULL && ops != NULL && cpuname != NULL &&
               status != 0 && (status % sizeof(uint32_t)) == 0);
@@ -425,9 +424,22 @@ reset_ipc_register(FAR struct reset_ipc_s *ipc,
   *ipc->local = UINT32_MAX;
   ipc->shadow = UINT32_MAX;
 
-  if (reset_controller_register(&ipc->rcdev) < 0)
+  ret = reset_controller_register(&ipc->rcdev);
+  if (ret < 0)
     {
-      return NULL;
+      return ret;
+    }
+
+  /* Take a reset control, so the caller drives the peer through the
+   * framework.  Nothing after this can fail.
+   */
+
+  ipc->rstc = reset_control_get_exclusive(cpuname);
+  if (ipc->rstc == NULL)
+    {
+      rsterr("reset_ipc get reset control failed: %s\n", cpuname);
+      reset_controller_unregister(&ipc->rcdev);
+      return -ENOMEM;
     }
 
   /* The callback the transport runs on every peer notification. */
@@ -453,18 +465,7 @@ reset_ipc_register(FAR struct reset_ipc_s *ipc,
   panic_notifier_chain_register(&ipc->panic_nb);
   register_reboot_notifier(&ipc->reboot_nb);
 
-  /* Hand back a reset control, so the caller drives the peer through the
-   * framework.  Roll back on failure: NULL means nothing is registered.
-   */
-
-  rstc = reset_control_get_exclusive(cpuname);
-  if (rstc == NULL)
-    {
-      rsterr("reset_ipc get reset control failed: %s\n", cpuname);
-      reset_ipc_unregister(ipc);
-    }
-
-  return rstc;
+  return OK;
 }
 
 /****************************************************************************
@@ -473,7 +474,18 @@ reset_ipc_register(FAR struct reset_ipc_s *ipc,
 
 void reset_ipc_unregister(FAR struct reset_ipc_s *ipc)
 {
-  /* Leave the chains first: they hold pointers into this channel. */
+  /* Never registered, or already gone: nothing to undo. */
+
+  if (ipc == NULL || ipc->rstc == NULL)
+    {
+      return;
+    }
+
+  /* Put the control while its controller is still registered. */
+
+  reset_control_put(ipc->rstc);
+
+  /* Leave the chains: they hold pointers into this channel. */
 
   panic_notifier_chain_unregister(&ipc->panic_nb);
   unregister_reboot_notifier(&ipc->reboot_nb);
