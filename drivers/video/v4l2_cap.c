@@ -29,6 +29,7 @@
 #include <fcntl.h>
 #include <assert.h>
 #include <errno.h>
+#include <inttypes.h>
 #include <poll.h>
 
 #include <sys/param.h>
@@ -3988,7 +3989,7 @@ static int capture_expbuf(FAR struct file *filep,
 
   ebuf->fd = ret;
 
-  vinfo("dma_buf_export fd: %d\n", ebuf->fd);
+  vinfo("dma_buf_export fd: 0x%" PRIx32 "\n", ebuf->fd);
 
   return 0;
 }
