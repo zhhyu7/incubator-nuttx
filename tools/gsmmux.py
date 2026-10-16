@@ -819,26 +819,49 @@ class VirtualSerialPort:
         return self.read(8192)
 
 
+class _Telnet:
+    """Minimal telnet (RFC 854) command bytes.
+
+    Interactive clients (PuTTY/MobaXterm in telnet mode) inject these into
+    the byte stream; raw clients (ncat, PuTTY "Raw") never do. A connection
+    is auto-detected as telnet when its first byte is IAC.
+    """
+
+    IAC = 0xFF  # Interpret As Command
+    SB = 0xFA  # subnegotiation begin
+    SE = 0xF0  # subnegotiation end
+    # WILL/WONT/DO/DONT occupy 0xFB..0xFE (3-byte "IAC cmd option").
+    CMD_LO = 0xFB
+    CMD_HI = 0xFE
+    # Greeting: IAC WILL ECHO, IAC WILL SGA, IAC DO SGA -> the client enters
+    # character-at-a-time mode and lets the device (nsh) own echo.
+    GREETING = b"\xff\xfb\x01\xff\xfb\x03\xff\xfd\x03"
+
+
 class TCPVirtualPort:
     """Virtual serial port exposed as a local TCP listener (Windows-friendly).
 
     The event loop watches the listen socket and the single accepted client
     socket via select_fds(); there is no socketpair and no bridge thread.
-    One client at a time; a new connection drops the previous one. Bytes pass
-    through raw.
+    One client at a time; a new connection drops the previous one. Console
+    channels negotiate telnet and fold Enter to a single CR; bin log channels
+    stay raw.
     """
 
     MAX_WBUF = 1024 * 1024
 
-    def __init__(self, dlci, port, host="127.0.0.1"):
+    def __init__(self, dlci, port, host="127.0.0.1", is_bin=False):
         self.dlci = dlci
         self.port = port
         self.host = host
+        self.is_bin = is_bin  # bin log channel: keep raw, no telnet greeting
         self.slave_name = None
         self.running = False
         self._wbuf = bytearray()
         self._listen = None
         self._client = None
+        self._telnet = None  # None=undetected, True=telnet, False=raw
+        self._iac_buf = bytearray()  # partial IAC sequence carry-over
 
     def open(self):
         """Create the TCP listener; clients connect later."""
@@ -912,9 +935,16 @@ class TCPVirtualPort:
                 client, _addr = self._listen.accept()
             except OSError:
                 return b""
-            self._drop_client()  # single-connection policy
+            # Single-connection policy: drop any previous client.
+            self._drop_client()
             client.setblocking(False)
             self._client = client
+            self._telnet = None  # re-detect per connection
+            self._iac_buf = bytearray()
+            # Greet console clients so line-mode telnet switches to char
+            # mode and stops echoing Enter; bin channels stay raw.
+            if not self.is_bin:
+                self.write(_Telnet.GREETING)
             return b""
 
         if self._client is not None and fd == self._client.fileno():
@@ -928,9 +958,63 @@ class TCPVirtualPort:
             if not data:
                 self._drop_client()
                 return b""
+            if self.is_bin:
+                return data
+
+            # First byte IAC => telnet; the flag only gates IAC stripping.
+            if self._telnet is None:
+                self._telnet = data[0] == _Telnet.IAC
+            if self._telnet:
+                data = self._strip_telnet(data)
+            # Fold Enter (CR LF / CR NUL / bare LF) to one CR for nsh on
+            # every client, or nsh echoes the prompt twice.
+            data = (
+                data.replace(b"\r\n", b"\r")
+                .replace(b"\r\x00", b"\r")
+                .replace(b"\n", b"\r")
+            )
             return data
 
         return b""
+
+    def _strip_telnet(self, data):
+        """Remove telnet IAC command sequences from client->device bytes.
+
+        Non-command runs are copied in bulk; only IAC sequences are parsed:
+        IAC IAC (literal 0xFF), 3-byte WILL/WONT/DO/DONT, SB..SE
+        subnegotiation and other 2-byte commands. A partial trailing
+        sequence carries over via ``self._iac_buf``.
+        """
+        buf = self._iac_buf + data
+        out = bytearray()
+        i, n = 0, len(buf)
+        while i < n:
+            nxt = buf.find(_Telnet.IAC, i)
+            if nxt < 0:
+                out += buf[i:]  # no more commands; rest is data
+                i = n
+                break
+            out += buf[i:nxt]  # bulk-copy the data run before IAC
+            i = nxt
+            if i + 1 >= n:
+                break  # need the command byte
+            cmd = buf[i + 1]
+            if cmd == _Telnet.IAC:  # escaped literal 0xFF
+                out.append(_Telnet.IAC)
+                i += 2
+            elif _Telnet.CMD_LO <= cmd <= _Telnet.CMD_HI:
+                if i + 2 >= n:
+                    break  # need the option byte
+                i += 3
+            elif cmd == _Telnet.SB:
+                end = buf.find(bytes([_Telnet.IAC, _Telnet.SE]), i + 2)
+                if end < 0:
+                    break  # incomplete subnegotiation
+                i = end + 2
+            else:
+                i += 2  # other 2-byte command
+        self._iac_buf = bytearray(buf[i:])
+        return bytes(out)
 
 
 class GSMMultiplexer:
@@ -1086,7 +1170,12 @@ class GSMMultiplexer:
             if self.tcp_mode:
                 # port index aligns with device-side ttyGSM (DLCI1 = ttyGSM0)
                 tcp_port = self.tcp_base_port + (dlci - 1)
-                vport = TCPVirtualPort(dlci, tcp_port, host=self.tcp_host)
+                vport = TCPVirtualPort(
+                    dlci,
+                    tcp_port,
+                    host=self.tcp_host,
+                    is_bin=(dlci in self.bin_dlcis),
+                )
                 endpoint = vport.open()
                 self.virtual_ports[dlci] = vport
                 print(
