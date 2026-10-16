@@ -87,6 +87,7 @@
 
 #define PIPE_FLAG_POLICY    (1 << 0) /* Bit 0: Policy=Free buffer when empty */
 #define PIPE_FLAG_UNLINKED  (1 << 1) /* Bit 1: The driver has been unlinked */
+#define PIPE_FLAG_ATOMIC    (1 << 2) /* Bit 2: writev lands in full or fails */
 
 #define PIPE_POLICY_0(f)    do { (f) &= ~PIPE_FLAG_POLICY; } while (0)
 #define PIPE_POLICY_1(f)    do { (f) |= PIPE_FLAG_POLICY; } while (0)
@@ -95,6 +96,10 @@
 
 #define PIPE_UNLINK(f)      do { (f) |= PIPE_FLAG_UNLINKED; } while (0)
 #define PIPE_IS_UNLINKED(f) (((f) & PIPE_FLAG_UNLINKED) != 0)
+
+#define PIPE_ATOMIC_0(f)    do { (f) &= ~PIPE_FLAG_ATOMIC; } while (0)
+#define PIPE_ATOMIC_1(f)    do { (f) |= PIPE_FLAG_ATOMIC; } while (0)
+#define PIPE_IS_ATOMIC(f)   (((f) & PIPE_FLAG_ATOMIC) != 0)
 
 /****************************************************************************
  * Public Types
@@ -153,13 +158,14 @@ extern "C"
 
 struct file;  /* Forward reference */
 struct inode; /* Forward reference */
+struct uio;   /* Forward reference */
 
 FAR struct pipe_dev_s *pipecommon_allocdev(size_t bufsize);
 void    pipecommon_freedev(FAR struct pipe_dev_s *dev);
 int     pipecommon_open(FAR struct file *filep);
 int     pipecommon_close(FAR struct file *filep);
 ssize_t pipecommon_read(FAR struct file *, FAR char *, size_t);
-ssize_t pipecommon_write(FAR struct file *, FAR const char *, size_t);
+ssize_t pipecommon_writev(FAR struct file *filep, FAR struct uio *uio);
 int     pipecommon_ioctl(FAR struct file *filep, int cmd, unsigned long arg);
 int     pipecommon_poll(FAR struct file *filep, FAR struct pollfd *fds,
                                bool setup);

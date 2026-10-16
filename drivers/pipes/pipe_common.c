@@ -45,6 +45,7 @@
 #include <nuttx/semaphore.h>
 #include <nuttx/fs/fs.h>
 #include <nuttx/fs/ioctl.h>
+#include <nuttx/fs/uio.h>
 
 #include "pipe_common.h"
 
@@ -462,154 +463,272 @@ ssize_t pipecommon_read(FAR struct file *filep, FAR char *buffer, size_t len)
 }
 
 /****************************************************************************
- * Name: pipecommon_write
+ * Name: pipecommon_writev
+ *
+ * Description:
+ *   Gather write.  In the default byte-stream mode this behaves like a
+ *   sequence of single-buffer writes: each segment is copied in order,
+ *   short writes and blocking happen exactly as they would for a plain
+ *   write(), and a request larger than the whole buffer is admitted a
+ *   piece at a time as the reader drains it.  When PIPE_FLAG_ATOMIC is set,
+ *   the whole request is admitted all-or-nothing: no byte becomes visible
+ *   to the reader until every segment has been copied under a single
+ *   d_bflock.  A single writev() then carries one complete message (a
+ *   datagram whose header and payload live in separate segments), so a
+ *   reader never observes a partial frame; a request that cannot ever fit
+ *   the buffer is rejected with -EMSGSIZE instead of being written in part.
+ *
  ****************************************************************************/
 
-ssize_t pipecommon_write(FAR struct file *filep, FAR const char *buffer,
-                         size_t len)
+ssize_t pipecommon_writev(FAR struct file *filep, FAR struct uio *uio)
 {
-  FAR struct inode      *inode    = filep->f_inode;
-  FAR struct pipe_dev_s *dev      = inode->i_private;
-  ssize_t                nwritten = 0;
-  ssize_t                last;
-  irqstate_t             flags;
-  int                    ret;
+  FAR struct inode       *inode = filep->f_inode;
+  FAR struct pipe_dev_s  *dev   = inode->i_private;
+  FAR const struct iovec *iov;
+  size_t                  offset;
+  size_t                  total;
+  irqstate_t              flags;
+  int                     iovcnt;
+  int                     ret;
 
   DEBUGASSERT(dev);
-  pipe_dumpbuffer("To PIPE:", (FAR uint8_t *)buffer, len);
+  DEBUGASSERT(up_interrupt_context() == false);
 
-  /* Handle zero-length writes */
-
-  if (len == 0)
+  total = uio->uio_resid;
+  if (total == 0)
     {
       return 0;
     }
 
-  /* At present, this method cannot be called from interrupt handlers.  That
-   * is because it calls nxrmutex_lock() and nxrmutex_lock() cannot be called
-   * form interrupt level. This actually happens fairly commonly
-   * IF [a-z]err() is called from interrupt handlers and stdout is being
-   * redirected via a pipe.  In that case, the debug output will try to go
-   * out the pipe (interrupt handlers should use the _err() APIs).
-   *
-   * On the other hand, it would be very valuable to be able to feed the pipe
-   * from an interrupt handler!  TODO:  Consider disabling interrupts instead
-   * of taking semaphores so that pipes can be written from interrupt
-   * handlers.
-   */
-
-  DEBUGASSERT(up_interrupt_context() == false);
-
-  /* Make sure that we have exclusive access to the device structure */
-
-  flags = rspin_lock_irqsave_nopreempt(&dev->d_bflock);
-
-  /* Loop until all of the bytes have been written */
-
-  last = 0;
-  for (; ; )
+  if (!PIPE_IS_ATOMIC(dev->d_flags))
     {
-      /* REVISIT:  "If all file descriptors referring to the read end of a
-       * pipe have been closed, then a write will cause a SIGPIPE signal to
-       * be generated for the calling process.  If the calling process is
-       * ignoring this signal, then write(2) fails with the error EPIPE."
+      ssize_t ntotal = 0;
+      ssize_t last;
+
+      /* Byte-stream gather write: copy each segment in order, applying the
+       * same short-write, blocking and error reporting rules a plain
+       * write() would.  A request larger than the buffer is written a piece
+       * at a time as the reader drains it, so there is no upper bound here.
        */
 
-      if (dev->d_nreaders <= 0 && PIPE_IS_POLICY_0(dev->d_flags))
+      iov    = uio->uio_iov;
+      iovcnt = uio->uio_iovcnt;
+      offset = uio->uio_offset_in_iov;
+
+      flags = rspin_lock_irqsave_nopreempt(&dev->d_bflock);
+
+      last = 0;
+      while (iovcnt > 0)
         {
-          rspin_unlock_irqrestore_nopreempt(&dev->d_bflock, flags);
-          return nwritten == 0 ? -EPIPE : nwritten;
-        }
+          FAR const uint8_t *base = (FAR const uint8_t *)iov->iov_base;
+          size_t             len  = iov->iov_len - offset;
 
-      /* Would the next write overflow the circular buffer? */
-
-      if (!circbuf_is_full(&dev->d_buffer))
-        {
-          /* Loop until all of the bytes have been written */
-
-          nwritten += circbuf_write(&dev->d_buffer,
-                                    buffer + nwritten, len - nwritten);
-
-          if ((size_t)nwritten == len)
+          if (len == 0)
             {
-              /* Notify all poll/select waiters that they can read from the
-               * FIFO when buffer used exceeds poll threshold.
+              offset = 0;
+              iov++;
+              iovcnt--;
+              continue;
+            }
+
+          /* REVISIT:  "If all file descriptors referring to the read end of
+           * a pipe have been closed, then a write will cause a SIGPIPE
+           * signal to be generated for the calling process.  If the calling
+           * process is ignoring this signal, then write(2) fails with the
+           * error EPIPE."
+           */
+
+          if (dev->d_nreaders <= 0 && PIPE_IS_POLICY_0(dev->d_flags))
+            {
+              rspin_unlock_irqrestore_nopreempt(&dev->d_bflock, flags);
+              if (ntotal == 0)
+                {
+                  return -EPIPE;
+                }
+
+              uio_advance(uio, ntotal);
+              return ntotal;
+            }
+
+          /* Would the next write overflow the circular buffer? */
+
+          if (!circbuf_is_full(&dev->d_buffer))
+            {
+              size_t nwritten;
+
+              nwritten = circbuf_write(&dev->d_buffer, base + offset, len);
+              ntotal += nwritten;
+              offset += nwritten;
+
+              if (nwritten == len)
+                {
+                  offset = 0;
+                  iov++;
+                  iovcnt--;
+                }
+
+              if (iovcnt == 0)
+                {
+                  /* Notify all poll/select waiters that they can read from
+                   * the FIFO when buffer used exceeds poll threshold.
+                   */
+
+                  if (circbuf_used(&dev->d_buffer) > dev->d_pollinthrd)
+                    {
+                      poll_notify(dev->d_fds, CONFIG_DEV_PIPE_NPOLLWAITERS,
+                                  POLLIN);
+                    }
+
+                  pipecommon_wakeup(&dev->d_rdsem);
+
+                  rspin_unlock_irqrestore_nopreempt(&dev->d_bflock, flags);
+                  uio_advance(uio, ntotal);
+                  return ntotal;
+                }
+            }
+          else
+            {
+              /* There is not enough room for the next byte.  Was anything
+               * written in this pass?
                */
 
-              if (circbuf_used(&dev->d_buffer) > dev->d_pollinthrd)
+              if (last < ntotal)
                 {
                   poll_notify(dev->d_fds, CONFIG_DEV_PIPE_NPOLLWAITERS,
                               POLLIN);
+                  pipecommon_wakeup(&dev->d_rdsem);
                 }
 
-              /* Yes.. Notify all of the waiting readers that more data is
-               * available.
+              last = ntotal;
+
+              /* If O_NONBLOCK was set, then return partial bytes written or
+               * EAGAIN.
                */
 
-              pipecommon_wakeup(&dev->d_rdsem);
-
-              /* Return the number of bytes written */
-
-              rspin_unlock_irqrestore_nopreempt(&dev->d_bflock, flags);
-              return len;
-            }
-        }
-      else
-        {
-          /* There is not enough room for the next byte.  Was anything
-           * written in this pass?
-           */
-
-          if (last < nwritten)
-            {
-              /* Notify all poll/select waiters that they can read from the
-               * FIFO.
-               */
-
-              poll_notify(dev->d_fds, CONFIG_DEV_PIPE_NPOLLWAITERS, POLLIN);
-
-              /* Yes.. Notify all of the waiting readers that more data is
-               * available.
-               */
-
-              pipecommon_wakeup(&dev->d_rdsem);
-            }
-
-          last = nwritten;
-
-          /* If O_NONBLOCK was set, then return partial bytes written or
-           * EGAIN.
-           */
-
-          if (filep->f_oflags & O_NONBLOCK)
-            {
-              if (nwritten == 0)
+              if (filep->f_oflags & O_NONBLOCK)
                 {
-                  nwritten = -EAGAIN;
+                  rspin_unlock_irqrestore_nopreempt(&dev->d_bflock, flags);
+                  if (ntotal == 0)
+                    {
+                      return -EAGAIN;
+                    }
+
+                  uio_advance(uio, ntotal);
+                  return ntotal;
                 }
 
-              rspin_unlock_irqrestore_nopreempt(&dev->d_bflock, flags);
-              return nwritten;
-            }
-
-          /* There is more to be written.. wait for data to be removed from
-           * the pipe
-           */
-
-          rspin_unlock_irqrestore_nopreempt(&dev->d_bflock, flags);
-          ret = nxsem_wait(&dev->d_wrsem);
-          if (ret < 0)
-            {
-              /* Either call nxsem_wait may fail because a signal was
-               * received or if the task was canceled.
+              /* There is more to be written.. wait for data to be removed
+               * from the pipe.
                */
 
-              return nwritten == 0 ? (ssize_t)ret : nwritten;
-            }
+              rspin_unlock_irqrestore_nopreempt(&dev->d_bflock, flags);
+              ret = nxsem_wait(&dev->d_wrsem);
+              if (ret < 0)
+                {
+                  /* nxsem_wait may fail because a signal was received or
+                   * because the task was canceled.
+                   */
 
-          flags = rspin_lock_irqsave_nopreempt(&dev->d_bflock);
+                  if (ntotal == 0)
+                    {
+                      return (ssize_t)ret;
+                    }
+
+                  uio_advance(uio, ntotal);
+                  return ntotal;
+                }
+
+              flags = rspin_lock_irqsave_nopreempt(&dev->d_bflock);
+            }
         }
+
+      rspin_unlock_irqrestore_nopreempt(&dev->d_bflock, flags);
+      uio_advance(uio, ntotal);
+      return ntotal;
     }
+
+  /* A request bigger than the whole buffer can never be admitted
+   * atomically, so reporting -EAGAIN would make the caller retry forever
+   * and blocking would wait for space that cannot appear.
+   */
+
+  if (total > dev->d_bufsize)
+    {
+      return -EMSGSIZE;
+    }
+
+  flags = rspin_lock_irqsave_nopreempt(&dev->d_bflock);
+
+  for (; ; )
+    {
+      if (dev->d_nreaders <= 0 && PIPE_IS_POLICY_0(dev->d_flags))
+        {
+          rspin_unlock_irqrestore_nopreempt(&dev->d_bflock, flags);
+          return -EPIPE;
+        }
+
+      if (circbuf_space(&dev->d_buffer) >= total)
+        {
+          break;
+        }
+
+      if (filep->f_oflags & O_NONBLOCK)
+        {
+          rspin_unlock_irqrestore_nopreempt(&dev->d_bflock, flags);
+          return -EAGAIN;
+        }
+
+      /* Wait for the reader to free enough room for the whole request.
+       * Nothing has been written yet, so there is no partial state to
+       * publish or to roll back here.
+       */
+
+      rspin_unlock_irqrestore_nopreempt(&dev->d_bflock, flags);
+      ret = nxsem_wait(&dev->d_wrsem);
+      if (ret < 0)
+        {
+          return ret;
+        }
+
+      flags = rspin_lock_irqsave_nopreempt(&dev->d_bflock);
+    }
+
+  /* Room for the whole request is guaranteed from here to the notify
+   * below, and d_bflock is held throughout, so the reader observes the
+   * request as a single unit.  Only uio_iov[0] carries an offset.
+   */
+
+  iov    = uio->uio_iov;
+  iovcnt = uio->uio_iovcnt;
+  offset = uio->uio_offset_in_iov;
+
+  while (iovcnt-- > 0)
+    {
+      size_t len = iov->iov_len - offset;
+
+      if (len > 0)
+        {
+          pipe_dumpbuffer("To PIPE:",
+                          (FAR uint8_t *)iov->iov_base + offset, len);
+          circbuf_write(&dev->d_buffer,
+                        (FAR const uint8_t *)iov->iov_base + offset, len);
+        }
+
+      offset = 0;
+      iov++;
+    }
+
+  if (circbuf_used(&dev->d_buffer) > dev->d_pollinthrd)
+    {
+      poll_notify(dev->d_fds, CONFIG_DEV_PIPE_NPOLLWAITERS, POLLIN);
+    }
+
+  pipecommon_wakeup(&dev->d_rdsem);
+
+  rspin_unlock_irqrestore_nopreempt(&dev->d_bflock, flags);
+
+  uio_advance(uio, total);
+  return total;
 }
 
 /****************************************************************************
@@ -766,6 +885,21 @@ int pipecommon_ioctl(FAR struct file *filep, int cmd, unsigned long arg)
           else
             {
               PIPE_POLICY_0(dev->d_flags);
+            }
+
+          ret = OK;
+        }
+        break;
+
+      case PIPEIOC_ATOMICWRITE:
+        {
+          if (arg != 0)
+            {
+              PIPE_ATOMIC_1(dev->d_flags);
+            }
+          else
+            {
+              PIPE_ATOMIC_0(dev->d_flags);
             }
 
           ret = OK;

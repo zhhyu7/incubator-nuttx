@@ -46,13 +46,13 @@ static const struct file_operations g_fifo_fops =
   pipecommon_open,     /* open */
   pipecommon_close,    /* close */
   pipecommon_read,     /* read */
-  pipecommon_write,    /* write */
+  NULL,                /* write */
   NULL,                /* seek */
   pipecommon_ioctl,    /* ioctl */
   NULL,                /* truncate */
   pipecommon_poll,     /* poll */
   NULL,                /* readv */
-  NULL                 /* writev */
+  pipecommon_writev    /* writev */
 #ifdef CONFIG_FS_FILEMAP
   , NULL               /* mmap */
 #endif

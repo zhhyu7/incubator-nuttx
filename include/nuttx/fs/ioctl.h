@@ -531,6 +531,19 @@
                                                * IN: None
                                                * OUT: int */
 
+#define PIPEIOC_ATOMICWRITE _PIPEIOC(0x0007)  /* Set atomic writev mode
+                                               * IN: unsigned long integer
+                                               *     0=byte stream, a writev
+                                               *       may be split
+                                               *       (default)
+                                               *     1=a writev either lands
+                                               *       in full or fails; a
+                                               *       request larger than
+                                               *       the buffer is
+                                               *       rejected with
+                                               *       -EMSGSIZE
+                                               * OUT: None */
+
 /* RTC driver ioctl definitions *********************************************/
 
 /* (see nuttx/include/rtc.h */
