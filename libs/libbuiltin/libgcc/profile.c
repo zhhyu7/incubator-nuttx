@@ -300,10 +300,10 @@ void moncontrol(int mode)
           return;
         }
 
-      flags = spin_lock_irqsave(&p->lock);
+      flags = spin_lock_irqsave_notrace(&p->lock);
       if (p->kcount)
         {
-          spin_unlock_irqrestore(&p->lock, flags);
+          spin_unlock_irqrestore_notrace(&p->lock, flags);
           kmm_free(kcount);
           return;
         }
@@ -314,7 +314,7 @@ void moncontrol(int mode)
       p->textsize = textsize;
       p->kcount = kcount;
       p->kcountsize = kcountsize;
-      spin_unlock_irqrestore(&p->lock, flags);
+      spin_unlock_irqrestore_notrace(&p->lock, flags);
 
       profil(kcount, kcountsize, lowpc, scale);
     }
@@ -322,10 +322,10 @@ void moncontrol(int mode)
     {
       bool running;
 
-      flags = spin_lock_irqsave(&p->lock);
+      flags = spin_lock_irqsave_notrace(&p->lock);
       running = p->running;
       p->running = false;
-      spin_unlock_irqrestore(&p->lock, flags);
+      spin_unlock_irqrestore_notrace(&p->lock, flags);
 
       if (running)
         {
@@ -390,10 +390,10 @@ void monstartup(unsigned long lowpc, unsigned long highpc)
       return;
     }
 
-  flags = spin_lock_irqsave(&p->lock);
+  flags = spin_lock_irqsave_notrace(&p->lock);
   if (p->tos != NULL)
     {
-      spin_unlock_irqrestore(&p->lock, flags);
+      spin_unlock_irqrestore_notrace(&p->lock, flags);
       kmm_free(buffer);
       return;
     }
@@ -408,7 +408,7 @@ void monstartup(unsigned long lowpc, unsigned long highpc)
   p->tos = (FAR struct tostruct *)buffer;
   buffer += p->tossize;
   p->froms = (FAR ARCINDEX *)buffer;
-  spin_unlock_irqrestore(&p->lock, flags);
+  spin_unlock_irqrestore_notrace(&p->lock, flags);
 
   moncontrol(1);
 }
@@ -471,7 +471,13 @@ void mcount_internal(uintptr_t frompc, uintptr_t selfpc)
 
   monstartup((uintptr_t)&_stext, (uintptr_t)&_etext);
 
-  flags = spin_lock_irqsave(&p->lock);
+  /* Every lock user in this file stays off the traced helpers: they are
+   * profiled themselves when they are not inlined, so taking the lock
+   * through them re-enters this function and releasing it through them
+   * deadlocks on the lock about to be dropped.
+   */
+
+  flags = spin_lock_irqsave_notrace(&p->lock);
 
   /* Try next time if fail to initialize for some reason */
 
@@ -577,5 +583,5 @@ void mcount_internal(uintptr_t frompc, uintptr_t selfpc)
     }
 
 done:
-  spin_unlock_irqrestore(&p->lock, flags);
+  spin_unlock_irqrestore_notrace(&p->lock, flags);
 }
