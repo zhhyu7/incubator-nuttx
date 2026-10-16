@@ -1104,7 +1104,6 @@ rpmsg_crypto_kprocess_rsa(FAR struct rpmsg_endpoint *ept,
   FAR struct rpmsg_crypto_server_data_s *rcsdata;
   FAR struct crparam *output = NULL;
   FAR struct crparam *input = NULL;
-  FAR struct crparam *dp = NULL;
   FAR struct cryptkop *krp;
   uint32_t data_len = 0;
   uint32_t space;
@@ -1176,23 +1175,21 @@ rpmsg_crypto_kprocess_rsa(FAR struct rpmsg_endpoint *ept,
 
   krp->krp_flags = msg->data.header.flag;
   krp->krp_reqid = msg->header.reqid;
-  dp = &krp->krp_param[6];
   switch (msg->data.header.opcode)
     {
       case VIRTIO_CRYPTO_AKCIPHER_DECRYPT:
-        if (dp && dp->crp_nbits != 0)
+        if (krp->krp_keytype == CRYPTO_KEY_TYPE_PRIVATE)
           {
             krp->krp_op = CRK_MOD_EXP_CRT;
             krp->krp_iparams = 9;
-            krp->krp_oparams = 1;
           }
         else
           {
             krp->krp_op = CRK_MOD_EXP;
             krp->krp_iparams = 3;
-            krp->krp_oparams = 1;
           }
 
+        krp->krp_oparams = 1;
         krp->krp_optype = CRYPTO_OP_DECRYPT;
         output = &krp->krp_param[krp->krp_iparams +
                                  krp->krp_oparams - 1];

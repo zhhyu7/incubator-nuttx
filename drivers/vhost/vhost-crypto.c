@@ -1108,7 +1108,6 @@ static int vhost_crypto_process_rsa(
   FAR struct cryptkop *krp = &sess->u.ak.krp;
   FAR struct crparam *output;
   FAR struct crparam *input;
-  FAR struct crparam *dp;
   FAR void *src_buf;
   FAR void *dst_buf;
   uint32_t src_len;
@@ -1153,8 +1152,6 @@ static int vhost_crypto_process_rsa(
   input->crp_p = src_buf;
   input->crp_nbits = src_len * 8;
 
-  dp = &krp->krp_param[6];
-
   /* Every opcode needs dst: output for non-VERIFY, signature for VERIFY */
 
   dst_buf = vhost_crypto_next_buf(req, &len);
@@ -1166,19 +1163,18 @@ static int vhost_crypto_process_rsa(
   switch (data->header.opcode)
     {
       case VIRTIO_CRYPTO_AKCIPHER_DECRYPT:
-        if (dp->crp_nbits != 0)
+        if (krp->krp_keytype == CRYPTO_KEY_TYPE_PRIVATE)
           {
             krp->krp_op = CRK_MOD_EXP_CRT;
             krp->krp_iparams = 9;
-            krp->krp_oparams = 1;
           }
         else
           {
             krp->krp_op = CRK_MOD_EXP;
             krp->krp_iparams = 3;
-            krp->krp_oparams = 1;
           }
 
+        krp->krp_oparams = 1;
         krp->krp_optype = CRYPTO_OP_DECRYPT;
         break;
 
