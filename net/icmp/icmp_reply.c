@@ -94,19 +94,25 @@ void icmp_reply(FAR struct net_driver_s *dev, int type, int code)
   int ipicmplen = IPv4_HDRLEN + sizeof(struct icmp_hdr_s);
   FAR struct ipv4_hdr_s *ipv4 = IPv4BUF;
   FAR struct icmp_hdr_s *icmp;
+  in_addr_t destipaddr = net_ip4addr_conv32(ipv4->destipaddr);
   uint16_t datalen;
-#ifdef CONFIG_NET_BROADCAST
-  const in_addr_t bcast = INADDR_BROADCAST;
-#endif /* CONFIG_NET_BROADCAST */
-  const in_addr_t any = INADDR_ANY;
 
-  if (net_ipv4addr_hdrcmp(ipv4->destipaddr, &any)
-#  ifdef CONFIG_NET_BROADCAST
-      || net_ipv4addr_hdrcmp(ipv4->destipaddr, &bcast)
-      || net_ipv4addr_broadcast(net_ip4addr_conv32(ipv4->destipaddr),
-                                dev->d_netmask)
-#  endif /* CONFIG_NET_BROADCAST */
-     )
+  /* RFC 1112 Section 7.2 and RFC 1122 Section 3.2.2: an ICMP error is never
+   * generated in response to a datagram destined to a host group or to a
+   * broadcast address.  Such datagrams are delivered to the stack
+   * independently of CONFIG_NET_BROADCAST (SO_BINDTODEVICE forwards every
+   * UDP packet to the bound socket), so these tests must not be conditional
+   * on it either.
+   *
+   * A host mask carries no broadcast address, so testing one would classify
+   * our own unicast address as a broadcast.
+   */
+
+  if (net_ipv4addr_cmp(destipaddr, INADDR_ANY) ||
+      net_ipv4addr_cmp(destipaddr, INADDR_BROADCAST) ||
+      IN_MULTICAST(NTOHL(destipaddr)) ||
+      (!net_ipv4addr_cmp(dev->d_netmask, INADDR_BROADCAST) &&
+       net_ipv4addr_broadcast(destipaddr, dev->d_netmask)))
     {
       dev->d_len = 0;
       return;

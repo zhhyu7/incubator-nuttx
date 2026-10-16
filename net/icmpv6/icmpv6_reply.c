@@ -83,11 +83,14 @@ void icmpv6_reply(FAR struct net_driver_s *dev, int type, int code, int data)
   FAR struct icmpv6_hdr_s *icmpv6;
   uint16_t datalen;
 
-  if (net_ipv6addr_cmp(ipv6->destipaddr, g_ipv6_unspecaddr)
-#  ifdef CONFIG_NET_BROADCAST
-      || net_is_addr_mcast(ipv6->destipaddr)
-#  endif /* CONFIG_NET_BROADCAST */
-     )
+  /* RFC 1112 Section 7.2: an ICMP error is never generated in response to a
+   * datagram destined to an IP host group.  ff02::/16 is accepted by
+   * ipv6_input() unconditionally to serve ND/MLD, so this test must not be
+   * conditional on CONFIG_NET_BROADCAST either.
+   */
+
+  if (net_ipv6addr_cmp(ipv6->destipaddr, g_ipv6_unspecaddr) ||
+      net_is_addr_mcast(ipv6->destipaddr))
     {
       dev->d_len = 0;
       return;
