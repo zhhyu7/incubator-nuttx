@@ -40,6 +40,7 @@ import os
 import pty
 import select
 import signal
+import socket
 import subprocess
 import sys
 import termios
@@ -805,9 +806,131 @@ class VirtualSerialPort:
         """Check if there's pending write data."""
         return len(self._wbuf) > 0
 
-    def fileno(self):
-        """Return file descriptor for select"""
+    def select_fds(self):
+        """Return the fds the event loop should watch for read."""
+        return [self.master_fd] if self.master_fd else []
+
+    def writable_fd(self):
+        """Return the fd to watch for write while data is pending."""
         return self.master_fd if self.master_fd else -1
+
+    def handle_readable(self, fd):
+        """Handle a readable fd; return uplink bytes bound for the device."""
+        return self.read(8192)
+
+
+class TCPVirtualPort:
+    """Virtual serial port exposed as a local TCP listener (Windows-friendly).
+
+    The event loop watches the listen socket and the single accepted client
+    socket via select_fds(); there is no socketpair and no bridge thread.
+    One client at a time; a new connection drops the previous one. Bytes pass
+    through raw.
+    """
+
+    MAX_WBUF = 1024 * 1024
+
+    def __init__(self, dlci, port, host="127.0.0.1"):
+        self.dlci = dlci
+        self.port = port
+        self.host = host
+        self.slave_name = None
+        self.running = False
+        self._wbuf = bytearray()
+        self._listen = None
+        self._client = None
+
+    def open(self):
+        """Create the TCP listener; clients connect later."""
+        self._listen = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        self._listen.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        self._listen.bind((self.host, self.port))
+        self._listen.listen(1)
+        self._listen.setblocking(False)
+        self.slave_name = f"{self.host}:{self.port}"
+        self.running = True
+        return self.slave_name
+
+    def close(self):
+        self.running = False
+        for s in (self._client, self._listen):
+            if s is not None:
+                try:
+                    s.close()
+                except OSError:
+                    pass
+        self._client = None
+
+    def _drop_client(self):
+        if self._client is not None:
+            try:
+                self._client.close()
+            except OSError:
+                pass
+            self._client = None
+
+    def write(self, data):
+        """Queue data to be delivered to the TCP client."""
+        if not self.running:
+            return 0
+        self._wbuf.extend(data)
+        if len(self._wbuf) > self.MAX_WBUF:
+            del self._wbuf[: len(self._wbuf) - self.MAX_WBUF]
+        return len(data)
+
+    def drain_write(self):
+        """Push queued data to the client socket (non-blocking)."""
+        while self._wbuf and self._client is not None:
+            try:
+                n = self._client.send(self._wbuf)
+                del self._wbuf[:n]
+            except BlockingIOError:
+                break
+            except OSError:
+                self._drop_client()
+                break
+
+    def has_pending_write(self):
+        return len(self._wbuf) > 0
+
+    def select_fds(self):
+        """Listen socket is always watched; the client only while connected."""
+        fds = []
+        if self._listen is not None:
+            fds.append(self._listen.fileno())
+        if self._client is not None:
+            fds.append(self._client.fileno())
+        return fds
+
+    def writable_fd(self):
+        return self._client.fileno() if self._client is not None else -1
+
+    def handle_readable(self, fd):
+        """Accept on the listen fd, or read client uplink on the client fd."""
+        if self._listen is not None and fd == self._listen.fileno():
+            try:
+                client, _addr = self._listen.accept()
+            except OSError:
+                return b""
+            self._drop_client()  # single-connection policy
+            client.setblocking(False)
+            self._client = client
+            return b""
+
+        if self._client is not None and fd == self._client.fileno():
+            try:
+                data = self._client.recv(8192)
+            except BlockingIOError:
+                return b""
+            except OSError:
+                self._drop_client()
+                return b""
+            if not data:
+                self._drop_client()
+                return b""
+            return data
+
+        return b""
 
 
 class GSMMultiplexer:
@@ -827,6 +950,9 @@ class GSMMultiplexer:
         bin_dlcis=None,
         elf=None,
         freq=16384,
+        tcp_mode=False,
+        tcp_base_port=7000,
+        tcp_host="127.0.0.1",
     ):
         self.device_path = device_path
         self.num_channels = num_channels
@@ -836,6 +962,9 @@ class GSMMultiplexer:
         self.bin_dlcis = bin_dlcis or set()
         self.elf = elf
         self.freq = freq
+        self.tcp_mode = tcp_mode
+        self.tcp_base_port = tcp_base_port
+        self.tcp_host = tcp_host
         self.bin_decoders = {}
         self.raw_log_file = raw_log_file
         self.raw_log_fd = None
@@ -954,6 +1083,18 @@ class GSMMultiplexer:
     def create_virtual_ports(self):
         """Create virtual serial ports, optionally with fixed-name symlinks"""
         for dlci in range(1, self.num_channels + 1):
+            if self.tcp_mode:
+                # port index aligns with device-side ttyGSM (DLCI1 = ttyGSM0)
+                tcp_port = self.tcp_base_port + (dlci - 1)
+                vport = TCPVirtualPort(dlci, tcp_port, host=self.tcp_host)
+                endpoint = vport.open()
+                self.virtual_ports[dlci] = vport
+                print(
+                    f"Created virtual port DLCI {dlci}: ttyGSM{dlci - 1}"
+                    f" -> tcp://{endpoint}"
+                )
+                continue
+
             vport = VirtualSerialPort(dlci)
             slave_name = vport.open()
             self.virtual_ports[dlci] = vport
@@ -1007,6 +1148,19 @@ class GSMMultiplexer:
                 "-",
             ]
             vport = self.virtual_ports[dlci]
+            if self.tcp_mode:
+                # No PTY master to hand to nxtrace; pipe its decoded text and
+                # let the event loop select the pipe and relay it downlink.
+                self.bin_decoders[dlci] = subprocess.Popen(
+                    cmd,
+                    cwd=pynuttx,
+                    stdin=subprocess.PIPE,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.DEVNULL,
+                )
+                print(f"Started nxtrace decoder for DLCI {dlci} (ttyGSM{dlci - 1})")
+                continue
+
             # nxtrace writes decoded text straight to this PTY master; its
             # buffered stdout cannot survive EAGAIN, so the master must be
             # blocking (the mux only ever select-reads it, never writes it).
@@ -1155,8 +1309,8 @@ class GSMMultiplexer:
             self._tx_queue.extend(encoded)
             offset += len(chunk)
 
-    def _handle_readable(self, fd, serial_fd, fd_to_dlci):
-        """Dispatch one readable fd: serial RX, bin decoder, or vport TX."""
+    def _handle_readable(self, fd, serial_fd, fd_to_vport, bin_pipe_to_vport):
+        """Dispatch one readable fd: serial RX, bin decoder pipe, or vport."""
         if fd == serial_fd:
             # One-shot large read relies on the low-latency flush
             # (open_serial) to keep the kernel RX from overflowing on
@@ -1169,14 +1323,20 @@ class GSMMultiplexer:
                 self._handle_serial_data(data)
                 if self._tx_queue:
                     self._drain_tx_queue()
-        elif fd in fd_to_dlci:
-            dlci = fd_to_dlci[fd]
+        elif fd in bin_pipe_to_vport:
+            # TCP bin channel: nxtrace decoded text arrives on a pipe the
+            # loop can select (Linux), so relay it downlink without a thread.
             try:
                 data = os.read(fd, 8192)
             except BlockingIOError:
                 return
             if data:
-                self._handle_vport_data(dlci, data)
+                bin_pipe_to_vport[fd].write(data)
+        elif fd in fd_to_vport:
+            vport = fd_to_vport[fd]
+            data = vport.handle_readable(fd)
+            if data:
+                self._handle_vport_data(vport.dlci, data)
                 if self._tx_queue:
                     self._drain_tx_queue()
 
@@ -1199,33 +1359,44 @@ class GSMMultiplexer:
         # Set serial fd to non-blocking for better event loop behavior
         _set_nonblocking(serial_fd)
 
-        fd_to_dlci = {}
-        for dlci, vport in self.virtual_ports.items():
-            fd_to_dlci[vport.fileno()] = dlci
-
-        read_fds = [serial_fd] + list(fd_to_dlci.keys())
+        # TCP bin pipes are stable for the run; a TCP console client fd comes
+        # and goes, so the vport fd map is rebuilt each pass below.
+        bin_pipe_to_vport = {}
+        for dlci, dec in self.bin_decoders.items():
+            if dec.stdout is not None:
+                _set_nonblocking(dec.stdout.fileno())
+                bin_pipe_to_vport[dec.stdout.fileno()] = self.virtual_ports[dlci]
 
         while self.running:
             try:
-                # Build writable fd list for pending TX data
+                fd_to_vport = {}
+                for vport in self.virtual_ports.values():
+                    for fd in vport.select_fds():
+                        fd_to_vport[fd] = vport
+
+                read_fds = [serial_fd] + list(fd_to_vport) + list(bin_pipe_to_vport)
+
                 write_fds = []
                 if self._tx_queue:
                     write_fds.append(serial_fd)
-                for dlci, vport in self.virtual_ports.items():
+                for vport in self.virtual_ports.values():
+                    # A TCP vport can hold pending downlink with no client yet
+                    # (writable_fd() == -1); keep it buffered, don't select it.
                     if vport.has_pending_write():
-                        write_fds.append(vport.fileno())
+                        wfd = vport.writable_fd()
+                        if wfd >= 0:
+                            write_fds.append(wfd)
 
                 readable, writable, _ = select.select(read_fds, write_fds, [], 0.05)
 
-                # Drain all writable fds
                 for fd in writable:
                     if fd == serial_fd:
                         self._drain_tx_queue()
-                    elif fd in fd_to_dlci:
-                        self.virtual_ports[fd_to_dlci[fd]].drain_write()
+                    elif fd in fd_to_vport:
+                        fd_to_vport[fd].drain_write()
 
                 for fd in readable:
-                    self._handle_readable(fd, serial_fd, fd_to_dlci)
+                    self._handle_readable(fd, serial_fd, fd_to_vport, bin_pipe_to_vport)
 
                 if viewer is not None and viewer.poll() is not None:
                     self.running = False
@@ -1603,6 +1774,28 @@ Examples:
         "running until the tmux session is closed",
     )
 
+    parser.add_argument(
+        "--tcp",
+        action="store_true",
+        help="Expose each DLCI as a local TCP listener instead of a PTY "
+        "(ttyGSM<port> -> tcp-base-port + port); required on Windows",
+    )
+
+    parser.add_argument(
+        "--tcp-base-port",
+        type=int,
+        default=7000,
+        metavar="PORT",
+        help="Base TCP port for --tcp (ttyGSM0 -> this port; default: 7000)",
+    )
+
+    parser.add_argument(
+        "--tcp-host",
+        default="127.0.0.1",
+        metavar="HOST",
+        help="Bind address for --tcp listeners (default: 127.0.0.1)",
+    )
+
     args = parser.parse_args()
 
     # Test mode (python only)
@@ -1615,16 +1808,16 @@ Examples:
         print("Error: Device path must be specified (-d/--device)")
         return 1
 
-    if not args.device.startswith("socket://") and not os.path.exists(args.device):
-        print(f"Error: Device file does not exist: {args.device}")
-        return 1
-
     if args.number <= 0:
         print("Error: Number of channels must be greater than 0")
         return 1
 
     if args.number > GSM0710.MAX_DLCI:
         print(f"Error: Number of channels must be between 1 and {GSM0710.MAX_DLCI}")
+        return 1
+
+    if args.tcp and (args.minicom is not None or args.tmux is not None):
+        print("Error: --minicom/--tmux operate on PTY nodes, not --tcp")
         return 1
 
     baudrate = args.baudrate if args.baudrate > 0 else 115200
@@ -1663,10 +1856,13 @@ Examples:
         hex_dump_file=args.hex_dump,
         show_raw_data=args.show_raw_data,
         debug_log_file=args.debug,
-        symlink_prefix=GSMMUX_NODE_PREFIX,
+        symlink_prefix=None if args.tcp else GSMMUX_NODE_PREFIX,
         bin_dlcis=bin_dlcis,
         elf=args.elf,
         freq=args.freq,
+        tcp_mode=args.tcp,
+        tcp_base_port=args.tcp_base_port,
+        tcp_host=args.tcp_host,
     )
 
     def signal_handler(signum, frame):
