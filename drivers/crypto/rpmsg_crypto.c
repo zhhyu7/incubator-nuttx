@@ -499,14 +499,20 @@ static int rpmsg_crypto_fill_data_request(
 
 static FAR struct rpmsg_crypto_process_s *
 rpmsg_crypto_get_process_msg(FAR struct rpmsg_crypto_s * rdev,
-                             FAR struct rpmsg_crypto_process_s *src)
+                             FAR struct rpmsg_crypto_process_s *src,
+                             FAR uint32_t *space)
 {
   FAR struct rpmsg_crypto_process_s *msg;
-  uint32_t space;
 
-  msg = rpmsg_crypto_get_tx_payload_buffer(rdev, &space);
+  msg = rpmsg_crypto_get_tx_payload_buffer(rdev, space);
   if (msg == NULL)
     {
+      return NULL;
+    }
+
+  if (*space <= sizeof(*msg))
+    {
+      rpmsg_release_tx_buffer(&rdev->ept, msg);
       return NULL;
     }
 
@@ -524,10 +530,10 @@ rpmsg_crypto_process_endec(FAR struct rpmsg_crypto_s *rdev,
   FAR struct rpmsg_crypto_process_s *msg;
   FAR struct rpmsg_crypto_process_s *rsp;
   FAR char *buf;
-  uint32_t space = rpmsg_get_tx_buffer_size(&rdev->ept);
   uint32_t header_size;
   uint32_t data_size;
   uint32_t offset = 0;
+  uint32_t space;
   bool need_iv = !(crp->crp_desc->crd_flags & CRD_F_UPDATE);
   bool async = crp->crp_flags & CRYPTO_F_CBIMM;
   int remaining = crp->crp_ilen;
@@ -546,7 +552,7 @@ rpmsg_crypto_process_endec(FAR struct rpmsg_crypto_s *rdev,
 
   while (remaining > 0)
     {
-      msg = rpmsg_crypto_get_process_msg(rdev, info);
+      msg = rpmsg_crypto_get_process_msg(rdev, info, &space);
       if (msg == NULL)
         {
           return -ENOMEM;
@@ -557,6 +563,12 @@ rpmsg_crypto_process_endec(FAR struct rpmsg_crypto_s *rdev,
       data_size = space - sizeof(*msg);
       if (remaining == crp->crp_ilen && need_iv)
         {
+          if (data_size <= crp->crp_ivlen)
+            {
+              rpmsg_release_tx_buffer(&rdev->ept, msg);
+              return -ENOMEM;
+            }
+
           msg->data.op_flf.sym.op_type_flf.cipher.iv_len = crp->crp_ivlen;
           memcpy(buf, crp->crp_iv, crp->crp_ivlen);
           header_size += crp->crp_ivlen;
@@ -612,10 +624,10 @@ rpmsg_crypto_process_hash_mac(FAR struct rpmsg_crypto_s *rdev,
 {
   FAR struct rpmsg_crypto_process_s *msg;
   FAR struct rpmsg_crypto_process_s *rsp;
-  uint32_t space = rpmsg_get_tx_buffer_size(&rdev->ept);
-  uint32_t data_size = space - sizeof(*msg);
   uint32_t flags = crp->crp_desc->crd_flags;
   uint32_t offset = 0;
+  uint32_t data_size;
+  uint32_t space;
   bool async = crp->crp_flags & CRYPTO_F_CBIMM;
   int service = virtio_crypto_get_service(crp->crp_desc->crd_alg);
   int remaining = crp->crp_ilen;
@@ -623,7 +635,7 @@ rpmsg_crypto_process_hash_mac(FAR struct rpmsg_crypto_s *rdev,
 
   do
     {
-      msg = rpmsg_crypto_get_process_msg(rdev, info);
+      msg = rpmsg_crypto_get_process_msg(rdev, info, &space);
       if (msg == NULL)
         {
           return -ENOMEM;
@@ -680,19 +692,19 @@ rpmsg_crypto_process_aead_update_aad(
               FAR struct cryptop *crp)
 {
   FAR struct rpmsg_crypto_process_s *msg;
-  uint32_t space = rpmsg_get_tx_buffer_size(&rdev->ept);
   uint32_t flags = crp->crp_desc->crd_flags;
   uint32_t remaining = crp->crp_aadlen;
   uint32_t ivlen = crp->crp_ivlen;
   uint32_t offset = 0;
   uint32_t datalen;
+  uint32_t space;
   uint32_t len;
   FAR char *buf;
   int ret;
 
   do
     {
-      msg = rpmsg_crypto_get_process_msg(rdev, info);
+      msg = rpmsg_crypto_get_process_msg(rdev, info, &space);
       if (msg == NULL)
         {
           return -ENOMEM;
@@ -758,11 +770,11 @@ rpmsg_crypto_process_aead_update(FAR struct rpmsg_crypto_s *rdev,
   FAR struct rpmsg_crypto_process_s *msg;
   FAR struct rpmsg_crypto_process_s *rsp;
   FAR char *buf;
-  uint32_t space = rpmsg_get_tx_buffer_size(&rdev->ept);
   uint32_t remaining = crp->crp_ilen;
   uint32_t flags = crp->crp_desc->crd_flags;
   uint32_t offset = 0;
   uint32_t datalen;
+  uint32_t space;
   uint32_t len;
   bool async = crp->crp_flags & CRYPTO_F_CBIMM;
   int blksize;
@@ -778,7 +790,7 @@ rpmsg_crypto_process_aead_update(FAR struct rpmsg_crypto_s *rdev,
 
   while (remaining > 0)
     {
-      msg = rpmsg_crypto_get_process_msg(rdev, info);
+      msg = rpmsg_crypto_get_process_msg(rdev, info, &space);
       if (msg == NULL)
         {
           return -ENOMEM;
@@ -845,11 +857,12 @@ rpmsg_crypto_process_aead_final(FAR struct rpmsg_crypto_s *rdev,
 {
   FAR struct rpmsg_crypto_process_s *msg;
   FAR struct rpmsg_crypto_process_s *rsp;
-  uint32_t flags = crp->crp_desc->crd_flags;
   bool async = crp->crp_flags & CRYPTO_F_CBIMM;
+  uint32_t flags = crp->crp_desc->crd_flags;
+  uint32_t space;
   int ret;
 
-  msg = rpmsg_crypto_get_process_msg(rdev, info);
+  msg = rpmsg_crypto_get_process_msg(rdev, info, &space);
   if (msg == NULL)
     {
       return -ENOMEM;
