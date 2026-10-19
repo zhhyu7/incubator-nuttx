@@ -1,0 +1,39 @@
+{
+  "include": [
+    "**/CMakeLists.txt",
+    "**/Make.defs",
+    "**/*.cmake"
+  ],
+  "exclude": [
+    "Documentation/**",
+    "**/*.rst",
+    "**/*.md"
+  ],
+  "rules": [
+    {
+      "path": "{external,third_party,thirdparty}/**",
+      "rule": ".opencodereview/rules/third-party.md",
+      "merge_system_rule": false
+    },
+    {
+      "path": "**/Kconfig*",
+      "rule": ".opencodereview/rules/kconfig.md",
+      "merge_system_rule": false
+    },
+    {
+      "path": "**/{CMakeLists.txt,Makefile,Make.defs,*.cmake}",
+      "rule": ".opencodereview/rules/build.md",
+      "merge_system_rule": false
+    },
+    {
+      "path": "**/*.{c,h}",
+      "rule": ".opencodereview/rules/c.md",
+      "merge_system_rule": false
+    },
+    {
+      "path": "**/*.{cxx,cpp,cc,hpp,hxx}",
+      "rule": ".opencodereview/rules/c.md",
+      "merge_system_rule": true
+    }
+  ]
+}
