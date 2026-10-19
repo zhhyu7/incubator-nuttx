@@ -1,0 +1,10 @@
+{
+  "name": "net",
+  "version": "1.0.0",
+  "description": "Net 领域：NuttX 网络协议栈 / CAN / LIN / 以太网驱动 / USRsock-RPMSG 相关 Jira 问题与崩溃分析",
+  "author": {
+    "name": "net"
+  },
+  "repository": "vela/nuttx",
+  "keywords": ["net", "network", "tcp", "udp", "arp", "icmp", "can", "lin", "ethernet", "iob", "usrsock", "rpmsg", "jira"]
+}

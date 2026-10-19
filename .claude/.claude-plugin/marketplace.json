@@ -1,0 +1,16 @@
+{
+  "name": "nuttx-mp",
+  "owner": {
+    "name": "NuttX"
+  },
+  "metadata": {
+    "description": "vela/nuttx 仓托管的 AI 资产 marketplace"
+  },
+  "plugins": [
+    {
+      "name": "net",
+      "source": "./net",
+      "description": "NuttX 网络全栈（协议栈/CAN/LIN/以太网/USRsock-RPMSG）Jira 问题与崩溃分析"
+    }
+  ]
+}
