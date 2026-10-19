@@ -50,6 +50,10 @@
 #define NUM_PENDING_ACTIONS      4
 #define NUM_SIGNALS_PENDING      4
 
+#ifdef CONFIG_DISABLE_SIGNALS
+#  define CONFIG_SIG_PREALLOC_ACTIONS 0
+#endif
+
 /****************************************************************************
  * Public Type Definitions
  ****************************************************************************/
@@ -116,6 +120,11 @@ typedef struct sigq_s sigq_t;
 
 DECLARE_PER_CPU_BMP(sq_queue_t, g_sigfreeaction);
 #define g_sigfreeaction this_cpu_var_bmp(g_sigfreeaction)
+
+#if CONFIG_SIG_PREALLOC_ACTIONS > 0
+DECLARE_PER_CPU_BMP(sigactq_t, g_sigactions[CONFIG_SIG_PREALLOC_ACTIONS]);
+#define g_sigactions this_cpu_var_bmp(g_sigactions)
+#endif
 
 /* The g_sigpendingaction data structure is a list of available pending
  * signal action structures.

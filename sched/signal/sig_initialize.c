@@ -59,6 +59,12 @@ struct sigpool_s
 DEFINE_PER_CPU_BSS_BMP(sq_queue_t, g_sigfreeaction);
 #define g_sigfreeaction this_cpu_var_bmp(g_sigfreeaction)
 
+#if CONFIG_SIG_PREALLOC_ACTIONS > 0
+#undef g_sigactions
+DEFINE_PER_CPU_BSS_BMP(sigactq_t, g_sigactions[CONFIG_SIG_PREALLOC_ACTIONS]);
+#define g_sigactions this_cpu_var_bmp(g_sigactions)
+#endif
+
 /* The g_sigpendingaction data structure is a list of available pending
  * signal action structures.
  */
@@ -109,6 +115,28 @@ static DEFINE_PER_CPU_BSS_BMP(struct sigpool_s, g_sigpool);
 /****************************************************************************
  * Private Functions
  ****************************************************************************/
+
+/****************************************************************************
+ * Name: nxsig_init_prealloc_actions
+ *
+ * Description:
+ *   Place all pre-allocated signal actions on the free list.
+ *
+ ****************************************************************************/
+
+#if CONFIG_SIG_PREALLOC_ACTIONS > 0
+static void nxsig_init_prealloc_actions(void)
+{
+  int i;
+
+  for (i = 0; i < CONFIG_SIG_PREALLOC_ACTIONS; i++)
+    {
+      sq_addlast((FAR sq_entry_t *)(&g_sigactions[i]), &g_sigfreeaction);
+    }
+}
+#else
+#  define nxsig_init_prealloc_actions()
+#endif
 
 /****************************************************************************
  * Name: nxsig_init_block
@@ -181,6 +209,8 @@ void nxsig_initialize(void)
   sq_init(&g_sigpendingirqaction);
   sq_init(&g_sigpendingsignal);
   sq_init(&g_sigpendingirqsignal);
+
+  nxsig_init_prealloc_actions();
 
   sigpool = nxsig_init_block(&g_sigpendingaction, sigpool,
                              NUM_PENDING_ACTIONS, SIG_ALLOC_FIXED);

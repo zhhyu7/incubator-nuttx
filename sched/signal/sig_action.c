@@ -47,23 +47,6 @@
  ****************************************************************************/
 
 /****************************************************************************
- * Private Types
- ****************************************************************************/
-
-#if CONFIG_SIG_PREALLOC_ACTIONS > 0
-typedef sigactq_t sigaction_prealloc_t[CONFIG_SIG_PREALLOC_ACTIONS];
-#endif
-
-/****************************************************************************
- * Private Data
- ****************************************************************************/
-
-#if CONFIG_SIG_PREALLOC_ACTIONS > 0
-static DEFINE_PER_CPU_BMP(sigaction_prealloc_t, g_sigactions);
-static DEFINE_PER_CPU_BMP(bool, g_sigactions_used);
-#endif
-
-/****************************************************************************
  * Private Functions
  ****************************************************************************/
 
@@ -72,11 +55,10 @@ static DEFINE_PER_CPU_BMP(bool, g_sigactions_used);
 #if CONFIG_SIG_PREALLOC_ACTIONS > 0
 static inline_function bool is_prealloc_action(FAR sigactq_t *sigact)
 {
-  uintptr_t prealloc_base = (uintptr_t)&g_sigactions;
-  uintptr_t ptr           = (uintptr_t)(sigact);
+  uintptr_t ptr = (uintptr_t)sigact;
 
-  return ptr >= prealloc_base &&
-         ptr < prealloc_base + sizeof(sigaction_prealloc_t);
+  return ptr >= (uintptr_t)&g_sigactions[0] &&
+         ptr < (uintptr_t)&g_sigactions[CONFIG_SIG_PREALLOC_ACTIONS];
 }
 #else
 #  define is_prealloc_action(sigact) false
@@ -91,43 +73,32 @@ static inline_function bool is_prealloc_action(FAR sigactq_t *sigact)
  *
  ****************************************************************************/
 
-static void nxsig_alloc_actionblock(void)
+static FAR sigactq_t *nxsig_alloc_actionblock(void)
 {
-  FAR sigactq_t *sigact;
-  irqstate_t flags;
-  int i;
-
-  /* Use pre-allocated instances only once */
-
-#if CONFIG_SIG_PREALLOC_ACTIONS > 0
-  flags = spin_lock_irqsave(&g_sigspinlock);
-  if (!g_sigactions_used)
-    {
-      for (i = 0; i < CONFIG_SIG_PREALLOC_ACTIONS; i++)
-        {
-          sq_addlast((FAR sq_entry_t *)(g_sigactions + i), &g_sigfreeaction);
-        }
-
-      g_sigactions_used = true;
-    }
-
-  spin_unlock_irqrestore(&g_sigspinlock, flags);
-#endif
-
   /* Allocate a block of signal actions */
 
-  sigact = kmm_malloc((sizeof(sigactq_t)) * CONFIG_SIG_ALLOC_ACTIONS);
+  FAR sigactq_t *ret    = NULL;
+  FAR sigactq_t *sigact = kmm_malloc((sizeof(sigactq_t)) *
+                                     CONFIG_SIG_ALLOC_ACTIONS);
+
   if (sigact != NULL)
     {
-      flags = spin_lock_irqsave(&g_sigspinlock);
+      int        i;
+      irqstate_t flags = spin_lock_irqsave(&g_sigspinlock);
 
-      for (i = 0; i < CONFIG_SIG_ALLOC_ACTIONS; i++)
+      for (i = 0; i < CONFIG_SIG_ALLOC_ACTIONS - 1; i++)
         {
-          sq_addlast((FAR sq_entry_t *)sigact++, &g_sigfreeaction);
+          sq_addlast((FAR sq_entry_t *)&sigact[i], &g_sigfreeaction);
         }
 
       spin_unlock_irqrestore(&g_sigspinlock, flags);
+
+      /* Return the last unused sigact. */
+
+      ret = &sigact[CONFIG_SIG_ALLOC_ACTIONS - 1];
     }
+
+  return ret;
 }
 
 /****************************************************************************
@@ -151,17 +122,13 @@ static FAR sigactq_t *nxsig_alloc_action(void)
 
   /* Check if we got one via loop as not in critical section now */
 
-  while (!sigact)
+  if (!sigact)
     {
       /* Add another block of signal actions to the list */
 
-      nxsig_alloc_actionblock();
+      sigact = nxsig_alloc_actionblock();
 
-      /* And try again */
-
-      flags = spin_lock_irqsave(&g_sigspinlock);
-      sigact = (FAR sigactq_t *)sq_remfirst(&g_sigfreeaction);
-      spin_unlock_irqrestore(&g_sigspinlock, flags);
+      DEBUGASSERT(sigact);
     }
 
   return sigact;
