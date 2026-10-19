@@ -58,6 +58,7 @@ static int nxsched_suspend_handler(FAR void *cookie)
   FAR struct suspend_arg_s *arg = cookie;
   FAR struct tcb_s *tcb;
   irqstate_t flags;
+  bool switch_needed;
 
   flags = enter_critical_section();
   tcb = nxsched_get_tcb(arg->pid);
@@ -77,10 +78,17 @@ static int nxsched_suspend_handler(FAR void *cookie)
       atomic_and(&tcb->flags, ~TCB_FLAG_CPU_LOCKED);
     }
 
-  nxsched_remove_readytorun(tcb);
+  switch_needed = nxsched_remove_readytorun(tcb);
 
   tcb->task_state = TSTATE_TASK_STOPPED;
   dq_addlast((FAR dq_entry_t *)tcb, &g_stoppedtasks);
+
+  /* Run the switch hooks: the IPI return path only swaps registers. */
+
+  if (switch_needed)
+    {
+      nxsched_switch(this_task(), tcb);
+    }
 
   leave_critical_section(flags);
   nxsched_put_tcb(tcb);

@@ -59,7 +59,14 @@ static int terminate_handler(FAR void *cookie)
   /* tcb is vaild here */
 
   flags = enter_critical_section();
-  nxsched_remove_readytorun(tcb);
+
+  /* Run the switch hooks: the IPI return path only swaps registers. */
+
+  if (nxsched_remove_readytorun(tcb))
+    {
+      nxsched_switch(this_task(), tcb);
+    }
+
   leave_critical_section(flags);
 
   return OK;

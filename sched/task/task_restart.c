@@ -81,7 +81,12 @@ static int restart_handler(FAR void *cookie)
       atomic_and(&tcb->flags, ~TCB_FLAG_CPU_LOCKED);
     }
 
-  nxsched_remove_readytorun(tcb);
+  /* Run the switch hooks: the IPI return path only swaps registers. */
+
+  if (nxsched_remove_readytorun(tcb))
+    {
+      nxsched_switch(this_task(), tcb);
+    }
 
   leave_critical_section(flags);
 
