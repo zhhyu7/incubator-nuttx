@@ -816,6 +816,13 @@ __cpu0_start:
 	mcr		CP15_VBAR(r0)
 #endif /* CONFIG_ARM_HAVE_EL2 */
 
+	/* Flash ways are configured before enabling the caches. */
+
+#ifdef CONFIG_BOOT_RUNFROMFLASH
+	ldr		r0, =IMP_CSCTLR_INIT
+	mcr		CP15_CSCTLR(r0)
+#endif
+
 	/* Configure the system control register (see sctrl.h) */
 
 	mrc		CP15_SCTLR(r0)			/* Get control register */

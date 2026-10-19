@@ -15,3 +15,23 @@ config ARM_PSCI_SERVER
 		(SYSTEM_RESET, SYSTEM_OFF, etc.) from the non-secure world
 		via semihosting. This is needed when QEMU is launched with
 		-bios which disables the built-in PSCI firmware.
+
+config ARM_FLASH_ICACHE_WAYS
+	int "Instruction cache Flash ways"
+	range 0 4
+	default 1
+	depends on BOOT_RUNFROMFLASH
+	depends on !ARM_ICACHE_DISABLE
+	---help---
+		Number of instruction cache ways assigned to Flash. The
+		remaining ways are assigned to AXIM.
+
+config ARM_FLASH_DCACHE_WAYS
+	int "Data cache Flash ways"
+	range 0 4
+	default 3
+	depends on BOOT_RUNFROMFLASH
+	depends on !ARM_DCACHE_DISABLE
+	---help---
+		Number of data cache ways assigned to Flash. The remaining
+		ways are assigned to AXIM.

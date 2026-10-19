@@ -98,6 +98,7 @@
 #define CP15_HCPTR(r)      _CP15(4, r, c1, c1, 2)   /* Hyp Architectural Feature Trap Register */
 #define CP15_SCTLR(r)      _CP15(0, r, c1, c0, 0)   /* System Control Register */
 #define CP15_ACTLR(r)      _CP15(0, r, c1, c0, 1)   /* Auxiliary Control Register */
+#define CP15_CSCTLR(r)     _CP15(1, r, c9, c1, 0)   /* IMP_CSCTLR */
 #define CP15_CPACR(r)      _CP15(0, r, c1, c0, 2)   /* Coprocessor Access Control Register */
 #define CP15_SCR(r)        _CP15(0, r, c1, c1, 0)   /* Secure Configuration Register */
 #define CP15_SDER(r)       _CP15(0, r, c1, c1, 1)   /* Secure Debug Enable Register */

@@ -121,6 +121,30 @@
 
 /* TODO: To be provided */
 
+/* Cache Segregation Control Register (IMP_CSCTLR)
+ *
+ * IFLW[10:8]: Instruction cache Flash ways
+ * DFLW[2:0]:  Data cache Flash ways
+ */
+
+#ifdef CONFIG_BOOT_RUNFROMFLASH
+#  ifdef CONFIG_ARM_ICACHE_DISABLE
+#    define IMP_CSCTLR_IFLW  0
+#  else
+#    define IMP_CSCTLR_IFLW  (CONFIG_ARM_FLASH_ICACHE_WAYS << 8)
+#  endif
+
+#  ifdef CONFIG_ARM_DCACHE_DISABLE
+#    define IMP_CSCTLR_DFLW  0
+#  else
+#    define IMP_CSCTLR_DFLW  CONFIG_ARM_FLASH_DCACHE_WAYS
+#  endif
+
+#  define IMP_CSCTLR_INIT  (IMP_CSCTLR_IFLW | IMP_CSCTLR_DFLW)
+#else
+#  define IMP_CSCTLR_INIT  0
+#endif
+
 /* System Control Register (SCTLR)
  *
  * NOTES:
