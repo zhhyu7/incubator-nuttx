@@ -76,11 +76,28 @@ static void register_devices_from_fdt(void)
       return;
     }
 
+#ifdef CONFIG_DRIVERS_VIRTIO_MMIO
+  ret = fdt_virtio_mmio_devices_register(fdt, QEMU_M_IRQ_BASE);
+  if (ret < 0)
+    {
+      syslog(LOG_ERR, "fdt_virtio_mmio_devices_register failed, ret=%d\n",
+             ret);
+    }
+#endif
+
 #ifdef CONFIG_IOEXPANDER_PL061
   ret = fdt_pl061_devices_register(fdt, QEMU_M_IRQ_BASE);
   if (ret < 0)
     {
       syslog(LOG_ERR, "fdt_pl061_devices_register failed, ret=%d\n", ret);
+    }
+#endif
+
+#ifdef CONFIG_CAN_CTUCANFD
+  ret = fdt_ctucanfd_devices_register(fdt, QEMU_M_IRQ_BASE);
+  if (ret < 0)
+    {
+      syslog(LOG_ERR, "fdt_ctucanfd_devices_register failed, ret=%d\n", ret);
     }
 #endif
 
