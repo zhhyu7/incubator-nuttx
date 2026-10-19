@@ -29,7 +29,7 @@
 #include <netinet/if_ether.h>
 #include <nuttx/wireless/wireless.h>
 #include <nuttx/net/netdev_lowerhalf.h>
-#include <netpacket/netlink.h>
+#include <netpacket/rtnetlink.h>
 #include <nuttx/net/netlink.h>
 #include <sys/time.h>
 #include <nuttx/kmalloc.h>

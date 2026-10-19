@@ -38,7 +38,7 @@
 #include <nuttx/net/ip.h>
 #include <nuttx/wireless/ieee80211/ieee80211.h>
 #include <nuttx/virtio/virtio.h>
-#include <netpacket/netlink.h>
+#include <netpacket/rtnetlink.h>
 #include <nuttx/net/netlink.h>
 
 #include <nuttx/net/wifi_sim.h>
