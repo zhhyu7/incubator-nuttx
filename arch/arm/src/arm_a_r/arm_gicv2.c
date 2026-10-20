@@ -196,8 +196,6 @@ void up_secure_irq_all(bool secure)
 
 void arm_gic0_initialize(void)
 {
-  unsigned int nlines = arm_gic_nlines();
-  unsigned int irq;
 #ifdef CONFIG_ARM_BUSY_WAIT
   uint32_t regval;
 #endif
@@ -224,53 +222,20 @@ void arm_gic0_initialize(void)
   putreg32(0, GIC_ICCNSAPR3);
   putreg32(0, GIC_ICCNSAPR4);
 
-  /* Distributor clear-active & clear-pending. */
-
-  for (irq = 0; irq < nlines; irq += 32)
-    {
-      putreg32(0xffffffff, GIC_ICDCAR(irq));
-      putreg32(0xffffffff, GIC_ICDICPR(irq));
-    }
-
-  /* Initialize SPIs.  The following should be done only by CPU0. */
-
-  /* A processor in Secure State sets:
-   *
-   * 1. Which interrupts are non-secure (ICDISR).  All set to one (group
-   *    1).
-   * 2. Trigger mode of the SPI (ICDICFR). All fields set to 0b01->Level
-   *    sensitive, 1-N model.
-   * 3. Interrupt Clear-Enable (ICDICER)
-   * 3. Priority of the SPI using the priority set register (ICDIPR).
-   *    Priority values are 8-bit unsigned binary. A GIC supports a
-   *    minimum of 16 and a maximum of 256 priority levels. Here all
-   *    are set to the middle priority 128 (0x80).
-   * 4. Target that receives the SPI interrupt (ICDIPTR).  Set all to
-   *    CPU0.
+  /* Clear this CPU's banked SGIs/PPIs only; SPIs may be shared with other
+   * images and are set up by their users through up_enable_irq() etc.
    */
 
-  /* Registers with 1-bit per interrupt */
+  putreg32(0xffffffff, GIC_ICDCAR(0));
+  putreg32(0xffffffff, GIC_ICDICPR(0));
 
-  for (irq = GIC_IRQ_SPI; irq < nlines; irq += 32)
-    {
-      putreg32(0xffffffff, GIC_ICDISR(irq));   /* SPIs group 1 */
-      putreg32(0xffffffff, GIC_ICDICER(irq));  /* SPIs disabled */
-    }
+#if defined(CONFIG_ARCH_TRUSTZONE_SECURE) || defined(CONFIG_ARCH_HIPRI_INTERRUPT)
+  /* Group 0 is signalled as FIQ, so make every interrupt group 1 and let
+   * up_secure_irq() move the secure ones back to group 0.
+   */
 
-  /* Registers with 2-bits per interrupt */
-
-  for (irq = GIC_IRQ_SPI; irq < nlines; irq += 16)
-    {
-      putreg32(0x55555555, GIC_ICDICFR(irq));  /* SPIs level sensitive */
-    }
-
-  /* Registers with 8-bits per interrupt */
-
-  for (irq = GIC_IRQ_SPI; irq < nlines; irq += 4)
-    {
-      putreg32(0x80808080, GIC_ICDIPR(irq));   /* SPI priority */
-      putreg32(0x01010101, GIC_ICDIPTR(irq));  /* SPI on CPU0 */
-    }
+  up_secure_irq_all(false);
+#endif
 
 #ifdef CONFIG_ARM_GICv2M
   arm_gic_v2m_initialize();
