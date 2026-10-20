@@ -62,6 +62,16 @@ config CRYPTO_CRYPTODEV_SOFTWARE_CRYPTO
 	depends on CRYPTO_BACKENDS && CRYPTO_SW_AES
 	default n
 
+config CRYPTO_RSA_MAX_BITS
+	int "Maximum RSA modulus size in bits"
+	default 4096
+	range 512 4096
+	depends on CRYPTO_CRYPTODEV_SOFTWARE_CRYPTO
+	---help---
+		Largest modulus the software RSA accepts.  The per-operation heap
+		buffers scale with this value: about 7 KB at 4096 bits, half of
+		that at 2048.
+
 config CRYPTO_CRYPTODEV_SOFTWARE_KEYMGMT
 	bool "cryptodev software key management support"
 	depends on CRYPTO_BACKENDS && !MTD_CONFIG_NONE
