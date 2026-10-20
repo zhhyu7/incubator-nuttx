@@ -779,7 +779,7 @@ static void hardware_initialize(void)
  *
  ****************************************************************************/
 
-void nx_start(void)
+__jumpfunc__ void nx_start(void)
 {
 #ifdef CONFIG_SMP
   int i;

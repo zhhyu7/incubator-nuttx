@@ -66,7 +66,7 @@
  *
  ****************************************************************************/
 
-void nx_idle_trampoline(void)
+__jumpfunc__ void nx_idle_trampoline(void)
 {
 #ifdef CONFIG_SCHED_INSTRUMENTATION_SWITCH
   FAR struct tcb_s *tcb = this_task();
