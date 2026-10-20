@@ -168,9 +168,16 @@ void icmpv6_reply(FAR struct net_driver_s *dev, int type, int code, int data)
 
   dev->d_len = ipicmplen + datalen;
 
+  /* ICMPv6 error messages are ordinary stack-originated traffic, so they
+   * use the default Hop Limit.  The mandatory value of 255 applies only to
+   * the NDP messages built by icmpv6_advertise()/icmpv6_solicit() and the
+   * router discovery paths, per RFC 4861 Section 7.1.2.  This also matches
+   * Linux, which routes ICMP error messages through ip_select_ttl().
+   */
+
   ipv6_build_header(IPv6BUF, dev->d_len - IPv6_HDRLEN, IP_PROTO_ICMP6,
                     netdev_ipv6_srcaddr(dev, ipv6->destipaddr),
-                    ipv6->srcipaddr, 255, 0);
+                    ipv6->srcipaddr, IP_TTL_DEFAULT, 0);
 
   /* Initialize the ICMPv6 header */
 

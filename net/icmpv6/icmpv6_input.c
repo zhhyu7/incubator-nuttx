@@ -603,6 +603,13 @@ void icmpv6_input(FAR struct net_driver_s *dev, unsigned int iplen)
 
         icmpv6->type = ICMPv6_ECHO_REPLY;
 
+        /* Reset the Hop Limit of the reply.  The request buffer is reused
+         * in place, so without this the reply would carry the Hop Limit
+         * left over from the incoming request rather than our own default.
+         */
+
+        ipv6->ttl = IP_TTL_DEFAULT;
+
         srcaddr = netdev_ipv6_srcaddr(dev, ipv6->destipaddr);
         net_ipv6addr_copy(ipv6->destipaddr, ipv6->srcipaddr);
         net_ipv6addr_copy(ipv6->srcipaddr, srcaddr);

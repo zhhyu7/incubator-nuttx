@@ -297,10 +297,15 @@
 
 /* The IP TTL (time to live) of IP packets sent by the network stack.
  *
- * This should normally not be changed.
+ * This should normally not be changed.  Kept as a fallback so that code
+ * including this header still builds when the network is not configured.
  */
 
-#define IP_TTL_DEFAULT 64
+#ifdef CONFIG_NET_IP_DEFAULT_TTL
+#  define IP_TTL_DEFAULT CONFIG_NET_IP_DEFAULT_TTL
+#else
+#  define IP_TTL_DEFAULT 64
+#endif
 
 /* Network drivers often receive packets with garbage at the end
  * and are longer than the size of packet in the TCP header.  The

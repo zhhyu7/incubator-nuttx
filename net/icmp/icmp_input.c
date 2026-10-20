@@ -395,6 +395,14 @@ void icmp_input(FAR struct net_driver_s *dev)
 
       icmp->type = ICMP_ECHO_REPLY;
 
+      /* Reset the TTL of the reply.  The request buffer is reused in place,
+       * so without this the reply would carry the TTL left over from the
+       * incoming request, which leaks the peer's hop count instead of our
+       * own default.  Linux resets it from net.ipv4.ip_default_ttl here.
+       */
+
+      ipv4->ttl = IP_TTL_DEFAULT;
+
       /* Swap IP addresses per RFC 792 / RFC 1122 Section 3.2.1.3:
        *   - Unicast destination: reply source MUST be the request's
        *     destination IP (the "specific-destination" of the request).
@@ -421,6 +429,16 @@ void icmp_input(FAR struct net_driver_s *dev)
         {
           net_ipv4addr_hdrcopy(ipv4->srcipaddr, &org_dest);
         }
+
+      /* Recalculate the IPv4 header checksum.  Both the TTL and (for a
+       * broadcast/multicast request) the source address have changed, so
+       * the checksum carried by the request is no longer valid.
+       */
+
+      ipv4->ipchksum = 0;
+#ifdef CONFIG_NET_IPV4_CHECKSUMS
+      ipv4->ipchksum = ~ipv4_chksum(ipv4);
+#endif
 
       /* Recalculate the ICMP checksum */
 
@@ -512,6 +530,13 @@ void icmp_input(FAR struct net_driver_s *dev)
       /* Change the ICMP type */
 
       icmp->type = ICMP_TIMESTAMP_REPLY;
+
+      /* Reset the TTL of the reply for the same reason as the echo reply
+       * above:  the request buffer is reused in place, so without this the
+       * reply would carry the TTL left over from the incoming request.
+       */
+
+      ipv4->ttl = IP_TTL_DEFAULT;
 
       /* Swap IP addresses. */
 
