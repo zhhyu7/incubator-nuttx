@@ -41,7 +41,6 @@ genrule {
     srcs: [
         "include/debug.h",
         "include/netdb.h",
-        "include/netpacket/rpmsg.h",
         "include/nuttx/atomic.h",
         "include/nuttx/audio/audio.h",
         "include/nuttx/compiler.h",
@@ -75,7 +74,6 @@ genrule {
         "include/sys/queue.h",
     ],
     cmd: "mkdir -p $(genDir)/arch; " +
-         "mkdir -p $(genDir)/netpacket; " +
          "mkdir -p $(genDir)/nuttx/audio; " +
          "mkdir -p $(genDir)/nuttx/fs; " +
          "mkdir -p $(genDir)/nuttx/lib; " +
@@ -91,7 +89,6 @@ genrule {
         "arch/irq.h",
         "debug.h",
         "netdb.h",
-        "netpacket/rpmsg.h",
         "nuttx/arch.h",
         "nuttx/atomic.h",
         "nuttx/audio/audio.h",
