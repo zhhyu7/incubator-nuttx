@@ -191,10 +191,11 @@ static int vlan_transmit(FAR struct netdev_lowerhalf_s *dev,
       /* Undo VLAN encapsulation so the packet can be safely retransmitted
        * through vlan_transmit again (e.g. after being re-queued to txq).
        * Move DST+SRC back to original position and restore io_offset.
+       * Should use memmove() otherwise source and destination will overlap.
        */
 
-      data = netpkt_getdata(dev, pkt);
-      netpkt_copyin(dev, pkt, data, offsetof(struct eth_hdr_s, type), 4);
+      memmove(netpkt_getdata(dev, pkt) + 4, netpkt_getdata(dev, pkt),
+              offsetof(struct eth_hdr_s, type));
       netpkt_reset_reserved(dev, pkt, reserved);
     }
 
