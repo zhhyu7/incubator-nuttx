@@ -252,7 +252,7 @@ static void battery_fake_work(FAR void *arg)
  * Public Functions
  ****************************************************************************/
 
-int battery_fake_gauge_register()
+int battery_fake_gauge_register(void)
 {
   int ret;
   FAR struct battery_fake_gauge_s *priv;
