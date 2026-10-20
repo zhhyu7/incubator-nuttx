@@ -354,7 +354,6 @@ config ARCH_CHIP_RP2040
 	select ARCH_HAVE_RAMVECTORS
 	select ARCH_HAVE_MULTICPU
 	select ARCH_HAVE_I2CRESET
-	select ARM_HAVE_WFE_SEV
 	select ARCH_BOARD_COMMON
 	select LIBC_ATOMIC_IRQ if !SMP
 	select LIBC_ATOMIC_HWSPINLOCK if SMP
@@ -932,7 +931,6 @@ config ARCH_ARMV7A
 	select ARCH_HAVE_CPUINFO
 	select ARCH_HAVE_DEBUG
 	select ARCH_HAVE_PERF_EVENTS_USER_ACCESS if !SMP
-	select ARM_HAVE_WFE_SEV
 	select ARM_PMUV2 if PERF_EVENTS
 
 config ARCH_CORTEXA5
@@ -1126,7 +1124,6 @@ config ARCH_ARMV8A
 	select ARCH_HAVE_CPUINFO
 	select ARCH_HAVE_DEBUG
 	select ARCH_HAVE_PERF_EVENTS_USER_ACCESS if !SMP
-	select ARM_HAVE_WFE_SEV
 	select ARM_PMUV2 if PERF_EVENTS
 	select ARM_HAVE_EL3_MONITOR if ARCH_TRUSTZONE_SECURE
 	select ALARM_ARCH
@@ -1296,12 +1293,6 @@ config ARM_HAVE_PSCI
 		to implement handling firmware at EL2 or EL3. The option
 		maybe not applicable for arm core without PCSI firmware
 		interface implement
-
-config ARM_HAVE_WFE_SEV
-	bool
-	default n
-	---help---
-		Use WFE and SEV instructions for spinlock to reduce power consumption
 
 config ARM_HAVE_DPFPU32
 	bool

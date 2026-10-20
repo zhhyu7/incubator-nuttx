@@ -119,11 +119,6 @@ do { \
 #  define _einit   Image$$init_section$$Limit
 #endif
 
-#ifdef CONFIG_ARM_HAVE_WFE_SEV
-#  define UP_WFE() __asm__ __volatile__ ("wfe" : : : "memory")
-#  define UP_SEV() __asm__ __volatile__ ("sev" : : : "memory")
-#endif
-
 #define ARCH_TP_OFFSET  (2 * sizeof(void *))
 #define ARCH_TP_PADDING (0)
 
