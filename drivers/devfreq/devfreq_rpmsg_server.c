@@ -67,14 +67,13 @@ static int devfreq_rpmsg_suspend_handler(FAR struct rpmsg_endpoint *ept,
 static int devfreq_rpmsg_resume_handler(FAR struct rpmsg_endpoint *ept,
                                         FAR void *data, size_t len,
                                         uint32_t src, FAR void *priv);
-static int devfreq_rpmsg_gettable_handler(FAR struct rpmsg_endpoint *ept,
-                                          FAR void *data, size_t len,
-                                          uint32_t src, FAR void *priv);
-
 static bool devfreq_rpmsg_server_match(FAR struct rpmsg_device *rdev,
                                        FAR void *priv,
                                        FAR const char *name,
                                        uint32_t dest);
+static size_t
+devfreq_rpmsg_server_get_extra(FAR struct rpmsg_endpoint *ept,
+                               FAR void *extra);
 static void devfreq_rpmsg_server_bind(FAR struct rpmsg_device *rdev,
                                       FAR void *priv,
                                       FAR const char *name,
@@ -90,7 +89,6 @@ static const rpmsg_ept_cb g_devfreq_rpmsg_handler[] =
   [DEVFREQ_RPMSG_GET_FREQ]  = devfreq_rpmsg_getfreq_handler,
   [DEVFREQ_RPMSG_SUSPEND]   = devfreq_rpmsg_suspend_handler,
   [DEVFREQ_RPMSG_RESUME]    = devfreq_rpmsg_resume_handler,
-  [DEVFREQ_RPMSG_GET_TABLE] = devfreq_rpmsg_gettable_handler,
 };
 
 /****************************************************************************
@@ -119,6 +117,29 @@ devfreq_rpmsg_server_ept_release(FAR struct rpmsg_endpoint *ept)
   kmm_free(server);
 }
 
+static size_t
+devfreq_rpmsg_server_get_extra(FAR struct rpmsg_endpoint *ept,
+                               FAR void *extra)
+{
+  FAR struct devfreq_rpmsg_server_s *server = ept->priv;
+  FAR const uint32_t *table = server->devfreq->freq_table;
+  size_t count = 0;
+  size_t len;
+
+  /* Count the table size including DEVFREQ_ENTRY_END */
+
+  while (table[count++] != DEVFREQ_ENTRY_END);
+
+  len = count * sizeof(uint32_t);
+  if (len > RPMSG_NS_EXTRA_SIZE)
+    {
+      return 0;
+    }
+
+  memcpy(extra, table, len);
+  return len;
+}
+
 static void devfreq_rpmsg_server_bind(FAR struct rpmsg_device *rdev,
                                       FAR void *priv,
                                       FAR const char *name,
@@ -143,6 +164,7 @@ static void devfreq_rpmsg_server_bind(FAR struct rpmsg_device *rdev,
   server->devfreq = devfreq;
   server->ept.priv = server;
   server->ept.release_cb = devfreq_rpmsg_server_ept_release;
+  server->ept.ns_get_extra_cb = devfreq_rpmsg_server_get_extra;
 
   if (rpmsg_create_ept(&server->ept, rdev, name,
                        RPMSG_ADDR_ANY, RPMSG_ADDR_ANY,
@@ -247,47 +269,6 @@ static int devfreq_rpmsg_resume_handler(FAR struct rpmsg_endpoint *ept,
   msg->result = devfreq_resume(server->devfreq);
 
   return rpmsg_send(ept, data, len);
-}
-
-static int
-devfreq_rpmsg_gettable_handler(FAR struct rpmsg_endpoint *ept,
-                               FAR void *data, size_t len,
-                               uint32_t src, FAR void *priv)
-{
-  FAR struct devfreq_rpmsg_server_s *server = ept->priv;
-  FAR struct devfreq_s *devfreq = server->devfreq;
-  FAR const uint32_t *table = devfreq->freq_table;
-  FAR struct devfreq_rpmsg_table_s *msg;
-  uint32_t paylen;
-  size_t count = 0;
-  size_t msglen;
-
-  /* Count table size including DEVFREQ_ENTRY_END */
-
-  while (table[count++] != DEVFREQ_ENTRY_END);
-
-  /* freq_table[1] in struct already provides space for 1 element */
-
-  msglen = sizeof(*msg) + (count - 1) * sizeof(uint32_t);
-  msg = rpmsg_get_tx_payload_buffer(ept, &paylen, true);
-  if (msg == NULL || paylen < msglen)
-    {
-      FAR struct devfreq_rpmsg_header_s *hdr = data;
-
-      if (msg)
-        {
-          rpmsg_release_tx_buffer(ept, msg);
-        }
-
-      hdr->result = -ENOMEM;
-      return rpmsg_send(ept, data, len);
-    }
-
-  memcpy(msg, data, sizeof(msg->header));
-  msg->header.result = 0;
-  memcpy(msg->freq_table, table, count * sizeof(uint32_t));
-
-  return rpmsg_send_nocopy(ept, msg, msglen);
 }
 
 /****************************************************************************

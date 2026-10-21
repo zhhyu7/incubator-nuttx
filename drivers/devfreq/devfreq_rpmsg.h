@@ -39,7 +39,6 @@
 #define DEVFREQ_RPMSG_GET_FREQ        1
 #define DEVFREQ_RPMSG_SUSPEND         2
 #define DEVFREQ_RPMSG_RESUME          3
-#define DEVFREQ_RPMSG_GET_TABLE       4
 
 /****************************************************************************
  * Public Types
@@ -57,12 +56,6 @@ begin_packed_struct struct devfreq_rpmsg_target_s
 {
   struct devfreq_rpmsg_header_s header;
   uint32_t freq;
-} end_packed_struct;
-
-begin_packed_struct struct devfreq_rpmsg_table_s
-{
-  struct devfreq_rpmsg_header_s header;
-  uint32_t freq_table[1];
 } end_packed_struct;
 
 #endif /* __DRIVERS_DEVFREQ_DEVFREQ_RPMSG_H */

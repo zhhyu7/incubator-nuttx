@@ -187,75 +187,49 @@ static int devfreq_rpmsg_ept_cb(FAR struct rpmsg_endpoint *ept,
                                 uint32_t src, FAR void *priv_)
 {
   FAR struct devfreq_rpmsg_header_s *header = data;
-  FAR struct devfreq_rpmsg_priv_s *priv = priv_;
+  FAR struct devfreq_rpmsg_cookie_s *cookie;
 
-  if (header->response)
+  if (len < sizeof(*header) || !header->response)
     {
-      /* GET_TABLE response carries the frequency table */
+      return 0;
+    }
 
-      if (header->command != DEVFREQ_RPMSG_GET_TABLE)
-        {
-          /* Non-GET_TABLE responses go through the cookie mechanism */
-
-          FAR struct devfreq_rpmsg_cookie_s *cookie =
-            (FAR struct devfreq_rpmsg_cookie_s *)
-              (uintptr_t)header->cookie;
-
-          if (cookie)
-            {
-              memcpy(cookie->msg, data, MIN(len, cookie->len));
-              rpmsg_post(ept, &cookie->sem);
-            }
-
-          return 0;
-        }
-      else if (header->result == 0)
-        {
-          FAR struct devfreq_rpmsg_table_s *msg = data;
-          size_t count;
-
-          if (priv->devfreq != NULL || len < sizeof(*msg))
-            {
-              return 0;
-            }
-
-          /* Table includes DEVFREQ_ENTRY_END, compute count from len */
-
-          count = (len - sizeof(*msg)) / sizeof(uint32_t) + 1;
-
-          priv->freq_table = kmm_malloc(count * sizeof(uint32_t));
-          if (priv->freq_table == NULL)
-            {
-              return -ENOMEM;
-            }
-
-          memcpy(priv->freq_table, msg->freq_table,
-                 count * sizeof(uint32_t));
-
-          priv->devfreq = devfreq_register(priv->devname,
-                            priv->governor,
-                            &g_devfreq_rpmsg_driver, priv);
-          if (priv->devfreq == NULL)
-            {
-              kmm_free(priv->freq_table);
-              priv->freq_table = NULL;
-              return -ENOMEM;
-            }
-        }
+  cookie = (FAR struct devfreq_rpmsg_cookie_s *)(uintptr_t)header->cookie;
+  if (cookie)
+    {
+      memcpy(cookie->msg, data, MIN(len, cookie->len));
+      rpmsg_post(ept, &cookie->sem);
     }
 
   return 0;
 }
 
-static void devfreq_rpmsg_ns_bound(FAR struct rpmsg_endpoint *ept)
+static void devfreq_rpmsg_ns_bound(FAR struct rpmsg_endpoint *ept,
+                                   FAR const void *extra, size_t extra_len)
 {
-  struct devfreq_rpmsg_header_s msg;
+  FAR struct devfreq_rpmsg_priv_s *priv = ept->priv;
+  size_t count = extra_len / sizeof(uint32_t);
 
-  /* Request frequency table from server */
+  if (priv->devfreq != NULL || count == 0)
+    {
+      return;
+    }
 
-  memset(&msg, 0, sizeof(msg));
-  msg.command = DEVFREQ_RPMSG_GET_TABLE;
-  rpmsg_send(ept, &msg, sizeof(msg));
+  priv->freq_table = kmm_malloc(count * sizeof(uint32_t));
+  if (priv->freq_table == NULL)
+    {
+      return;
+    }
+
+  memcpy(priv->freq_table, extra, count * sizeof(uint32_t));
+
+  priv->devfreq = devfreq_register(priv->devname, priv->governor,
+                                   &g_devfreq_rpmsg_driver, priv);
+  if (priv->devfreq == NULL)
+    {
+      kmm_free(priv->freq_table);
+      priv->freq_table = NULL;
+    }
 }
 
 static void devfreq_rpmsg_device_created(FAR struct rpmsg_device *rdev,
@@ -270,7 +244,8 @@ static void devfreq_rpmsg_device_created(FAR struct rpmsg_device *rdev,
       snprintf(name, sizeof(name), "%s%s",
                DEVFREQ_RPMSG_EPT_PREFIX, priv->devname);
       priv->ept.priv = priv;
-      priv->ept.ns_bound_cb = devfreq_rpmsg_ns_bound;
+      priv->ept.ns_bound_extra_cb = devfreq_rpmsg_ns_bound;
+      rpmsg_set_priority(&priv->ept, RPMSG_PRIO_RT);
       rpmsg_create_ept(&priv->ept, rdev, name,
                        RPMSG_ADDR_ANY, RPMSG_ADDR_ANY,
                        devfreq_rpmsg_ept_cb,
