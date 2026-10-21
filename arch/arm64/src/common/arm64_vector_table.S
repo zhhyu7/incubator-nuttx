@@ -396,6 +396,9 @@ SECTION_FUNC(text, arm64_exit_exception)
     msr    sctlr_elx, x0
 #endif
 
+    ldr    x0,   [sp, #8 * REG_TPIDR_EL0]
+    msr    tpidr_el0, x0
+
     ldr    x0, [sp, #8 * REG_SP_EL0]
     msr    sp_el0,   x0
 

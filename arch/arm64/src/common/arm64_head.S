@@ -175,7 +175,6 @@ real_start:
     /* Initialize percpu reg */
 
     msr    tpidr_el1, xzr
-    msr    tpidr_el0, xzr
     msr    tpidrro_el0, xzr
     ldr    x25, =arm64_boot_secondary_c_routine
     bl     __reset_prep_c
@@ -210,7 +209,6 @@ primary_core:
     /* Initialize percpu reg */
 
     msr    tpidr_el1, xzr
-    msr    tpidr_el0, xzr
     msr    tpidrro_el0, xzr
     ldr    x25, =arm64_boot_primary_c_routine
 

@@ -120,6 +120,7 @@ pid_t arm64_fork(const struct fork_s *context)
   uint64_t newtop;
   uint64_t stacktop;
   uint64_t stackutil;
+  uintptr_t tpidr;
 
   /* Allocate and initialize a TCB for the child task. */
 
@@ -229,7 +230,8 @@ pid_t arm64_fork(const struct fork_s *context)
 #endif
 
   child->xcp.regs[REG_ELR]    = (uint64_t)context->lr;
-
+  tpidr = (uintptr_t)child->stack_alloc_ptr + sizeof(struct tls_info_s);
+  child->xcp.regs[REG_TPIDR_EL0] = tpidr;
   child->xcp.regs[REG_SP_ELX] = newsp - XCPTCONTEXT_SIZE;
 #ifdef CONFIG_ARCH_KERNEL_STACK
   child->xcp.regs[REG_SP_EL0] = (uint64_t)child->xcp.ustkptr;

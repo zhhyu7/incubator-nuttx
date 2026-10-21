@@ -112,10 +112,11 @@
 #define REG_SPSR            (33)
 #define REG_SP_EL0          (34)
 #define REG_SCTLR_ELX       (35)
+#define REG_TPIDR_EL0       (36)
 
 /* In Armv8-A Architecture, the stack must align with 16 byte */
 
-#define ARM64_CONTEXT_REGS  (36)
+#define ARM64_CONTEXT_REGS  (38)
 #define ARM64_CONTEXT_SIZE  (8 * ARM64_CONTEXT_REGS)
 
 #ifdef CONFIG_ARCH_FPU
@@ -410,7 +411,13 @@ static inline_function uintptr_t up_getsp(void)
  * interrupt context and 0 indicates being in a thread context.
  ****************************************************************************/
 
+/* The kernel keeps the address of the running thread's TLS info in
+ * TPIDR_EL0, so user code finds it whatever stack it runs on.
+ */
+
+#ifndef __KERNEL__
 #define up_tls_info() ((struct tls_info_s *)read_sysreg(tpidr_el0) - 1)
+#endif
 
 #define up_switch_context(tcb, rtcb)                                      \
   do                                                                      \

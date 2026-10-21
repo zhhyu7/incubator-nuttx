@@ -54,6 +54,7 @@ void arm64_new_task(struct tcb_s * tcb)
 {
   uint64_t stack_ptr = (uintptr_t)tcb->stack_base_ptr + tcb->adj_stack_size;
   struct xcptcontext *xcp = &tcb->xcp;
+  uintptr_t tpidr;
 
 #ifdef CONFIG_ARCH_KERNEL_STACK
   /* Use the process kernel stack to store context for user processes */
@@ -102,6 +103,20 @@ void arm64_new_task(struct tcb_s * tcb)
 #else
   xcp->regs[REG_SP_EL0]    = (uint64_t)stack_ptr - XCPTCONTEXT_SIZE;
 #endif
+
+  /* Update the TLS pointer.
+   * The TLS pointer must skip over the
+   * tls_info_s structure to align with compiler-generated TLS
+   * variable access. The compiler's built-in TLS support (for
+   * thread_local variables) expects the TLS pointer to point directly
+   * to the TLS data area, not to our manually-maintained tls_info_s
+   * metadata structure. By adding sizeof(struct tls_info_s), we
+   * ensure that compiler-generated code accesses the correct memory
+   * location, bypassing our internal bookkeeping structure.
+   */
+
+  tpidr = (uintptr_t)tcb->stack_alloc_ptr + sizeof(struct tls_info_s);
+  xcp->regs[REG_TPIDR_EL0] = tpidr;
 
 #ifndef CONFIG_BUILD_FLAT
   tcb->xcp.initregs        = tcb->xcp.regs;
