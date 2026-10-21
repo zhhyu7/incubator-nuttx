@@ -33,6 +33,15 @@ cc_defaults {
         "-D_NX_GETERRVAL(r)=(-errno)",
         "-Dget_errno()=errno",
         "-Dset_errno(e)=do{errno = (int)(e);}while(0)",
+
+        // There is no Kconfig on Android and the exported nuttx/config.h is
+        // empty, so give the exported NuttX headers the configuration of a
+        // uni-processor build: the Kconfig default scheduler choice, the
+        // toolchain atomics backend, and the CPU_SETSIZE that NuttX's own
+        // sys/types.h (not used on Android) derives for it.
+        "-DCONFIG_UP",
+        "-DCONFIG_LIBC_ATOMIC_TOOLCHAIN",
+        "-DCPU_SETSIZE=1",
     ],
 }
 
