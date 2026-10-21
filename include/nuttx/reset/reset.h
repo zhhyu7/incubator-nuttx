@@ -27,6 +27,7 @@
  * Included Files
  ****************************************************************************/
 
+#include <sys/boardctl.h>
 #include <sys/types.h>
 #include <stdbool.h>
 
@@ -96,9 +97,10 @@ int reset_control_reset_reason(FAR struct reset_control *rstc,
  * Name: reset_control_reset()
  *
  * Description:
- *   this function is used to execute reset ops, with no reason to give.  A
- *   controller that acts on a cause gets zero and decides what that means
- *   to it.
+ *   this function is used to execute reset ops, naming no reason of its
+ *   own.  A controller that acts on a cause is handed
+ *   BOARDIOC_SOFTRESETCAUSE_USER_REBOOT, a reset asked for by nobody in
+ *   particular, since the alternative is a cause it has to guess at.
  *
  * Input Parameters:
  *   rstc - a instance of reset control.
@@ -107,7 +109,8 @@ int reset_control_reset_reason(FAR struct reset_control *rstc,
 
 static inline int reset_control_reset(FAR struct reset_control *rstc)
 {
-  return reset_control_reset_reason(rstc, 0);
+  return reset_control_reset_reason(rstc,
+                                    BOARDIOC_SOFTRESETCAUSE_USER_REBOOT);
 }
 
 /****************************************************************************
@@ -131,8 +134,8 @@ int reset_control_assert_reason(FAR struct reset_control *rstc,
  * Name: reset_control_assert()
  *
  * Description:
- *   This function is used to execute assert ops, with no reason to give, as
- *   for reset_control_reset().
+ *   This function is used to execute assert ops, naming no reason of its
+ *   own, as for reset_control_reset().
  *
  * Input Parameters:
  *   rstc - An instance of reset control.
@@ -141,7 +144,8 @@ int reset_control_assert_reason(FAR struct reset_control *rstc,
 
 static inline int reset_control_assert(FAR struct reset_control *rstc)
 {
-  return reset_control_assert_reason(rstc, 0);
+  return reset_control_assert_reason(rstc,
+                                     BOARDIOC_SOFTRESETCAUSE_USER_REBOOT);
 }
 
 /****************************************************************************

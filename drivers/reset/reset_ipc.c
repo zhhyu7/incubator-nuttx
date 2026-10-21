@@ -423,10 +423,14 @@ int reset_ipc_register(FAR struct reset_ipc_s *ipc,
   ipc->rcdev.name = cpuname;
   ipc->rcdev.ops  = &g_reset_ipc_rc_ops;
 
-  /* Start clean, so a status from a previous cycle is driven again. */
+  /* Start clean, so a status from a previous cycle is driven again.  Zero
+   * also leaves the pair as a transport keeping it in
+   * resource_table.reserved[] needs it: OpenAMP refuses a table whose
+   * reserved words are non zero.
+   */
 
-  *ipc->local = UINT32_MAX;
-  ipc->shadow = UINT32_MAX;
+  *ipc->local = BOARDIOC_SOFTRESETCAUSE_NONE;
+  ipc->shadow = BOARDIOC_SOFTRESETCAUSE_NONE;
 
   ret = reset_controller_register(&ipc->rcdev);
   if (ret < 0)
