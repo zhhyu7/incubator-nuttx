@@ -47,18 +47,14 @@ static int backtrace(uintptr_t *reg, void **buffer, int size, int *skip)
   int i = 0;
   uintptr_t *csa = reg;
   uintptr_t pcxi = csa[REG_UPCXI];
+  uintptr_t return_addr;
 
   for (; csa && i < size; csa = tricore_csa2addr(csa[REG_UPCXI]))
     {
-      if ((pcxi & PCXI_UL) == 0 || csa[REG_UA11] == 0)
+      return_addr = (pcxi & PCXI_UL) ? csa[REG_UA11] : csa[REG_LA11];
+      if (return_addr && (*skip)-- <= 0)
         {
-            pcxi = csa[REG_UPCXI];
-            continue;
-        }
-
-      if ((*skip)-- <= 0)
-        {
-          buffer[i++] = (void *)csa[REG_UA11];
+          buffer[i++] = (void *)return_addr;
         }
 
       pcxi = csa[REG_UPCXI];
