@@ -281,10 +281,14 @@ static int reset_ipc_set_status(FAR struct reset_ipc_s *ipc,
       return ret;
     }
 
-  /* Already sent, or already sent by the peer: no re-notify. */
+  /* Already sent, or already sent by the peer: no re-notify.  The word is
+   * still written, since that is the echo the peer polls for to see the
+   * reason it asked for taken; only the interrupt is spared.
+   */
 
   if (status == *ipc->local || status == ipc->shadow)
     {
+      *ipc->local = reason;
       return OK;
     }
 
