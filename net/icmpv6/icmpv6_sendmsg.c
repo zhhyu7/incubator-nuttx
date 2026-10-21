@@ -71,6 +71,8 @@ struct icmpv6_sendto_s
                                         * payload */
   int16_t snd_result;                  /* 0: success; <0:negated errno on
                                         * fail */
+  uint8_t snd_ttl;                     /* The Hop Limit to put in the IPv6
+                                        * header */
 };
 
 /****************************************************************************
@@ -122,7 +124,7 @@ static void sendto_request(FAR struct net_driver_s *dev,
 
   ipv6_build_header(IPv6BUF, pstate->snd_buflen, IP_PROTO_ICMP6,
                     netdev_ipv6_srcaddr(dev, pstate->snd_toaddr.s6_addr16),
-                    pstate->snd_toaddr.s6_addr16, 255, 0);
+                    pstate->snd_toaddr.s6_addr16, pstate->snd_ttl, 0);
 
   /* Copy the ICMPv6 request and payload into place after the IPv6 header */
 
@@ -382,6 +384,7 @@ ssize_t icmpv6_sendmsg(FAR struct socket *psock,
   state.snd_result = -ENOMEM;           /* Assume allocation failure */
   state.snd_buf    = buf;               /* ICMPv6 header + data payload */
   state.snd_buflen = len;               /* Size of the ICMPv6 header+data payload */
+  state.snd_ttl    = conn->sconn.s_ttl; /* Honour IPV6_UNICAST_HOPS */
 
   net_ipv6addr_copy(state.snd_toaddr.s6_addr16,
                     inaddr->sin6_addr.s6_addr16);

@@ -103,6 +103,13 @@ FAR struct icmp_conn_s *icmp_alloc(void)
   conn = mempool_zallocate(&g_icmp_connections, 0);
   if (conn != NULL)
     {
+      /* Set the default TTL.  Without this the zero-initialized value
+       * would be used and every packet would be dropped at the first
+       * hop.
+       */
+
+      conn->sconn.s_ttl = IP_TTL_DEFAULT;
+
       /* Use conn_init to initialize the connection structure */
 
       conn_init(&conn->sconn);

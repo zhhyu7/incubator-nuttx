@@ -72,7 +72,7 @@
 int ipv6_getsockopt(FAR struct socket *psock, int option,
                     FAR void *value, FAR socklen_t *value_len)
 {
-  int ret;
+  int ret = OK;
 
   ninfo("option: %d\n", option);
 
@@ -92,7 +92,41 @@ int ipv6_getsockopt(FAR struct socket *psock, int option,
 
           *(FAR uint8_t *)value = conn->s_tclass;
           *value_len = 1;
-          ret = OK;
+        }
+        break;
+
+      /* Note that IPV6_MULTICAST_HOPS is deliberately not handled here.
+       * ipv6_setsockopt() stores it into the same s_ttl field as
+       * IPV6_UNICAST_HOPS, and no send path distinguishes unicast from
+       * multicast destinations, so reading it back would suggest an
+       * independent multicast hop limit that does not exist.  Giving
+       * multicast its own value (default 1, as required by the IPv6
+       * multicast scoping rules) is left to a separate change.
+       */
+
+      case IPV6_UNICAST_HOPS:     /* Unicast hop limit */
+        {
+          FAR struct socket_conn_s *conn = psock->s_conn;
+
+          /* Accept either an int or a single byte, mirroring what
+           * ipv6_setsockopt() tolerates for this option.
+           */
+
+          if (*value_len >= sizeof(int))
+            {
+              *(FAR int *)value = conn->s_ttl;
+              *value_len = sizeof(int);
+            }
+          else if (*value_len >= sizeof(uint8_t))
+            {
+              *(FAR uint8_t *)value = conn->s_ttl;
+              *value_len = sizeof(uint8_t);
+            }
+          else
+            {
+              ret = -EINVAL;
+              break;
+            }
         }
         break;
 

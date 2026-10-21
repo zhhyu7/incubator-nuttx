@@ -72,6 +72,8 @@ struct icmp_sendto_s
                                         * payload */
   int16_t snd_result;                  /* 0: success; <0:negated errno on
                                         * fail */
+  uint8_t snd_ttl;                     /* The TTL to put in the IPv4
+                                        * header */
 };
 
 /****************************************************************************
@@ -125,7 +127,7 @@ static void sendto_request(FAR struct net_driver_s *dev,
 
   ipv4_build_header(IPv4BUF, dev->d_len, IP_PROTO_ICMP,
                     &dev->d_ipaddr, &pstate->snd_toaddr,
-                    IP_TTL_DEFAULT, 0, NULL);
+                    pstate->snd_ttl, 0, NULL);
 
   /* Copy the ICMP header and payload into place after the IPv4 header */
 
@@ -393,6 +395,7 @@ ssize_t icmp_sendmsg(FAR struct socket *psock, FAR const struct msghdr *msg,
   state.snd_buf    = buf;                     /* ICMP header + data payload */
   state.snd_buflen = len;                     /* Size of the ICMP header +
                                                * data payload */
+  state.snd_ttl    = conn->sconn.s_ttl;       /* Honour IP_TTL */
 
   conn_dev_lock(&conn->sconn, dev);
 

@@ -73,7 +73,7 @@
 int ipv4_getsockopt(FAR struct socket *psock, int option,
                     FAR void *value, FAR socklen_t *value_len)
 {
-  int ret;
+  int ret = OK;
 
   ninfo("option: %d\n", option);
 
@@ -93,7 +93,33 @@ int ipv4_getsockopt(FAR struct socket *psock, int option,
 
           *(FAR uint8_t *)value = conn->s_tos;
           *value_len = 1;
-          ret = OK;
+        }
+        break;
+
+      case IP_TTL:                    /* The IP TTL (time to live) of IP
+                                       * packets sent by the network stack */
+        {
+          FAR struct socket_conn_s *conn = psock->s_conn;
+
+          /* Accept either an int or a single byte, mirroring what
+           * ipv4_setsockopt() tolerates for this option.
+           */
+
+          if (*value_len >= sizeof(int))
+            {
+              *(FAR int *)value = conn->s_ttl;
+              *value_len = sizeof(int);
+            }
+          else if (*value_len >= sizeof(uint8_t))
+            {
+              *(FAR uint8_t *)value = conn->s_ttl;
+              *value_len = sizeof(uint8_t);
+            }
+          else
+            {
+              ret = -EINVAL;
+              break;
+            }
         }
         break;
 
