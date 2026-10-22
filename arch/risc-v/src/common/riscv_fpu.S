@@ -101,11 +101,12 @@ riscv_savefpu:
   REGLOAD    t0, REG_INT_CTX(a0)
   li         t1, MSTATUS_FS
   and        t2, t0, t1
-  li         t1, MSTATUS_FS_DIRTY
 #ifdef CONFIG_ARCH_LAZYFPU
+  li         t1, MSTATUS_FS_DIRTY
   bne        t2, t1, 1f
 #else
-  blt        t2, t1, 1f
+  li         t1, MSTATUS_FS_INIT
+  ble        t2, t1, 1f
 #endif
   li         t1, ~MSTATUS_FS
   and        t0, t0, t1
