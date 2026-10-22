@@ -43,7 +43,7 @@ enum usbhost_trace1codes_e
   XHCI_TRACE1_START_FAILED,         /* XHCI ERROR: XHCI Failed to start */
   XHCI_TRACE1_SLOTEN_FAILED,        /* XHCI ERROR: XHCI Slot Enable failed */
   XHCI_TRACE1_TRANSFER_FAILED,      /* XHCI ERROR: XHCI transfer failed */
-  XHCI_TRACE1_BADXFRTYPE,           /* XHCI ERROR: XHCI bad trasnfer type */
+  XHCI_TRACE1_BADXFRTYPE,           /* XHCI ERROR: XHCI bad transfer type */
 
   /* Verbose */
 

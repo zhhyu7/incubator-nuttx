@@ -124,13 +124,13 @@ struct xhci_epinfo_s
 #ifndef CONFIG_USBHOST_INT_DISABLE
   uint8_t            interval;     /* Polling interval */
 #endif
-  uint8_t            devaddr;      /* Device addres returned from xHCI */
+  uint8_t            devaddr;      /* Device address returned from xHCI */
   uint8_t            status;       /* Retained token status bits (for debug purposes) */
   bool               iocwait;      /* TRUE: Thread is waiting for transfer completion */
   uint8_t            xfrtype:2;    /* See USB_EP_ATTR_XFER_* definitions in usb.h */
   int                result;       /* The result of the transfer */
   size_t             xfrd;         /* On completion, will hold the number of bytes transferred */
-  size_t             buflen;       /* Buffer lenght used for transfer */
+  size_t             buflen;       /* Buffer length used for transfer */
   sem_t              iocsem;       /* Semaphore used to wait for transfer completion */
 #ifdef CONFIG_USBHOST_ASYNCH
   usbhost_asynch_t   callback;     /* Transfer complete callback */
@@ -309,7 +309,7 @@ static void xhci_dump_mem(FAR struct usbhost_xhci_s *priv,
                           FAR const char *msg);
 #endif
 
-/* Ring managament **********************************************************/
+/* Ring management **********************************************************/
 
 static int xhci_ring_init(FAR struct xhci_ring_s *ring, size_t len);
 static void xhci_ring_deinit(FAR struct xhci_ring_s *ring);
@@ -435,6 +435,11 @@ static int xhci_ioalloc(FAR struct usbhost_driver_s *drvr,
                         FAR uint8_t **buffer, size_t buflen);
 static int xhci_iofree(FAR struct usbhost_driver_s *drvr,
                        FAR uint8_t *buffer);
+
+static int xhci_ctrl_xfer(FAR struct usbhost_driver_s *drvr,
+                          usbhost_ep_t ep0,
+                          FAR const struct usb_ctrlreq_s *req,
+                          FAR uint8_t *buffer);
 static int xhci_ctrlin(FAR struct usbhost_driver_s *drvr, usbhost_ep_t ep0,
                        FAR const struct usb_ctrlreq_s *req,
                        FAR uint8_t *buffer);
@@ -595,7 +600,7 @@ static void xhci_oper_putreg(FAR struct usbhost_xhci_s *priv,
  * Name: xhci_oper_putreg_8b
  *
  * Description:
- *   Put register (Host Controller Operime Registers)
+ *   Put register (Host Controller Operational Registers)
  *
  ****************************************************************************/
 
@@ -775,7 +780,7 @@ static inline uint16_t xhci_getle16(FAR const uint8_t *val)
  * Description:
  *   Initialize xHCI ring handler.
  *
- *   If ring buffer is already initialzied, this function reset ring
+ *   If ring buffer is already initialized, this function reset ring
  *   to a initial state.
  *
  * Returned Value:
@@ -936,7 +941,7 @@ static void xhci_add_trb(FAR struct usbhost_xhci_s *priv,
                    XHCI_TRB_D2_TYPE_SET(XHCI_TRB_TYPE_LINK);
             }
 
-          /* Other parameters are already corredt for this TRB */
+          /* Other parameters are already correct for this TRB */
 
           ring->ring[ring->i].d2 = htole32(d2);
 
@@ -1104,7 +1109,7 @@ static int xhci_ctrl_start(FAR struct usbhost_xhci_s *priv)
   evnt->size = XHCI_EVENT_MAX;
   evnt->res  = 0;
 
-  /* Flush all memory before write to ERDP so xhci see corect data */
+  /* Flush all memory before write to ERDP so xhci sees correct data */
 
   up_flush_dcache_all();
 
@@ -1113,7 +1118,7 @@ static int xhci_ctrl_start(FAR struct usbhost_xhci_s *priv)
 
   /* Write ERSTBA with ERST(0).BaseAddress.
    *
-   * This must be done after ERST[0] initialziation and after write to
+   * This must be done after ERST[0] initialization and after write to
    * ERSTSZ. When the ERSTBA register is written, the Event Ring State
    * Machine is set to the Start state.
    *
@@ -1123,7 +1128,7 @@ static int xhci_ctrl_start(FAR struct usbhost_xhci_s *priv)
   xhci_runt_putreg_8b(priv, XHCI_ERSTBA(0),
                       up_addrenv_va_to_pa(priv->pg_erst));
 
-  /* Last item in the command ring point to the beggining of the ring */
+  /* Last item in the command ring points to the beginning of the ring */
 
   priv->cmd.ring[XHCI_CMD_MAX - 1].d0 = htole64(
     up_addrenv_va_to_pa(priv->cmd.ring));
@@ -1133,7 +1138,7 @@ static int xhci_ctrl_start(FAR struct usbhost_xhci_s *priv)
   xhci_oper_putreg_8b(priv, XHCI_CRCR,
                       up_addrenv_va_to_pa(priv->cmd.ring) | XHCI_CRCR_RCS);
 
-  /* Enable interupts */
+  /* Enable interrupts */
 
   regval = xhci_runt_getreg(priv, XHCI_IMAN(0));
   regval |= XHCI_IMAN_IE;
@@ -1143,7 +1148,7 @@ static int xhci_ctrl_start(FAR struct usbhost_xhci_s *priv)
 
   up_flush_dcache_all();
 
-  /* Turn the host controler ON, enable interrupts and system errors */
+  /* Turn the host controller ON, enable interrupts and system errors */
 
   xhci_oper_putreg(priv, XHCI_USBCMD,
                          XHCI_USBCMD_RS |
@@ -1168,7 +1173,7 @@ static int xhci_ctrl_start(FAR struct usbhost_xhci_s *priv)
 
   if (ret != OK)
     {
-      pcierr("Can't start controler!");
+      pcierr("Can't start controller!");
       return ret;
     }
 
@@ -1435,7 +1440,7 @@ static void xhci_ep_configure(FAR struct usbhost_xhci_s *priv,
   ctx1 |= XHCI_EP_CTX1_MAXBRST(maxburst);
 
   /* Set TR Dequeue Pointer.
-   * NOTE: must be physical adress aligned to 16-byte.
+   * NOTE: must be physical address aligned to 16-byte.
    */
 
   DEBUGASSERT(tr_dp != 0 && tr_dp % 16 == 0);
@@ -1506,7 +1511,7 @@ static int xhci_address_set(FAR struct usbhost_xhci_s *priv,
  * Name: xhci_slot_init
  *
  * Description:
- *   Initialzie Device Slot data.
+ *   Initialize Device Slot data.
  *
  * Assumption:
  *   1. All slot resources already allocated.
@@ -1618,7 +1623,7 @@ static int xhci_slot_init(FAR struct usbhost_xhci_s *priv,
  * Name: xhci_device_init
  *
  * Description:
- *   Initialzie Device.
+ *   Initialize Device.
  *
  * Assumption:
  *   1. All device resources already allocated.
@@ -1636,7 +1641,7 @@ static int xhci_device_init(FAR struct usbhost_xhci_s *priv,
   uint8_t                slot;
   int                    ret;
 
-  /* We entry this function after steps 1-3 from "USB Device Initialization"
+  /* We enter this function after steps 1-3 from "USB Device Initialization"
    * are done.
    */
 
@@ -1655,7 +1660,7 @@ static int xhci_device_init(FAR struct usbhost_xhci_s *priv,
       return ret;
     }
 
-  /* Slot ID is an index to that identify Device data */
+  /* Slot ID is an index to the identify Device data */
 
   rhport->dev = &priv->devs[slot - 1];
   rhport->slot = slot;
@@ -1687,7 +1692,7 @@ static int xhci_device_init(FAR struct usbhost_xhci_s *priv,
       return ret;
     }
 
-  /* Step 6: Assing and address to the device and enable its Default
+  /* Step 6: Assign and address to the device and enable its Default
    * Control Endpoint.
    *
    * NOTE: we don't send SET_ADDRESS request here.
@@ -1897,7 +1902,7 @@ static int xhci_cmd_sloten(FAR struct usbhost_xhci_s *priv,
   struct xhci_trb_s trb;
   int               ret;
 
-  /* Host specific byte order. Convertion done by xhci_command() */
+  /* Host specific byte order. Conversion done by xhci_command() */
 
   trb.d0 = 0;
   trb.d1 = 0;
@@ -1910,7 +1915,7 @@ static int xhci_cmd_sloten(FAR struct usbhost_xhci_s *priv,
       return ret;
     }
 
-  /* Retrn availalbe slot */
+  /* Return available slot */
 
   *slot = XHCI_TRB_D2_SLOTID_GET(le32toh(trb.d2));
 
@@ -1929,7 +1934,7 @@ static int xhci_cmd_slotdis(FAR struct usbhost_xhci_s *priv, uint8_t slot)
 {
   struct xhci_trb_s trb;
 
-  /* Host specific byte order. Convertion done by xhci_command() */
+  /* Host specific byte order. Conversion done by xhci_command() */
 
   trb.d0 = 0;
   trb.d1 = 0;
@@ -1952,7 +1957,7 @@ static int xhci_cmd_setaddr(FAR struct usbhost_xhci_s *priv, uint8_t slot,
 {
   struct xhci_trb_s trb;
 
-  /* Host specific byte order. Convertion done by xhci_command() */
+  /* Host specific byte order. Conversion done by xhci_command() */
 
   trb.d0 = htole64(ctx);
   trb.d1 = 0;
@@ -1980,7 +1985,7 @@ static int xhci_cmd_cfgep(FAR struct usbhost_xhci_s *priv, uint8_t slot,
 {
   struct xhci_trb_s trb;
 
-  /* Host specific byte order. Convertion done by xhci_command() */
+  /* Host specific byte order. Conversion done by xhci_command() */
 
   trb.d0 = htole64(ctx);
   trb.d1 = 0;
@@ -2008,7 +2013,7 @@ static int xhci_cmd_stopep(FAR struct usbhost_xhci_s *priv, uint8_t slot,
 {
   struct xhci_trb_s trb;
 
-  /* Host specific byte order. Convertion done by xhci_command() */
+  /* Host specific byte order. Conversion done by xhci_command() */
 
   trb.d0 = 0;
   trb.d1 = 0;
@@ -2036,7 +2041,7 @@ static int xhci_cmd_evalctx(FAR struct usbhost_xhci_s *priv, uint8_t slot,
 {
   struct xhci_trb_s trb;
 
-  /* Host specific byte order. Convertion done by xhci_command() */
+  /* Host specific byte order. Conversion done by xhci_command() */
 
   trb.d0 = htole64(ctx);
   trb.d1 = 0;
@@ -2078,7 +2083,7 @@ static void xhci_ep_doorbell(FAR struct usbhost_xhci_s *priv,
  *
  * Description:
  *   Set the request for the IOC event well BEFORE enabling the transfer (as
- *   soon as we are absolutely committed to the to avoid transfer).  We do
+ *   soon as we are absolutely committed to the transfer).  We do
  *   this to minimize race conditions.  This logic would have to be expanded
  *   if we want to have more than one packet in flight at a time!
  *
@@ -2189,7 +2194,7 @@ static int xhci_control_setup(FAR struct xhci_rhport_s *rhport,
   uint8_t                    trt;
   int                        i    = 0;
 
-  /* Preapera Setup Stage TRB */
+  /* Prepare Setup Stage TRB */
 
   trb[i].d0 = *((FAR uint64_t *)req);
   trb[i].d1 = XHCI_TRB_D1_TXLEN_SET(8);
@@ -2220,7 +2225,7 @@ static int xhci_control_setup(FAR struct xhci_rhport_s *rhport,
 
   i++;
 
-  /* Preapera Data Stage TRB */
+  /* Prepare Data Stage TRB */
 
   if (buffer)
     {
@@ -2269,7 +2274,7 @@ static int xhci_control_setup(FAR struct xhci_rhport_s *rhport,
  * Name: xhci_normal_setup
  *
  * Description:
- *   Process a IN or OUT request on bulk or interrupt  endpoint.
+ *   Process a IN or OUT request on bulk or interrupt endpoint.
  *   This function will enqueue the request and wait for it to complete.
  *
  *   This is a blocking function; it will not return until the control
@@ -2279,7 +2284,7 @@ static int xhci_control_setup(FAR struct xhci_rhport_s *rhport,
  *   The caller holds the xHCI lock.
  *
  * Returned Value:
- *   Zero (OK) is returned on success; a negated errno value is return on
+ *   Zero (OK) is returned on success; a negated errno value is returned on
  *   any failure.
  *
  ****************************************************************************/
@@ -2291,7 +2296,7 @@ static int xhci_normal_setup(FAR struct xhci_rhport_s *rhport,
   FAR struct usbhost_xhci_s *priv = XHCI_PRIV_FROM_RHPORT(rhport);
   struct xhci_trb_s          trb;
 
-  /* Preapera TRB */
+  /* Prepare TRB */
 
   trb.d0 = up_addrenv_va_to_pa(buffer);
   trb.d1 = XHCI_TRB_D1_IRQ_SET(0) | XHCI_TRB_D1_TXLEN_SET(buflen);
@@ -2319,7 +2324,7 @@ static int xhci_normal_setup(FAR struct xhci_rhport_s *rhport,
  *   The caller holds the xHCI lock.
  *
  * Returned Value:
- *   Zero (OK) is returned on success; a negated errno value is return on
+ *   Zero (OK) is returned on success; a negated errno value is returned on
  *   any failure.
  *
  ****************************************************************************/
@@ -2331,7 +2336,7 @@ static int xhci_isoc_setup(FAR struct xhci_rhport_s *rhport,
   FAR struct usbhost_xhci_s *priv = XHCI_PRIV_FROM_RHPORT(rhport);
   struct xhci_trb_s          trb;
 
-  /* Preapera TRB */
+  /* Prepare TRB */
 
   trb.d0 = up_addrenv_va_to_pa(buffer);
   trb.d1 = XHCI_TRB_D1_IRQ_SET(0) | XHCI_TRB_D1_TXLEN_SET(buflen);
@@ -2409,7 +2414,7 @@ static ssize_t xhci_transfer_wait(FAR struct usbhost_xhci_s *priv,
  * Input Parameters:
  *   epinfo - The IN or OUT endpoint descriptor for the device endpoint on
  *      which the transfer will be performed.
- *   callback - The function to be called when the completes
+ *   callback - The function to be called when the transfer completes
  *   arg - An arbitrary argument that will be provided with the callback.
  *
  * Returned Value:
@@ -2437,7 +2442,7 @@ static inline int xhci_ioc_async_setup(FAR struct xhci_rhport_s *rhport,
   flags = spin_lock_irqsave(&priv->spinlock);
   if (rhport->connected)
     {
-      /* Then save callback information to used when either (1) the
+      /* Then save callback information to be used when either (1) the
        * device is disconnected, or (2) the transfer completes.
        */
 
@@ -2516,7 +2521,7 @@ static void xhci_asynch_completion(FAR struct xhci_epinfo_s *epinfo)
  *
  * Assumptions:
  *   - Never called from an interrupt handler.
- *   - Never called directly from xhci_events_poll() otherwise it stuck
+ *   - Never called directly from xhci_events_poll() otherwise it gets stuck
  *     on CLASS_DISCONNECTED()
  *
  ****************************************************************************/
@@ -2530,7 +2535,7 @@ static void xhci_portsc_work(FAR void *arg)
   int                           rhpndx;
 
   /* REVISIT: should this logic be protected? We can't use spinlock
-   * here because we stack in CLASS_DISCONNECTED()
+   * here because we get stack in CLASS_DISCONNECTED().
    */
 
   /* Handle root hub status change on each root port */
@@ -2649,7 +2654,7 @@ static void xhci_transfer_complete(FAR struct usbhost_xhci_s *priv,
 
   flags = spin_lock_irqsave(&priv->spinlock);
 
-  /* Get transfered legnth */
+  /* Get transferred length */
 
   if (epinfo->buflen > 0)
     {
@@ -2730,7 +2735,7 @@ static void xhci_event_complete(FAR struct usbhost_xhci_s *priv,
 
   /* REVISIT: we assume for now that only one command is pending */
 
-  /* Store commadn result */
+  /* Store command result */
 
   flags = spin_lock_irqsave(&priv->spinlock);
   priv->cmdres.d0 = evt->d0;
@@ -2805,8 +2810,9 @@ static int xhci_events_poll(FAR struct usbhost_xhci_s *priv)
 
           case XHCI_TRB_EVT_PSTAT_CHANGE:
             {
-              /* We have to handle Port Status Change in a separate work,
-               * otherwise we'll stuck when handling disconnect request
+              /* We have to handle Port Status Change in a separate work
+               * queue, otherwise we'll get stuck when handling disconnect
+               * request.
                */
 
               if (work_available(&priv->pscwork))
@@ -3099,12 +3105,12 @@ static int xhci_rh_enumerate(FAR struct usbhost_connection_s *conn,
       return ret;
     }
 
-  /* Initialzie device data */
+  /* Initialize device data */
 
   ret = xhci_device_init(priv, rhport);
   if (ret < 0)
     {
-      pcierr("Failed to initialzie device %d\n", ret);
+      pcierr("Failed to initialize device %d\n", ret);
       return ret;
     }
 
@@ -3428,12 +3434,12 @@ static int xhci_epalloc(FAR struct usbhost_driver_s *drvr,
  * Name: xhci_epfree
  *
  * Description:
- *   Free and endpoint previously allocated by DRVR_EPALLOC.
+ *   Free an endpoint previously allocated by DRVR_EPALLOC.
  *
  * Input Parameters:
  *   drvr - The USB host driver instance obtained as a parameter from the
  *           call to the class create() method.
- *   ep   - The endpint to be freed.
+ *   ep   - The endpoint to be freed.
  *
  * Returned Value:
  *   On success, zero (OK) is returned. On a failure, a negated errno value
@@ -3641,13 +3647,13 @@ static int xhci_iofree(FAR struct usbhost_driver_s *drvr,
 }
 
 /****************************************************************************
- * Name: xhci_ctrlin
+ * Name: xhci_ctrl_xfer
  *
  * Description:
  *   Process a IN or OUT request on the control endpoint.  These methods
  *   will enqueue the request and wait for it to complete.  Only one
  *   transfer may be queued; Neither these methods nor the transfer() method
- *   can be called again until the control transfer functions returns.
+ *   can be called again until the control transfer function returns.
  *
  *   These are blocking methods; these functions will not return until the
  *   control transfer has completed.
@@ -3676,9 +3682,10 @@ static int xhci_iofree(FAR struct usbhost_driver_s *drvr,
  *
  ****************************************************************************/
 
-static int xhci_ctrlin(FAR struct usbhost_driver_s *drvr, usbhost_ep_t ep0,
-                       FAR const struct usb_ctrlreq_s *req,
-                       FAR uint8_t *buffer)
+static int xhci_ctrl_xfer(FAR struct usbhost_driver_s *drvr,
+                          usbhost_ep_t ep0,
+                          FAR const struct usb_ctrlreq_s *req,
+                          FAR uint8_t *buffer)
 {
   FAR struct usbhost_xhci_s *priv    = XHCI_PRIV_FROM_DRVR(drvr);
   FAR struct xhci_rhport_s  *rhport  = (FAR struct xhci_rhport_s *)drvr;
@@ -3703,7 +3710,7 @@ static int xhci_ctrlin(FAR struct usbhost_driver_s *drvr, usbhost_ep_t ep0,
     {
       /* Reset EP0 ring to its initial state, so when xHCI update EP0
        * context, TD dequeue pointer would be valid. It may be already
-       * off, because NuttX USB Host stack has already send some messages
+       * off, because the USB Host stack has already sent some messages
        * on control EP.
        */
 
@@ -3766,10 +3773,29 @@ errout_with_lock:
 }
 
 /****************************************************************************
+ * Name: xhci_ctrlin
+ *
+ * Description:
+ *   Process IN request on the control endpoint. For details, see
+ *   description for xhci_ctrl_xfer().
+ *
+ ****************************************************************************/
+
+static int xhci_ctrlin(FAR struct usbhost_driver_s *drvr, usbhost_ep_t ep0,
+                       FAR const struct usb_ctrlreq_s *req,
+                       FAR uint8_t *buffer)
+{
+  /* xhci_ctrl_xfer() can handle both directions */
+
+  return xhci_ctrl_xfer(drvr, ep0, req, buffer);
+}
+
+/****************************************************************************
  * Name: xhci_ctrlout
  *
  * Description:
- *   See description above.
+ *   Process OUT request on the control endpoint. For details, see
+ *   description for xhci_ctrl_xfer().
  *
  ****************************************************************************/
 
@@ -3777,11 +3803,11 @@ static int xhci_ctrlout(FAR struct usbhost_driver_s *drvr, usbhost_ep_t ep0,
                         FAR const struct usb_ctrlreq_s *req,
                         FAR const uint8_t *buffer)
 {
-  /* xhci_ctrlin can handle both directions. We just need to work around the
-   * differences in the function signatures.
+  /* xhci_ctrl_xfer() can handle both directions. We just need to work around
+   * the differences in the function signatures.
    */
 
-  return xhci_ctrlin(drvr, ep0, req, (FAR uint8_t *)buffer);
+  return xhci_ctrl_xfer(drvr, ep0, req, (FAR uint8_t *)buffer);
 }
 
 /****************************************************************************
@@ -4055,7 +4081,7 @@ static int xhci_cancel(FAR struct usbhost_driver_s *drvr, usbhost_ep_t ep)
   DEBUGASSERT(epinfo);
 
   /* Sample and reset all transfer termination information.  This will
-   * prevent any callbacks from occurring while are performing the
+   * prevent any callbacks from occurring while we performing the
    * cancellation.  The transfer may still be in progress, however, so this
    * does not eliminate other DMA-related race conditions.
    */
@@ -4149,11 +4175,11 @@ static int xhci_connect(FAR struct usbhost_driver_s *drvr,
  * Name: xhci_disconnect
  *
  * Description:
- *   Called by the class when an error occurs and driver has been
+ *   Called by the class when an error occurs and device has been
  *   disconnected.  The USB host driver should discard the handle to the
  *   class instance (it is stale) and not attempt any further interaction
  *   with the class driver instance (until a new instance is received from
- *   the create() method).  The driver should not called the class'
+ *   the create() method).  The driver should not call the class
  *   disconnected() method.
  *
  * Input Parameters:
@@ -4192,7 +4218,7 @@ static void xhci_disconnect(FAR struct usbhost_driver_s *drvr,
  * Name: xhci_hw_getparams
  *
  * Description:
- *   Get hardware desciption of a connected xHCI device.
+ *   Get hardware description of a connected xHCI device.
  *
  ****************************************************************************/
 
@@ -4259,7 +4285,7 @@ static int xhci_hw_getparams(FAR struct usbhost_xhci_s *priv)
  * Name: xhci_irq_initialize
  *
  * Description:
- *   Initilaize xHCI interrupts - require MSI-X support.
+ *   Initialize xHCI interrupts - require MSI-X support.
  *
  ****************************************************************************/
 
@@ -4435,7 +4461,7 @@ static int xhci_mem_free(FAR struct usbhost_xhci_s *priv)
 
   for (i = 0; i < priv->no_scratch; i++)
     {
-      kmm_free((FAR void *)(uintptr_t)up_addrenv_pa_to_va(priv->pg_sb[i]));
+      kmm_free((FAR void *)priv->pg_sb[i]);
     }
 
   kmm_free(priv->pg_sb);
@@ -4504,7 +4530,7 @@ static int xhci_hw_initialize(FAR struct usbhost_xhci_s *priv)
       goto errout;
     }
 
-  /* Configure interupts */
+  /* Configure interrupts */
 
   ret = xhci_irq_initialize(priv);
   if (ret < 0)
@@ -4552,16 +4578,16 @@ static inline int xhci_sw_initialize(FAR struct usbhost_xhci_s *priv)
 
   /* Initialize function address generation logic
    * REVISIT: xHCI hardware is responsible for device address, but NuttX USB
-   *          Host stack require this to be initialzied.
+   *          Host stack require this to be initialized.
    */
 
   usbhost_devaddr_initialize(&priv->devgen);
 
-  /* Initialzie devices */
+  /* Initialize devices */
 
   for (i = 0; i < priv->no_slots; i++)
     {
-      /* Slot disabled at defaulte */
+      /* Slot disabled by defaulte */
 
       priv->devs[i].state = XHCI_SLOT_DISABLED;
     }
@@ -4684,7 +4710,7 @@ static int pci_xhci_probe(FAR struct pci_device_s *dev)
       goto errout;
     }
 
-  /* Get registers address */
+  /* Get register address */
 
   priv->capa_base = priv->base;
   priv->oper_base = priv->base + xhci_capa_getreg_1b(priv, XHCI_CAPLENGTH);

@@ -39,7 +39,7 @@
 #define XHCI_BUF_ALIGN               (64)                  /* Buffer alignment */
 #define XHCI_CTX_ALIGN               (64)                  /* Context  alignment */
 #define XHCI_TRB_ALIGN               (16)                  /* TRB alignment */
-#define XHCI_TD_LEN_MAX              (65536)               /* Maxumum Transfer Descriptor data length is 64K bytes */
+#define XHCI_TD_LEN_MAX              (65536)               /* Maximum Transfer Descriptor data length is 64K bytes */
 #define XHCI_MAX_ENDPOINTS           (31)                  /* EP0 + 1-15 EP OUT 1-15 EP IN */
 
 /* xHCI Extended Capability Codes */
@@ -506,7 +506,7 @@
 #define XHCI_IN_CTX1_A(x)            (1 << (x))            /* Add Context flags */
 #  define XHCI_SLOT_FLAG             (0)
 #  define XHCI_EP0_FLAG              (1)
-#  define XHCI_EP_FLAG(ep)           (ep)                  /* IMPORTATN: to be used with Device Context Index (DCI) */
+#  define XHCI_EP_FLAG(ep)           (ep)                  /* IMPORTANT: to be used with Device Context Index (DCI) */
 
 /* Endpoint Context */
 
@@ -562,11 +562,11 @@
  * Public Types
  ****************************************************************************/
 
-/* Common represenation for TRB */
+/* Common representation for TRB */
 
 begin_packed_struct struct xhci_trb_s
 {
-  uint64_t d0;                  /* Paramter */
+  uint64_t d0;                  /* Parameter */
   uint32_t d1;                  /* Status */
   uint32_t d2;                  /* Control */
 } end_packed_struct;
