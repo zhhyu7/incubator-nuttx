@@ -1205,9 +1205,27 @@ found:
           conn->tcpstateflags = TCP_CLOSED;
           nwarn("WARNING: RESET in TCP_SYN_RCVD\n");
 
-          /* We must free this TCP connection structure; this connection
-           * will never be established.  There should only be one reference
-           * on this connection when we allocated for the connection.
+          /* A connection in TCP_SYN_RCVD may belong to an active
+           * connect() that reached this state via simultaneous open
+           * (TCP_SYN_SENT -> TCP_SYN_RCVD).  The caller is then blocked
+           * in tcp_connect() waiting on the connect semaphore.  Report
+           * the abort so that it returns an error instead of waiting
+           * forever for a connection that no longer exists.  The socket
+           * still owns the reference here, so the connection must not be
+           * freed; close() releases it.
+           */
+
+          if (_SS_ISCONNECTING(conn->sconn.s_flags))
+            {
+              tcp_callback(dev, conn, TCP_ABORT);
+              goto drop;
+            }
+
+          /* Otherwise the handshake is being done on behalf of a
+           * listener.  We must free this TCP connection structure; this
+           * connection will never be established.  There should only be
+           * one reference on this connection when we allocated for the
+           * connection.
            */
 
           DEBUGASSERT(conn->crefs == 1);
