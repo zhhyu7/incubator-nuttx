@@ -45,13 +45,9 @@
  * Pre-processor Definitions
  ****************************************************************************/
 
-#ifdef CONFIG_RPMSG_PORT_SPI_CRC
-#  define rpmsg_port_spi_crc16(hdr) \
+#define rpmsg_port_spi_crc16(hdr) \
     (crc16xor((FAR uint8_t *)&(hdr)->cmd, \
      (hdr)->len - sizeof((hdr)->crc)) ?: 1)
-#else
-#  define rpmsg_port_spi_crc16(hdr)     0
-#endif
 
 #define RPMSG_PORT_SPI_CMD_TIMEOUT      1000
 #define RPMSG_PORT_SPI_BYTES2WORDS(s,b) ((b) / ((s)->nbits >> 3))
@@ -445,14 +441,13 @@ static void rpmsg_port_spi_complete_handler(FAR void *arg)
       goto out;
     }
 
-  /* When RETX is enabled the CRC is compiled in and a valid frame's CRC is
-   * never zero (the crc16 macro folds a zero result to 1), so validate
-   * unconditionally: a torn frame carrying crc==0 would otherwise bypass
-   * the check and poison the retx state machine.
+  /* A valid frame's CRC is never zero (the crc16 macro folds a zero result
+   * to 1), so a torn frame carrying crc==0 is rejected here instead of
+   * bypassing the check and poisoning the retx state machine.
    */
 
   crc = rpmsg_port_spi_crc16(rpspi->rxhdr);
-  if (crc != 0 && rpspi->rxhdr->crc != crc)
+  if (rpspi->rxhdr->crc != crc)
     {
       rpmsg_diag(DIAG_RPMSG_SPI_RX_ERROR,
                  "Reason:RxCrcMismatch,HdrCrc:%u,CalcCrc:%u,"

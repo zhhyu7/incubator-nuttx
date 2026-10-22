@@ -85,12 +85,8 @@
 #define RPMSG_PORT_UART_EVT_CONNED         (1 << 2) /* Connected with peer or not */
 #define RPMSG_PORT_UART_EVT_TX             (1 << 3) /* TX is ready or not */
 
-#ifdef CONFIG_RPMSG_PORT_UART_CRC
-#  define rpmsg_port_uart_crc16(hdr)       crc16xor((FAR uint8_t *)&(hdr)->cmd, \
+#define rpmsg_port_uart_crc16(hdr)         crc16xor((FAR uint8_t *)&(hdr)->cmd, \
                                                     (hdr)->len - sizeof((hdr)->crc))
-#else
-#  define rpmsg_port_uart_crc16(hdr)       0
-#endif
 
 #ifdef CONFIG_RPMSG_PORT_UART_DEBUG
 #  define rpmsgdump(m,b,s)                 lib_dumpbuffer(m, (FAR const uint8_t *)b, s)
@@ -829,8 +825,7 @@ static void rpmsg_port_uart_rx_worker(FAR struct rpmsg_port_uart_s *rpuart,
             else if (buf[i] == RPMSG_PORT_UART_END)
               {
                 if (hdr->len < sizeof(*hdr) || hdr->len != next ||
-                    (hdr->crc != 0 &&
-                     hdr->crc != rpmsg_port_uart_crc16(hdr)))
+                    hdr->crc != rpmsg_port_uart_crc16(hdr))
                   {
                     rpmsg_diag(DIAG_RPMSG_UART_RX_ERROR,
                                "Reason:RxCrcError,HdrCrc:%u,HdrLen:%u,"

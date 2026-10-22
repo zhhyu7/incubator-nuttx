@@ -179,7 +179,6 @@ config RPMSG_PORT_RETX
 	bool "Rpmsg Port Retransmission Support"
 	default y
 	depends on RPMSG_PORT
-	select RPMSG_PORT_SPI_CRC if RPMSG_PORT_SPI || RPMSG_PORT_SPI_SLAVE
 	---help---
 		Enable retransmission mechanism for rpmsg port transport.
 		When enabled, unacknowledged DATA frames will be retransmitted
@@ -208,10 +207,6 @@ config RPMSG_PORT_SPI_THREAD_PRIORITY
 config RPMSG_PORT_SPI_THREAD_STACKSIZE
 	int "Rpmsg SPI Port Stack Size"
 	default 4096
-
-config RPMSG_PORT_SPI_CRC
-	bool "Rpmsg SPI Port Use CRC Check"
-	default n
 
 config RPMSG_PORT_SPI_RX_THRESHOLD
 	int "Rpmsg SPI Port Rx Buffer Threshold"
@@ -250,10 +245,6 @@ config RPMSG_PORT_UART_TX_THREAD_PRIORITY
 config RPMSG_PORT_UART_TX_THREAD_STACKSIZE
 	int "Rpmsg UART Port TX Stack Size"
 	default DEFAULT_TASK_STACKSIZE
-
-config RPMSG_PORT_UART_CRC
-	bool "Rpmsg UART Port CRC Enable"
-	default n
 
 config RPMSG_PORT_UART_COMPRESSION
 	bool "Rpmsg UART Port LZF Compression"
