@@ -52,6 +52,7 @@
 #define VIRTIO_CAN_FLAGS_EXTENDED      0x8000
 #define VIRTIO_CAN_FLAGS_FD            0x4000
 #define VIRTIO_CAN_FLAGS_RTR           0x2000
+#define VIRTIO_CAN_FLAGS_BRS           0x1000
 
 #define VIRTIO_CAN_IFNAME_SIZE         16
 

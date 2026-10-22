@@ -177,8 +177,21 @@ static size_t virtio_can_frame2wire(FAR struct virtio_can_priv_s *priv,
       FAR struct canfd_frame *cfd = (FAR struct canfd_frame *)data;
 
       canid = cfd->can_id;
-      dlen  = MIN(cfd->len, CANFD_MAX_DLEN);
-      flags = VIRTIO_CAN_FLAGS_FD;
+
+      if (cfd->flags & CANFD_FDF)
+        {
+          dlen  = MIN(cfd->len, CANFD_MAX_DLEN);
+          flags = VIRTIO_CAN_FLAGS_FD;
+
+          if (cfd->flags & CANFD_BRS)
+            {
+              flags |= VIRTIO_CAN_FLAGS_BRS;
+            }
+        }
+      else
+        {
+          dlen = MIN(cfd->len, CAN_MAX_DLEN);
+        }
     }
   else
     {
@@ -255,9 +268,15 @@ static size_t virtio_can_wire2frame(FAR const struct virtio_can_rx_s *rx,
 
       cfd->can_id = canid;
       cfd->len    = MIN(le16toh(rx->length), CANFD_MAX_DLEN);
-      cfd->flags  = 0;
+      cfd->flags  = CANFD_FDF;
       cfd->__res0 = 0;
       cfd->__res1 = 0;
+
+      if (flags & VIRTIO_CAN_FLAGS_BRS)
+        {
+          cfd->flags |= CANFD_BRS;
+        }
+
       return sizeof(struct canfd_frame);
     }
   else

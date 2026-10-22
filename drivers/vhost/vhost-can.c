@@ -324,7 +324,25 @@ static size_t vhost_can_wire2frame(FAR struct vhost_can_priv_s *priv,
 
   cfd->can_id = canid;
   cfd->len    = len;
-  cfd->flags  = 0;
+
+  /* Rebuild canfd_frame.flags from the wire flags.  An FD frame carries
+   * FDF plus any BRS/ESI the sender set; a classic frame leaves flags 0.
+   */
+
+  if (flags & VIRTIO_CAN_FLAGS_FD)
+    {
+      cfd->flags = CANFD_FDF;
+
+      if (flags & VIRTIO_CAN_FLAGS_BRS)
+        {
+          cfd->flags |= CANFD_BRS;
+        }
+    }
+  else
+    {
+      cfd->flags = 0;
+    }
+
   cfd->__res0 = 0;
   cfd->__res1 = 0;
   *frame = cfd;
@@ -340,9 +358,24 @@ static size_t vhost_can_wire2frame(FAR struct vhost_can_priv_s *priv,
  ****************************************************************************/
 
 static void vhost_can_rxhdr(FAR struct virtio_can_rx_s *rx, uint32_t canid,
-                            uint8_t dlen)
+                            uint8_t dlen, uint8_t fdflags)
 {
-  uint32_t flags = dlen > CAN_MAX_DLEN ? VIRTIO_CAN_FLAGS_FD : 0;
+  uint32_t flags = 0;
+
+  /* The CANFD_FDF flag is the authoritative FD indicator; deriving it from
+   * the sdu length would misclassify an 8-byte FD frame as classic.  BRS
+   * only applies to an FD frame.
+   */
+
+  if (fdflags & CANFD_FDF)
+    {
+      flags |= VIRTIO_CAN_FLAGS_FD;
+
+      if (fdflags & CANFD_BRS)
+        {
+          flags |= VIRTIO_CAN_FLAGS_BRS;
+        }
+    }
 
   if (canid & CAN_EFF_FLAG)
     {
@@ -375,6 +408,7 @@ static void vhost_can_rxhdr(FAR struct virtio_can_rx_s *rx, uint32_t canid,
 static size_t vhost_can_frame2wire(FAR struct virtqueue_buf *vb, size_t n,
                                    FAR const void *data, size_t len)
 {
+  FAR const struct canfd_frame *cfd = data;
   struct virtio_can_rx_s rx;
   FAR const uint8_t *sdu;
   size_t total = 0;
@@ -392,25 +426,20 @@ static size_t vhost_can_frame2wire(FAR struct virtqueue_buf *vb, size_t n,
       return 0;
     }
 
-  if (len >= sizeof(struct canfd_frame))
-    {
-      FAR const struct canfd_frame *cfd = data;
+  canid   = cfd->can_id;
+  sdu     = cfd->data;
 
-      canid = cfd->can_id;
-      dlen  = MIN(cfd->len, CANFD_MAX_DLEN);
-      sdu   = cfd->data;
+  if (cfd->flags & CANFD_FDF)
+    {
+      dlen = MIN(cfd->len, CANFD_MAX_DLEN);
     }
   else
     {
-      FAR const struct can_frame *cf = data;
-
-      canid = cf->can_id;
-      dlen  = MIN(cf->can_dlc, CAN_MAX_DLEN);
-      sdu   = cf->data;
+      dlen = MIN(cfd->len, CAN_MAX_DLEN);
     }
 
   dlen = MIN(dlen, total - VHOST_CAN_HDRLEN);
-  vhost_can_rxhdr(&rx, canid, dlen);
+  vhost_can_rxhdr(&rx, canid, dlen, cfd->flags);
   vhost_can_stream_write(vb, n, 0, &rx, VHOST_CAN_HDRLEN);
   vhost_can_stream_write(vb, n, VHOST_CAN_HDRLEN, sdu, dlen);
   return VIRTIO_CAN_RX_SIZE(dlen);
@@ -754,12 +783,15 @@ static void vhost_can_rxq(FAR void *arg)
        * chain is consumed with length 0, dropping the frame.
        */
 
+      frame->flags = nread >= sizeof(buf) ? frame->flags : 0;
       if (frame != &buf)
         {
-          dlen = MIN(frame->len, nread >= (ssize_t)sizeof(buf) ?
-                                 CANFD_MAX_DLEN : CAN_MAX_DLEN);
-          vhost_can_rxhdr(priv->rxvb[0].buf, frame->can_id, dlen);
-          used = VIRTIO_CAN_RX_SIZE(dlen);
+          dlen    = MIN(frame->len,
+                        (frame->flags & CANFD_FDF) ? CANFD_MAX_DLEN :
+                                                     CAN_MAX_DLEN);
+          vhost_can_rxhdr(priv->rxvb[0].buf, frame->can_id, dlen,
+                          frame->flags);
+          used    = VIRTIO_CAN_RX_SIZE(dlen);
         }
       else
         {
