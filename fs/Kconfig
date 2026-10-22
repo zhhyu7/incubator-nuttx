@@ -9,6 +9,9 @@ config DISABLE_MOUNTPOINT
 	bool "Disable support for mount points"
 	default n
 
+config FS_UIO
+	bool
+
 config FS_BLOCK_DRIVER
 	bool "Block driver inode helpers"
 	default !DISABLE_MOUNTPOINT

@@ -45,13 +45,16 @@ set(SRCS
     fs_stat.c
     fs_sendfile.c
     fs_statfs.c
-    fs_uio.c
     fs_write.c
     fs_dir.c
     fs_fsync.c
     fs_syncfs.c
     fs_sync.c
     fs_truncate.c)
+
+if(CONFIG_FS_UIO)
+  list(APPEND SRCS fs_uio.c)
+endif()
 
 # Unlink support: needed when either mountpoint or pseudofs operations exist
 
