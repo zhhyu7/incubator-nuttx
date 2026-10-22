@@ -34,6 +34,7 @@
 #include <assert.h>
 
 #include <nuttx/cancelpt.h>
+#include <nuttx/fs/uio.h>
 
 #include "inode/inode.h"
 #include "vfs.h"
