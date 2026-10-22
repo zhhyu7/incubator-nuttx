@@ -111,12 +111,32 @@ __jumpfunc__ void nxsched_unlock(FAR struct tcb_s *rtcb)
     {
       /* Yes.. that is the situation.  But one more thing.  The call
        * to nxsched_merge_pending() above may have actually replaced
-       * the task at the head of the ready-to-run list.  In that
-       * case, we need only to reset the timeslice value back to the
-       * maximum.
+       * the task at the head of the ready-to-run list.  In that case,
+       * the displaced task is already placed at the back of its
+       * priority group, so it only needs its timeslice reset.
+       *
+       * If the task is still running, its expired slice must be reset
+       * here and the roundrobin timer re-armed, because the timer was
+       * left disarmed when it expired while pre-emption was disabled.
        */
 
-      if (rtcb != this_task())
+      if (rtcb == this_task())
+        {
+          nxsched_process_roundrobin(rtcb, 0, false);
+
+          /* Re-arm the roundrobin timer if the task is still running.
+           * If a rotation switch happened, nxsched_switch() has already
+           * re-armed the timer for the new task.
+           */
+
+#  ifdef CONFIG_SCHED_TICKLESS
+          if (rtcb == this_task())
+            {
+              nxsched_resume_roundrobin(rtcb, clock_systime_ticks());
+            }
+#  endif
+        }
+      else
         {
           rtcb->timeslice = MSEC2TICK(CONFIG_RR_INTERVAL);
         }
