@@ -665,15 +665,29 @@ static int note_dump_one(FAR struct note_dump_stream_s *stream,
  * Name: note_type_size
  *
  * Description:
- *   Return the exact byte size of a fixed-length note type, or zero for a
- *   variable-length type (where only nc_length >= the common header can be
- *   checked).  The sizes mirror the write side so a header whose type is
- *   fixed but whose length disagrees can be rejected during resync.
+ *   Return the smallest byte size a note of this type can have, and set
+ *   *exact when that size is also the only legal one.  The sizes mirror the
+ *   write side, so a header whose length disagrees with its type can be
+ *   rejected during resync.
+ *
+ *   A fixed-length type is exact: the producer always writes sizeof() of
+ *   the matching struct.  A variable-length one gets a floor instead, sized
+ *   by the smallest frame its producer can emit and the dump path can read,
+ *   since the common header alone is not a meaningful bound for it.
+ *
+ * Input Parameters:
+ *   type  - The note type to look up
+ *   exact - Set true when the returned size is the only legal length
+ *
+ * Returned Value:
+ *   The smallest legal byte size for this type.
  *
  ****************************************************************************/
 
-static inline_function size_t note_type_size(uint8_t type)
+static inline_function size_t note_type_size(uint8_t type, FAR bool *exact)
 {
+  *exact = true;
+
   switch (type)
     {
       case NOTE_STOP:
@@ -717,9 +731,81 @@ static inline_function size_t note_type_size(uint8_t type)
       case NOTE_HEAP_ALLOC:
       case NOTE_HEAP_FREE:
         return sizeof(struct note_heap_s);
+
+      /* Their producers pass sizeof() of the payload struct, so the frame
+       * is as fixed as any of the above despite being a dump event.
+       */
+
+      case NOTE_DUMP_COUNTER:
+        return SIZEOF_NOTE_EVENT(sizeof(struct note_counter_s));
+      case NOTE_DUMP_THREADTIME:
+        return SIZEOF_NOTE_EVENT(sizeof(struct note_threadtime_s));
+
+      /* lib_bsprintf() stores its prefix field unconditionally, and that
+       * field is at least the terminator of an empty prefix, so the payload
+       * of a printf frame is never absent.
+       */
+
+      case NOTE_DUMP_PRINTF:
+        *exact = false;
+        return SIZEOF_NOTE_PRINTF(1);
+
+      /* An absent payload is the instruction-pointer form, where nev_ip
+       * identifies the pair instead of a name.
+       */
+
+      case NOTE_DUMP_BEGIN:
+      case NOTE_DUMP_END:
+        *exact = false;
+        return SIZEOF_NOTE_EVENT(0);
+
+      /* The payload is the whole message and the dump has no fallback to
+       * print instead, so an empty one carries nothing.
+       */
+
+      case NOTE_DUMP_MARK:
+      case NOTE_DUMP_BINARY:
+        *exact = false;
+        return SIZEOF_NOTE_EVENT(1);
+
+      /* cookie is read out wholesale, then names is walked as a string. */
+
+      case NOTE_DUMP_ASYNC_BEGIN:
+      case NOTE_DUMP_ASYNC_END:
+        *exact = false;
+        return SIZEOF_NOTE_EVENT(sizeof(struct note_async_s) + 1);
+
+      /* A task name or a syscall argument list sizes its own frame. */
+
       default:
-        return 0;
+        *exact = false;
+        return sizeof(struct note_common_s);
     }
+}
+
+/****************************************************************************
+ * Name: note_header_is_valid
+ *
+ * Description:
+ *   Judge a common header on its own, without touching the ring.  Used both
+ *   for the resync candidate and for the successor it is checked against.
+ *
+ ****************************************************************************/
+
+static inline_function bool
+note_header_is_valid(FAR const struct note_common_s *hdr)
+{
+  size_t size;
+  bool exact;
+
+  if (hdr->nc_type <= NOTE_ALL || hdr->nc_type >= NOTE_TYPE_LAST ||
+      hdr->nc_cpu >= CONFIG_NCPUS)
+    {
+      return false;
+    }
+
+  size = note_type_size(hdr->nc_type, &exact);
+  return exact ? hdr->nc_length == size : hdr->nc_length >= size;
 }
 
 /****************************************************************************
@@ -785,6 +871,52 @@ static bool note_printf_is_valid(FAR struct note_dump_stream_s *stream)
 }
 
 /****************************************************************************
+ * Name: note_next_is_valid
+ *
+ * Description:
+ *   Cross-check a resync candidate against its successor: the header that
+ *   nc_length points at must validate as well.  Only the successor is
+ *   judged here; the candidate must already have passed
+ *   note_header_is_valid(), since its nc_length is what locates the
+ *   successor in the first place.
+ *
+ *   A lone header is far too weak to resync on, because a packed record
+ *   hands a scan all four checked bytes for free: a format string embedded
+ *   by lib_bsprintf ends in "<punct>%<conv>\0", where '%' (0x25) is
+ *   NOTE_DUMP_BINARY and so escapes the exact-length check, the conversion
+ *   character lands on the unchecked nc_priority, and the terminator
+ *   satisfies nc_cpu == 0.  44% of the format strings in a production
+ *   sensor-core image end that way, which makes a false positive the
+ *   common case rather than a rare one.  Demanding that the successor
+ *   validate too squares the odds of a bogus position surviving, for one
+ *   extra peek.
+ *
+ ****************************************************************************/
+
+static inline_function bool
+note_next_is_valid(FAR struct note_dump_stream_s *stream)
+{
+  FAR const struct note_common_s *hdr = &stream->note.cmn;
+  struct note_common_s next;
+  uint32_t probe;
+
+  probe = ring_advance(stream->ring, stream->pos,
+                       hdr->nc_length - sizeof(*hdr));
+  if (ring_mpmc_peek(stream->ring, (FAR uint8_t *)&next,
+                     sizeof(next), &probe) < sizeof(next))
+    {
+      /* No successor in the ring yet: the candidate is the newest note and
+       * nothing can corroborate it.  Accepting it is what keeps the tail of
+       * the ring readable.
+       */
+
+      return true;
+    }
+
+  return note_header_is_valid(&next);
+}
+
+/****************************************************************************
  * Name: note_is_valid
  *
  * Description:
@@ -792,7 +924,8 @@ static bool note_printf_is_valid(FAR struct note_dump_stream_s *stream)
  *   type, a CPU within range, and a length that fits the remaining bytes.
  *   For a fixed-length type the length must match exactly.  A printf frame
  *   is additionally rejected when its format pointer cannot belong to this
- *   image, which the dump path would otherwise dereference.
+ *   image, which the dump path would otherwise dereference.  Finally the
+ *   frame must be followed by a plausible successor.
  *
  ****************************************************************************/
 
@@ -800,17 +933,8 @@ static inline_function bool
 note_is_valid(FAR struct note_dump_stream_s *stream)
 {
   FAR struct note_common_s *hdr = &stream->note.cmn;
-  size_t size;
 
-  if (hdr->nc_type <= NOTE_ALL || hdr->nc_type >= NOTE_TYPE_LAST ||
-      hdr->nc_cpu >= CONFIG_NCPUS ||
-      hdr->nc_length < sizeof(struct note_common_s))
-    {
-      return false;
-    }
-
-  size = note_type_size(hdr->nc_type);
-  if (size != 0 && hdr->nc_length != size)
+  if (!note_header_is_valid(hdr))
     {
       return false;
     }
@@ -821,7 +945,7 @@ note_is_valid(FAR struct note_dump_stream_s *stream)
       return false;
     }
 
-  return true;
+  return note_next_is_valid(stream);
 }
 
 /****************************************************************************
