@@ -97,6 +97,10 @@
 #define SYSLOGIOC_GETRATELIMIT _SYSLOGIOC(0x0004)
 #define SYSLOGIOC_CLEAR        _SYSLOGIOC(0x0005)
 
+/* Persist read position across reboot (advances cons_tail) */
+
+#define SYSLOGIOC_COMMIT       _SYSLOGIOC(0x0006)
+
 #define SYSLOG_CHANNEL_NAME_LEN       32
 
 #define SYSLOG_CHANNEL_DISABLE        0x01

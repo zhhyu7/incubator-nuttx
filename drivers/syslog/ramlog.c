@@ -643,6 +643,10 @@ static int ramlog_file_ioctl(FAR struct file *filep, int cmd,
         ring_mpmc_skip(r, ring_count(r));
         break;
 
+      case SYSLOGIOC_COMMIT:
+        ring_mpmc_skipto(r, upriv->rl_read);
+        break;
+
       case SYSLOGIOC_SETRATELIMIT:
         if (arg == 0)
           {
