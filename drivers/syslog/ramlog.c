@@ -348,7 +348,7 @@ static void ramlog_timeout_handler(wdparm_t arg)
 {
   FAR struct ramlog_dev_s *dev = (FAR struct ramlog_dev_s *)arg;
 
-  if (ring_count(dev->rl_ring) > 0)
+  if (ring_count(ramlog_get_ring(dev)) > 0)
     {
       ramlog_pollnotify(dev, POLLIN);
     }
@@ -367,7 +367,8 @@ static inline_function
 uint32_t ramlog_unread(FAR struct ramlog_dev_s *priv,
                        FAR struct ramlog_user_s *upriv)
 {
-  return ring_mpmc_peek(priv->rl_ring, NULL, UINT32_MAX, &upriv->rl_read);
+  return ring_mpmc_peek(ramlog_get_ring(priv), NULL, UINT32_MAX,
+                        &upriv->rl_read);
 }
 
 /****************************************************************************
@@ -507,7 +508,7 @@ static ssize_t ramlog_file_read(FAR struct file *filep, FAR char *buffer,
   FAR struct ramlog_dev_s *priv = inode->i_private;
   FAR struct ramlog_user_s *upriv = filep->f_priv;
 #ifndef CONFIG_BINARY_SYSLOG
-  FAR struct ring_s *r = priv->rl_ring;
+  FAR struct ring_s *r = ramlog_get_ring(priv);
 #endif
 #ifdef CONFIG_RAMLOG_NOOVERWRITE
   FAR dq_entry_t *entry;
@@ -593,6 +594,7 @@ static int ramlog_file_ioctl(FAR struct file *filep, int cmd,
   FAR struct inode *inode = filep->f_inode;
   FAR struct ramlog_dev_s *priv = inode->i_private;
   FAR struct ramlog_user_s *upriv = filep->f_priv;
+  FAR struct ring_s *r = ramlog_get_ring(priv);
   int ret = 0;
 
   switch (cmd)
@@ -634,11 +636,11 @@ static int ramlog_file_ioctl(FAR struct file *filep, int cmd,
           }
         else
           {
-            *(FAR unsigned int *)arg = ring_capacity(priv->rl_ring);
+            *(FAR unsigned int *)arg = ring_capacity(r);
           }
         break;
       case SYSLOGIOC_CLEAR:
-        ring_mpmc_skip(priv->rl_ring, ring_count(priv->rl_ring));
+        ring_mpmc_skip(r, ring_count(r));
         break;
 
       case SYSLOGIOC_SETRATELIMIT:
@@ -722,7 +724,7 @@ static int ramlog_file_poll(FAR struct file *filep, FAR struct pollfd *fds,
         }
 
 #ifdef CONFIG_RAMLOG_NOOVERWRITE
-      if (ring_space(priv->rl_ring) > 0)
+      if (ring_space(ramlog_get_ring(priv)) > 0)
 #endif
         {
           eventset |= POLLOUT;
@@ -775,7 +777,7 @@ static int ramlog_file_open(FAR struct file *filep)
   ring_mpmc_peek(r, NULL, UINT32_MAX, &upriv->rl_read);
 
 #ifdef CONFIG_BINARY_SYSLOG
-  note_dump_stream(&upriv->rl_stream, priv->rl_ring, RAMLOG_BINARY);
+  note_dump_stream(&upriv->rl_stream, r, RAMLOG_BINARY);
 #endif
 
   nxsem_init(&upriv->rl_readsem, 0, 0);
