@@ -64,7 +64,7 @@
 
 #ifdef CONFIG_SCHED_CHILD_STATUS
 static inline void nxtask_exitstatus(FAR struct task_group_s *group,
-                                     int status)
+                                     pid_t pid, int status)
 {
   FAR struct child_status_s *child;
 
@@ -76,7 +76,7 @@ static inline void nxtask_exitstatus(FAR struct task_group_s *group,
     {
       /* No.. Find the exit status entry for this task in the parent TCB */
 
-      child = group_find_child(group, nxsched_getpid());
+      child = group_find_child(group, pid);
       if (child)
         {
           /* Save the exit status..  For the case of HAVE_GROUP_MEMBERS,
@@ -92,7 +92,7 @@ static inline void nxtask_exitstatus(FAR struct task_group_s *group,
 }
 #else
 
-#  define nxtask_exitstatus(group,status) (group)->tg_exitcode = (status);
+#  define nxtask_exitstatus(group,pid,status) (group)->tg_exitcode = (status);
 
 #endif /* CONFIG_SCHED_CHILD_STATUS */
 
@@ -150,7 +150,6 @@ static inline void nxtask_sigchild(pid_t ppid, FAR struct tcb_s *ctcb,
   FAR struct tcb_s *ptcb = nxsched_get_tcb(ppid);
   FAR struct task_group_s *chgrp = ctcb->group;
   FAR struct task_group_s *pgrp;
-  siginfo_t info;
 
   DEBUGASSERT(chgrp);
 
@@ -183,40 +182,69 @@ static inline void nxtask_sigchild(pid_t ppid, FAR struct tcb_s *ctcb,
           TCB_FLAG_TTYPE_PTHREAD)
 #endif
         {
-          nxtask_exitstatus(pgrp, status);
-        }
-
-      /* But only the final exiting thread in a task group, whatever it is,
-       * should generate SIGCHLD.
-       */
-
-      if (sq_is_singular(&chgrp->tg_members))
-        {
-          /* Mark that all of the threads in the task group have exited */
-
-          nxtask_groupexit(pgrp, chgrp->tg_pid);
-
-          /* Create the siginfo structure.  We don't actually know the cause.
-           * That is a bug. Let's just say that the child task just exited
-           * for now.
-           */
-
-          memset(&info, 0, sizeof(info));
-
-          info.si_signo           = SIGCHLD;
-          info.si_code            = CLD_EXITED;
-          info.si_errno           = OK;
-          info.si_value.sival_ptr = NULL;
-          info.si_pid             = chgrp->tg_pid;
-          info.si_status          = pgrp->tg_exitcode;
-
-          /* Send the signal to one thread in the group */
-
-          group_signal(pgrp, &info);
+          nxtask_exitstatus(pgrp, chgrp->tg_pid, status);
         }
 
       nxsched_put_tcb(ptcb);
     }
+}
+
+/****************************************************************************
+ * Name: nxtask_groupexit_notify
+ *
+ * Description:
+ *   Mark the child task group as exited in the parent and send SIGCHLD.
+ *   Must be called exactly once, by the member that group_leave() reported
+ *   as the last one to leave the group.
+ *
+ ****************************************************************************/
+
+static void nxtask_groupexit_notify(FAR struct task_group_s *chgrp)
+{
+  FAR struct task_group_s *pgrp;
+  FAR struct tcb_s *ptcb;
+  irqstate_t flags;
+  siginfo_t info;
+
+  /* The last-member decision must be made atomically with the removal
+   * from tg_members (in group_leave()).  Deciding it earlier with
+   * sq_is_singular() races: two exiting members can each see the other
+   * still present, and SIGCHLD is then never sent.
+   */
+
+  flags = enter_critical_section();
+  sched_lock();
+
+  ptcb = nxsched_get_tcb(chgrp->tg_ppid);
+  if (ptcb != NULL)
+    {
+      pgrp = ptcb->group;
+      DEBUGASSERT(pgrp);
+
+      nxtask_groupexit(pgrp, chgrp->tg_pid);
+
+      /* Create the siginfo structure.  We don't actually know the cause.
+       * That is a bug. Let's just say that the child task just exited
+       * for now.
+       */
+
+      memset(&info, 0, sizeof(info));
+
+      info.si_signo           = SIGCHLD;
+      info.si_code            = CLD_EXITED;
+      info.si_errno           = OK;
+      info.si_value.sival_ptr = NULL;
+      info.si_pid             = chgrp->tg_pid;
+      info.si_status          = pgrp->tg_exitcode;
+
+      /* Send the signal to one thread in the group */
+
+      group_signal(pgrp, &info);
+      nxsched_put_tcb(ptcb);
+    }
+
+  sched_unlock();
+  leave_critical_section(flags);
 }
 
 #else /* HAVE_GROUP_MEMBERS */
@@ -239,7 +267,7 @@ static inline void nxtask_sigchild(FAR struct tcb_s *ptcb,
 #ifdef CONFIG_SCHED_CHILD_STATUS
       /* Save the exit status now of the main thread */
 
-      nxtask_exitstatus(ptcb->group, status);
+      nxtask_exitstatus(ptcb->group, ctcb->group->tg_pid, status);
 
       /* Mark the group child status as exited */
 
@@ -528,7 +556,14 @@ void nxtask_exithook(FAR struct tcb_s *tcb, int status)
    * status (no zombies here!)
    */
 
+#if defined(CONFIG_SCHED_HAVE_PARENT) && defined(HAVE_GROUP_MEMBERS)
+  if (group_leave(tcb))
+    {
+      nxtask_groupexit_notify(tcb->group);
+    }
+#else
   group_leave(tcb);
+#endif
 
   /* Release the task's PID sequence should align with
    * nx_pthread_exit, with in critical_section and after exit hook.

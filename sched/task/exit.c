@@ -28,11 +28,13 @@
 
 #include <stdlib.h>
 #include <unistd.h>
+#include <signal.h>
 #include <debug.h>
 #include <errno.h>
 
 #include <nuttx/irq.h>
 #include <nuttx/fs/fs.h>
+#include <nuttx/signal.h>
 #include <nuttx/tls.h>
 
 #include "task/task.h"
@@ -71,6 +73,17 @@ void _exit(int status)
   if ((atomic_read(&tcb->flags) & TCB_FLAG_TTYPE_MASK) !=
       TCB_FLAG_TTYPE_KERNEL)
     {
+      sigset_t set;
+
+      /* A signal handler that calls exit() while group_kill_children() is
+       * waiting for the siblings would re-enter _exit(), find
+       * GROUP_FLAG_EXITING already set and skip that wait.  Block signals
+       * first, as nx_pthread_exit() does.
+       */
+
+      sigfillset(&set);
+      nxsig_procmask(SIG_SETMASK, &set, NULL);
+
       group_kill_children(tcb);
     }
 

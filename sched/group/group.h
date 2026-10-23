@@ -165,7 +165,7 @@ static inline_function void group_join(FAR struct tcb_s *tcb)
   atomic_add(&group->tg_refs, 1);
 }
 #endif
-void group_leave(FAR struct tcb_s *tcb);
+bool group_leave(FAR struct tcb_s *tcb);
 void group_drop(FAR struct task_group_s *group);
 
 #ifdef HAVE_GROUP_MEMBERS

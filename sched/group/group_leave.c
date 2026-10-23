@@ -140,7 +140,7 @@ static inline void group_release(FAR struct task_group_s *group)
  *   tcb - The TCB of the task that is exiting.
  *
  * Returned Value:
- *   None.
+ *   true if the caller was the last member to leave the group.
  *
  * Assumptions:
  *   Called during task deletion in a safe context.  No special precautions
@@ -148,9 +148,10 @@ static inline void group_release(FAR struct task_group_s *group)
  *
  ****************************************************************************/
 
-void group_leave(FAR struct tcb_s *tcb)
+bool group_leave(FAR struct tcb_s *tcb)
 {
   FAR struct task_group_s *group;
+  bool last = false;
 #ifdef HAVE_GROUP_MEMBERS
   irqstate_t flags;
 #endif
@@ -169,10 +170,14 @@ void group_leave(FAR struct tcb_s *tcb)
 #ifdef HAVE_GROUP_MEMBERS
       flags = spin_lock_irqsave(&group->tg_lock);
       sq_rem(&tcb->member, &group->tg_members);
-      release = release && sq_empty(&group->tg_members);
+      last = sq_empty(&group->tg_members);
       spin_unlock_irqrestore(&group->tg_lock, flags);
 
+      release = release && last;
+
       /* Have all of the members left the group? */
+#else
+      last = true;
 #endif
 
       if (release)
@@ -182,6 +187,8 @@ void group_leave(FAR struct tcb_s *tcb)
           group_release(group);
         }
     }
+
+  return last;
 }
 
 /****************************************************************************
