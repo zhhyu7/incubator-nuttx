@@ -2014,14 +2014,17 @@ static int uvc_capture_thread(int argc, FAR char *argv[])
             }
         }
 
-      /* Check if any slot is still active (SUBMITTED).
+      /* Check if any slot is still active (SUBMITTED or COMPLETED).
        * If all slots are FREE, pipeline is dead — break
-       * to avoid infinite idle loop.
+       * to avoid infinite idle loop.  A COMPLETED slot still has its
+       * completion posted and is resubmitted on the next pass; slots
+       * finish from the callback, so all of them can be COMPLETED here
+       * when this thread was preempted since the scan.
        */
 
       for (i = 0; i < pipe->num_slots; i++)
         {
-          if (atomic_read(&pipe->slots[i].state) == UVC_ISO_SLOT_SUBMITTED)
+          if (atomic_read(&pipe->slots[i].state) != UVC_ISO_SLOT_FREE)
             {
               break;
             }
