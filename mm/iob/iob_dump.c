@@ -72,7 +72,9 @@
  * by its rate-limited caller (only one dump is in flight at a time).
  */
 
-static FAR struct iob_s *g_iob_dump_record[CONFIG_IOB_DUMP_MAX_ENTRIES + 1];
+#if CONFIG_IOB_DUMP_MAX_ENTRIES > 0
+static FAR struct iob_s *g_iob_dump_record[CONFIG_IOB_DUMP_MAX_ENTRIES];
+#endif
 
 /****************************************************************************
  * Name: iob_nibble
@@ -222,10 +224,12 @@ static void iob_dump_cb(FAR struct iob_s *iob, FAR void *arg)
    * IOB pointer to be printed later, after the lock has been released.
    */
 
+#if CONFIG_IOB_DUMP_MAX_ENTRIES > 0
   if (*total >= 0 && *total < CONFIG_IOB_DUMP_MAX_ENTRIES)
     {
       g_iob_dump_record[*total] = iob;
     }
+#endif
 
   (*total)++;
 }
@@ -250,7 +254,9 @@ void iob_dump_all(FAR const char *fmt, ...)
   struct mempoolinfo_s minfo;
   va_list ap;
   int total = 0;
+#if CONFIG_IOB_DUMP_MAX_ENTRIES > 0
   int nrecord;
+#endif
   int i;
 
   va_start(ap, fmt);
@@ -282,6 +288,7 @@ void iob_dump_all(FAR const char *fmt, ...)
 
   iob_foreach(iob_dump_cb, &total);
 
+#if CONFIG_IOB_DUMP_MAX_ENTRIES > 0
   /* Now that the lock has been released, emit the recorded IOBs. */
 
   nrecord = MIN(total, CONFIG_IOB_DUMP_MAX_ENTRIES);
@@ -296,6 +303,7 @@ void iob_dump_all(FAR const char *fmt, ...)
              iob->io_offset, IOB_LINK_GET(iob),
              IOB_OWNER_STR(iob));
     }
+#endif
 
   if (total == 0)
     {
