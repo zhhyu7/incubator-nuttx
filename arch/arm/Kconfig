@@ -1712,6 +1712,13 @@ config ARM_GIC_EOIMODE
 		Enable GICC_CTLR.EOImode, this will separates the priority drop and interrupt
 		deactivation operations.
 
+config ARM_GIC_SPI_EDGE
+	bool "Configure all SPIs as edge-triggered"
+	default n
+	---help---
+		Configure all SPIs (Shared Peripheral Interrupts) as
+		edge-triggered by default.
+
 config ARM_GICV2_LEGACY_IRQ
 	string "Legacy IRQ bases list for PCI domains"
 	default "35"

@@ -200,14 +200,12 @@ static void arm64_gic_irq_enable(unsigned int intid)
    * SPI's affinity, now set it to be the PE on which it is enabled.
    */
 
+#ifndef CONFIG_ARM64_GICV3_SPI_ROUTING_CPU0
   if (GIC_IS_SPI(intid))
     {
-#ifdef CONFIG_ARM64_GICV3_SPI_ROUTING_CPU0
-      arm64_gic_write_irouter(arm64_get_mpid(0), intid);
-#else
       arm64_gic_write_irouter(up_cpu_index(), intid);
-#endif
     }
+#endif
 
   putreg32(mask, ISENABLER(GET_DIST_BASE(intid), idx));
 }
@@ -535,15 +533,20 @@ static void gicv3_dist_init(void)
   putreg32(0, GICD_CTLR);
   gic_wait_rwp(GIC_SPI_INT_BASE);
 
-  /* The SPIs may be shared with other images, so only their group is set
-   * here; each SPI is set up by its user through up_enable_irq(),
-   * up_set_irq_type(), up_prioritize_irq() and up_secure_irq().
-   */
+  /* Default configuration of all SPIs */
 
   for (intid = GIC_SPI_INT_BASE; intid < num_ints;
        intid += GIC_NUM_INTR_PER_REG)
     {
       idx = intid / GIC_NUM_INTR_PER_REG;
+
+      /* Disable interrupt */
+
+      putreg32(INTBITS_ALL, ICENABLER(base, idx));
+
+      /* Clear pending */
+
+      putreg32(INTBITS_ALL, ICPENDR(base, idx));
       putreg32(IGROUPR_VAL, IGROUPR(base, idx));
 
 #if defined(CONFIG_ARCH_TRUSTZONE_SECURE)
@@ -563,16 +566,39 @@ static void gicv3_dist_init(void)
 
   gic_wait_rwp(GIC_SPI_INT_BASE);
 
-#if defined(CONFIG_ARCH_TRUSTZONE_SECURE) || \
-    defined(CONFIG_ARCH_TRUSTZONE_NONSECURE)
-  /* Reset priority 0 is the highest; a non-secure SPI left there would
-   * outrank the secure interrupts, so give every SPI the default priority.
-   */
+  /* Configure default priorities for all SPIs. */
 
   for (intid = GIC_SPI_INT_BASE; intid < num_ints;
        intid += GIC_NUM_PRI_PER_REG)
     {
       putreg32(GIC_INT_DEF_PRI_X4, IPRIORITYR(base, intid));
+    }
+
+  /* Configure all SPIs as active low, level triggered by default */
+
+  for (intid = GIC_SPI_INT_BASE; intid < num_ints;
+       intid += GIC_NUM_CFG_PER_REG)
+    {
+      idx = intid / GIC_NUM_CFG_PER_REG;
+#ifdef CONFIG_ARM64_GICV3_SPI_EDGE
+      /* Configure all SPIs as edge-triggered by default */
+
+      putreg32(0xaaaaaaaa, ICFGR(base, idx));
+#else
+      /* Configure all SPIs as level-sensitive by default */
+
+      putreg32(0, ICFGR(base, idx));
+#endif
+    }
+
+  /* Configure SPI interrupt affinity routing to CPU0 */
+
+#ifdef CONFIG_ARM64_GICV3_SPI_ROUTING_CPU0
+  uint64_t mpid = arm64_get_mpid(0);
+
+  for (intid = GIC_SPI_INT_BASE; intid < num_ints; intid++)
+    {
+      putreg64(mpid, IROUTER(base, intid));
     }
 #endif
 

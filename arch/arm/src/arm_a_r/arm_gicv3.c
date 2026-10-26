@@ -521,15 +521,20 @@ static void gicv3_dist_init(void)
   putreg32(0, GICD_CTLR);
   gic_wait_rwp(GIC_SPI_INT_BASE);
 
-  /* The SPIs may be shared with other images, so only their group is set
-   * here; each SPI is set up by its user through up_enable_irq(),
-   * up_set_irq_type(), up_prioritize_irq() and up_secure_irq().
-   */
+  /* Default configuration of all SPIs */
 
   for (intid = GIC_SPI_INT_BASE; intid < num_ints;
        intid += GIC_NUM_INTR_PER_REG)
     {
       idx = intid / GIC_NUM_INTR_PER_REG;
+
+      /* Disable interrupt */
+
+      putreg32(INTBITS_ALL, ICENABLER(base, idx));
+
+      /* Clear pending */
+
+      putreg32(INTBITS_ALL, ICPENDR(base, idx));
       putreg32(IGROUPR_VAL, IGROUPR(base, idx));
 
 #ifdef CONFIG_ARCH_TRUSTZONE_SECURE
@@ -549,18 +554,30 @@ static void gicv3_dist_init(void)
 
   gic_wait_rwp(GIC_SPI_INT_BASE);
 
-#if defined(CONFIG_ARCH_TRUSTZONE_SECURE) || \
-    defined(CONFIG_ARCH_TRUSTZONE_NONSECURE)
-  /* Reset priority 0 is the highest; a non-secure SPI left there would
-   * outrank the secure interrupts, so give every SPI the default priority.
-   */
+  /* Configure default priorities for all SPIs. */
 
   for (intid = GIC_SPI_INT_BASE; intid < num_ints;
        intid += GIC_NUM_PRI_PER_REG)
     {
       putreg32(GIC_INT_DEF_PRI_X4, IPRIORITYR(base, intid));
     }
+
+  /* Configure all SPIs as active low, level triggered by default */
+
+  for (intid = GIC_SPI_INT_BASE; intid < num_ints;
+       intid += GIC_NUM_CFG_PER_REG)
+    {
+      idx = intid / GIC_NUM_CFG_PER_REG;
+#ifdef CONFIG_ARM_GIC_SPI_EDGE
+      /* Configure all SPIs as edge-triggered by default */
+
+      putreg32(0xaaaaaaaa, ICFGR(base, idx));
+#else
+      /* Configure all SPIs as level-sensitive by default */
+
+      putreg32(0, ICFGR(base, idx));
 #endif
+    }
 
   /* TODO: Some arrch64 Cortex-A core maybe without security state
    * it has different GIC configure with standard arrch64 A or R core
