@@ -28,6 +28,18 @@ ifeq ($(CONFIG_IVSHMEM_FLAT),y)
 CSRCS += ivshmem_flat.c
 endif
 
+ifeq ($(CONFIG_RAMDISK_IVSHMEM),y)
+CSRCS += ivshmem_ramdisk.c
+endif
+
+ifeq ($(CONFIG_UIO_IVSHMEM),y)
+CSRCS += ivshmem_uio.c
+endif
+
+ifeq ($(CONFIG_NOTERAM_IVSHMEM),y)
+CSRCS += ivshmem_noteram.c
+endif
+
 DEPPATH += --dep-path ivshmem
 VPATH += :ivshmem
 

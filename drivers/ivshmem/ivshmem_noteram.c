@@ -1,5 +1,5 @@
 /****************************************************************************
- * drivers/pci/pci_noteram_ivshmem.c
+ * drivers/ivshmem/ivshmem_noteram.c
  *
  * SPDX-License-Identifier: Apache-2.0
  *
@@ -28,8 +28,10 @@
 
 #include <nuttx/nuttx.h>
 #include <nuttx/kmalloc.h>
-#include <nuttx/pci/pci_ivshmem.h>
+#include <nuttx/ivshmem.h>
 #include <nuttx/note/noteram_driver.h>
+
+#include "ivshmem_drivers.h"
 
 #define NOTERAM_IVSHMEM_NAME "shm"
 
@@ -64,7 +66,7 @@ static int noteram_ivshmem_probe(FAR struct ivshmem_device_s *ivdev)
                                                      true);
   if (!noteram->note_drv)
     {
-      pcierr("failed initialize noteram\n");
+      _err("failed initialize noteram\n");
       return -ENOMEM;
     }
 
@@ -84,7 +86,7 @@ static void noteram_ivshmem_remove(FAR struct ivshmem_device_s *ivdev)
   kmm_free(noteram);
 }
 
-int pci_register_noteram_ivshmem_driver(void)
+int ivshmem_noteram_register(void)
 {
   FAR struct noteram_ivshmem_dev_s *noteram;
   int ret;
@@ -92,11 +94,11 @@ int pci_register_noteram_ivshmem_driver(void)
   noteram = kmm_zalloc(sizeof(*noteram));
   if (noteram == NULL)
     {
-      pcierr("failed alloc noteram\n");
+      _err("failed alloc noteram\n");
       return -ENOMEM;
     }
 
-  noteram->drv.id = CONFIG_PCI_NOTERAM_IVSHMEM_IDX;
+  noteram->drv.id = CONFIG_NOTERAM_IVSHMEM_IDX;
   noteram->drv.probe = noteram_ivshmem_probe;
   noteram->drv.remove = noteram_ivshmem_remove;
 

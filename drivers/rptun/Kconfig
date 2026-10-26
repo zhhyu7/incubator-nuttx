@@ -58,9 +58,9 @@ config RPTUN_BMP
 config RPTUN_IVSHMEM
 	bool "rptun ivshmem support"
 	default n
-	depends on PCI_IVSHMEM
+	depends on IVSHMEM
 	---help---
-		This is rptun driver based on pci ivshmem.
+		This is rptun driver based on ivshmem.
 
 if RPTUN_IVSHMEM
 

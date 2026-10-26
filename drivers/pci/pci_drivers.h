@@ -59,42 +59,6 @@ int pci_dev_register(void);
 int pci_ivshmem_register(void);
 #endif
 
-/****************************************************************************
- * Name: pci_register_uio_ivshmem_driver
- *
- * Description:
- *   Register uio ivshmem device pci driver
- *
- ****************************************************************************/
-
-#ifdef CONFIG_PCI_UIO_IVSHMEM
-int pci_register_uio_ivshmem_driver(void);
-#endif
-
-/****************************************************************************
- * Name: pci_register_noteram_ivshmem_driver
- *
- * Description:
- *   Register noteram ivshmem device pci driver
- *
- ****************************************************************************/
-
-#ifdef CONFIG_PCI_NOTERAM_IVSHMEM
-int pci_register_noteram_ivshmem_driver(void);
-#endif
-
-/****************************************************************************
- * Name: pci_register_ramdisk_ivshmem_driver
- *
- * Description:
- *   Register ramdisk ivshmem device pci driver
- *
- ****************************************************************************/
-
-#ifdef CONFIG_PCI_RAMDISK_IVSHMEM
-int pci_register_ramdisk_ivshmem_driver(void);
-#endif
-
 #ifdef CONFIG_PCI_QEMU_EPC
 /****************************************************************************
  * Name: pci_register_qemu_epc_driver

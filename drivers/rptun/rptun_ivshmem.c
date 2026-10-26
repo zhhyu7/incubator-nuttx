@@ -34,7 +34,7 @@
 #include <nuttx/drivers/addrenv.h>
 #include <nuttx/virtio/virtio-crypto.h>
 #include <nuttx/virtio/virtio-i2c.h>
-#include <nuttx/pci/pci_ivshmem.h>
+#include <nuttx/ivshmem.h>
 #include <nuttx/rptun/rptun.h>
 #include <nuttx/rptun/rptun_ivshmem.h>
 #include <nuttx/virtio/virtio-can.h>
@@ -947,20 +947,20 @@ static int rptun_ivshmem_probe(FAR struct ivshmem_device_s *ivdev)
   ivshmem_attach_irq(ivdev, rptun_ivshmem_interrupt, priv);
   ivshmem_control_irq(ivdev, true);
 
-  pciinfo("shmem addr=%p size=%zu\n", priv->shmem, priv->shmem_size);
+  rptuninfo("shmem addr=%p size=%zu\n", priv->shmem, priv->shmem_size);
 
   /* Do rptun initialize */
 
   ret = rptun_initialize(&priv->rptun);
   if (ret < 0)
     {
-      pcierr("rptun intialize failed, ret=%d\n", ret);
+      rptunerr("rptun intialize failed, ret=%d\n", ret);
       goto err;
     }
 
   if (priv->rsc_table && !ivshmem_support_irq(ivdev))
     {
-      pciinfo("Start the wdog\n");
+      rptuninfo("Start the wdog\n");
       wd_start(&priv->wdog, 0, rptun_ivshmem_wdog, (wdparm_t)priv);
     }
 
@@ -990,7 +990,7 @@ static void rptun_ivshmem_remove(FAR struct ivshmem_device_s *ivdev)
  * Public Functions
  ****************************************************************************/
 
-int pci_register_rptun_ivshmem_driver(void)
+int rptun_ivshmem_register(void)
 {
   FAR const char *str;
   FAR char *name = CONFIG_RPTUN_IVSHMEM_NAME;
@@ -1007,12 +1007,11 @@ int pci_register_rptun_ivshmem_driver(void)
       master = *(str + 1) == 'm';
       if (master)
         {
-          ret = pci_register_rptun_ivshmem_slave_driver(cpuname, drvid,
-                                                        NULL, 0);
+          ret = rptun_ivshmem_register_slave(cpuname, drvid, NULL, 0);
         }
       else
         {
-          ret = pci_register_rptun_ivshmem_slave_driver(
+          ret = rptun_ivshmem_register_slave(
                   cpuname, drvid,
                   (FAR const struct resource_table *)&g_rsc_table,
                   sizeof(g_rsc_table));
@@ -1033,7 +1032,7 @@ int pci_register_rptun_ivshmem_driver(void)
   return OK;
 }
 
-int pci_register_rptun_ivshmem_slave_driver(
+int rptun_ivshmem_register_slave(
       FAR const char *cpuname, int drvid,
       FAR const struct resource_table *rsc_table,
       size_t rsc_size)
@@ -1053,8 +1052,8 @@ int pci_register_rptun_ivshmem_slave_driver(
   priv->rsc_table = rsc_table;
   priv->rsc_size = rsc_size;
 
-  pciinfo("Register ivshmem driver, id=%d, cpuname=%s, master=%d\n",
-          priv->drv.id, priv->cpuname, !rsc_table);
+  rptuninfo("Register ivshmem driver, id=%d, cpuname=%s, master=%d\n",
+            priv->drv.id, priv->cpuname, !rsc_table);
 
   priv->drv.probe = rptun_ivshmem_probe;
   priv->drv.remove = rptun_ivshmem_remove;

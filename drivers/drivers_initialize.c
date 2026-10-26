@@ -39,6 +39,7 @@
 #include <nuttx/fs/smart.h>
 #include <nuttx/fs/loopmtd.h>
 #include <nuttx/input/uinput.h>
+#include <nuttx/ivshmem.h>
 #include <nuttx/mtd/mtd.h>
 #include <nuttx/net/loopback.h>
 #include <nuttx/net/rpmsgdrv.h>
@@ -352,6 +353,10 @@ void drivers_initialize(void)
 
 #ifdef CONFIG_USBHOST_WAITER
   usbhost_drivers_initialize();
+#endif
+
+#ifdef CONFIG_IVSHMEM
+  ivshmem_register_drivers();
 #endif
 
 #if defined(CONFIG_PCI) && !defined(CONFIG_PCI_LATE_DRIVERS_REGISTER)

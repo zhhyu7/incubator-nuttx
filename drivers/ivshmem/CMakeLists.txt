@@ -26,5 +26,17 @@ if(CONFIG_IVSHMEM)
     list(APPEND SRCS ivshmem_flat.c)
   endif()
 
+  if(CONFIG_RAMDISK_IVSHMEM)
+    list(APPEND SRCS ivshmem_ramdisk.c)
+  endif()
+
+  if(CONFIG_UIO_IVSHMEM)
+    list(APPEND SRCS ivshmem_uio.c)
+  endif()
+
+  if(CONFIG_NOTERAM_IVSHMEM)
+    list(APPEND SRCS ivshmem_noteram.c)
+  endif()
+
   target_sources(drivers PRIVATE ${SRCS})
 endif()

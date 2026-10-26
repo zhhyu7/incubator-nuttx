@@ -1,5 +1,5 @@
 /****************************************************************************
- * drivers/pci/pci_uio_ivshmem.c
+ * drivers/ivshmem/ivshmem_uio.c
  *
  * SPDX-License-Identifier: Apache-2.0
  *
@@ -36,11 +36,13 @@
 #include <nuttx/fs/fs.h>
 #include <nuttx/list.h>
 #include <nuttx/mm/map.h>
-#include <nuttx/pci/pci_ivshmem.h>
+#include <nuttx/ivshmem.h>
 #include <nuttx/kmalloc.h>
 #include <nuttx/sched.h>
 #include <nuttx/semaphore.h>
 #include <nuttx/spinlock.h>
+
+#include "ivshmem_drivers.h"
 
 /****************************************************************************
  * Pre-processor Definitions
@@ -85,7 +87,7 @@ struct uio_ivshmem_dev_s
   spinlock_t                   lock;
   int32_t                      event_count;
   struct list_node             notify_list;
-  struct uio_ivshmem_poll_s    polls[CONFIG_PCI_UIO_IVSHMEM_NPOLLWAITERS];
+  struct uio_ivshmem_poll_s    polls[CONFIG_UIO_IVSHMEM_NPOLLWAITERS];
 };
 
 /****************************************************************************
@@ -307,7 +309,7 @@ static int uio_ivshmem_unmap(FAR struct task_group_s *group,
   offset = (uintptr_t)start - (uintptr_t)entry->vaddr;
   if (offset + length < entry->length)
     {
-      pcierr("ERROR: Cannot umap without unmapping to the end\n");
+      _err("ERROR: Cannot umap without unmapping to the end\n");
       return -ENOSYS;
     }
 
@@ -318,14 +320,14 @@ static int uio_ivshmem_unmap(FAR struct task_group_s *group,
   length = entry->length - offset;
   if (length < entry->length)
     {
-      pcierr("ERROR: Cannot umap portion of the memory\n");
+      _err("ERROR: Cannot umap portion of the memory\n");
       return -ENOSYS;
     }
 
   ret = mm_map_remove(get_group_mm(group), entry);
   if (ret < 0)
     {
-      pcierr("ERROR: mm_map_remove failed, ret=%d\n", ret);
+      _err("ERROR: mm_map_remove failed, ret=%d\n", ret);
       return ret;
     }
 
@@ -404,7 +406,7 @@ static int uio_ivshmem_poll(FAR struct file *filep, FAR struct pollfd *fds,
     {
       flags = spin_lock_irqsave(&dev->lock);
 
-      for (i = 0; i < CONFIG_PCI_UIO_IVSHMEM_NPOLLWAITERS; i++)
+      for (i = 0; i < CONFIG_UIO_IVSHMEM_NPOLLWAITERS; i++)
         {
           poll = &dev->polls[i];
           if (poll->fds == NULL)
@@ -417,7 +419,7 @@ static int uio_ivshmem_poll(FAR struct file *filep, FAR struct pollfd *fds,
             }
         }
 
-      if (i >= CONFIG_PCI_UIO_IVSHMEM_NPOLLWAITERS)
+      if (i >= CONFIG_UIO_IVSHMEM_NPOLLWAITERS)
         {
           spin_unlock_irqrestore(&dev->lock, flags);
           return -EBUSY;
@@ -496,7 +498,7 @@ static int uio_ivshmem_probe(FAR struct ivshmem_device_s *dev)
   ret = register_driver(udev->name, &g_uio_ivshmem_fops, 0666, udev);
   if (ret < 0)
     {
-      pcierr("ERROR: Ivshmem register_driver failed, ret=%d\n", ret);
+      _err("ERROR: Ivshmem register_driver failed, ret=%d\n", ret);
     }
 
   return ret;
@@ -518,10 +520,10 @@ static void uio_ivshmem_remove(FAR struct ivshmem_device_s *dev)
  * Public Functions
  ****************************************************************************/
 
-int pci_register_uio_ivshmem_driver(void)
+int ivshmem_uio_register(void)
 {
   FAR struct uio_ivshmem_dev_s *dev;
-  FAR char *start = CONFIG_PCI_UIO_IVSHMEM_IDTABLE;
+  FAR char *start = CONFIG_UIO_IVSHMEM_IDTABLE;
 
   do
     {
@@ -539,7 +541,7 @@ int pci_register_uio_ivshmem_driver(void)
           kmm_free(dev);
         }
 
-      pciinfo("Register ivshmem driver, id=%d\n", dev->drv.id);
+      _info("Register ivshmem driver, id=%d\n", dev->drv.id);
     }
   while (*start++ != '\0');
 
