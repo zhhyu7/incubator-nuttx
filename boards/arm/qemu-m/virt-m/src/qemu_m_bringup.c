@@ -101,6 +101,15 @@ static void register_devices_from_fdt(void)
     }
 #endif
 
+#ifdef CONFIG_IVSHMEM_FLAT
+  ret = fdt_ivshmem_flat_devices_register(fdt, QEMU_M_IRQ_BASE);
+  if (ret < 0)
+    {
+      syslog(LOG_ERR, "fdt_ivshmem_flat_devices_register failed, ret=%d\n",
+             ret);
+    }
+#endif
+
 #if defined(CONFIG_TIMER) && defined(CONFIG_TIMER_SP804)
   ret = fdt_sp804_devices_register(fdt, QEMU_M_IRQ_BASE);
   if (ret < 0)
