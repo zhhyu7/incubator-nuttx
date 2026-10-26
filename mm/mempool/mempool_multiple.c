@@ -263,7 +263,15 @@ static FAR void *mempool_multiple_alloc_callback(FAR struct mempool_s *pool,
           *(FAR size_t *)ret = mpool->dict_used++;
         }
 
-      ret = (FAR char *)ret + mpool->minpoolsize;
+      /* Keep a failed allocation NULL; adding minpoolsize to NULL would
+       * hand the caller a small bogus pointer.
+       */
+
+      if (ret != NULL)
+        {
+          ret = (FAR char *)ret + mpool->minpoolsize;
+        }
+
       nxrmutex_unlock(&mpool->lock);
     }
 
