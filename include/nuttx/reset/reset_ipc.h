@@ -75,13 +75,13 @@ struct reset_ipc_ops_s
 
   CODE void (*notify)(FAR struct reset_ipc_s *ipc);
 
-  /* Optional hardware delivery of a reason, tried first by
+  /* Optional hardware delivery of a status, tried first by
    * reset_ipc_set_status; return -ENOTSUP to fall back to the shared-word
    * handshake.
    */
 
   CODE int (*set_status)(FAR struct reset_ipc_s *ipc,
-                         unsigned int reason);
+                         unsigned int status);
 
   /* Optional handler for RESET_REASON_PRIVATE from the peer, which
    * reset_ipc reserves but cannot act on itself since only the transport
@@ -89,7 +89,7 @@ struct reset_ipc_ops_s
    */
 
   CODE void (*handle_status)(FAR struct reset_ipc_s *ipc,
-                             unsigned int reason);
+                             unsigned int status);
 
   /* Optional dump of the peer's trace buffer at reset time. */
 
@@ -162,7 +162,7 @@ extern "C"
  *             on both sides.  Word 0 is written by the master, word 1 by the
  *             slave, each core reading only the other's.  Must be uint32_t
  *             aligned and non-cacheable (the words share a cache line), and
- *             ideally survive a peer reset so the reason stays readable.
+ *             ideally survive a peer reset so the status stays readable.
  *   master  - True on the master core, false on the slave.
  *
  * Returned Value:

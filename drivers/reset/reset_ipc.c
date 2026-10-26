@@ -54,7 +54,7 @@ static int reset_ipc_rc_reset(FAR struct reset_controller_dev *rcdev,
                               unsigned int id, unsigned int reason);
 static void reset_ipc_check_peer(FAR struct reset_ipc_s *ipc);
 static int reset_ipc_set_status(FAR struct reset_ipc_s *ipc,
-                                unsigned int reason);
+                                unsigned int status);
 static int reset_ipc_panic_notifier(FAR struct notifier_block *nb,
                                     unsigned long action, FAR void *data);
 static int reset_ipc_reboot_notifier(FAR struct notifier_block *nb,
@@ -84,18 +84,18 @@ static const struct reset_control_ops g_reset_ipc_rc_ops =
  *
  ****************************************************************************/
 
-static int reset_ipc_send(FAR struct reset_ipc_s *ipc, unsigned int reason)
+static int reset_ipc_send(FAR struct reset_ipc_s *ipc, unsigned int status)
 {
   int ret;
 
-  if (reason > RESET_REASON_PRIVATE)
+  if (status > RESET_REASON_PRIVATE)
     {
       return -EINVAL;
     }
 
-  ret = reset_ipc_set_status(ipc, reason);
+  ret = reset_ipc_set_status(ipc, status);
 
-  if (reason == BOARDIOC_SOFTRESETCAUSE_PANIC && ipc->ops->dump != NULL)
+  if (status == BOARDIOC_SOFTRESETCAUSE_PANIC && ipc->ops->dump != NULL)
     {
       ipc->ops->dump(ipc);
     }
@@ -136,9 +136,9 @@ reset_ipc_get_peer_status(FAR struct reset_ipc_s *ipc)
 
 static inline_function void
 reset_ipc_set_local_notify(FAR struct reset_ipc_s *ipc,
-                           unsigned int reason)
+                           unsigned int status)
 {
-  *ipc->local = reason;
+  *ipc->local = status;
   ipc->ops->notify(ipc);
 }
 
@@ -172,7 +172,6 @@ static void reset_ipc_boardctl_work(FAR void *arg)
 
 static void reset_ipc_check_peer(FAR struct reset_ipc_s *ipc)
 {
-  unsigned int reason;
   unsigned int status;
 
   status = reset_ipc_get_peer_status(ipc);
@@ -206,11 +205,9 @@ static void reset_ipc_check_peer(FAR struct reset_ipc_s *ipc)
       ipc->shadow = status;
     }
 
-  reason = status;
-
-  if (reason < BOARDIOC_SOFTRESETCAUSE_MAX)
+  if (status < BOARDIOC_SOFTRESETCAUSE_MAX)
     {
-      if (reason == BOARDIOC_SOFTRESETCAUSE_PANIC)
+      if (status == BOARDIOC_SOFTRESETCAUSE_PANIC)
         {
           char msg[32];
 
@@ -226,8 +223,8 @@ static void reset_ipc_check_peer(FAR struct reset_ipc_s *ipc)
         }
 
       _emerg("FATAL: Reset by remote core: %s reason: %u\n",
-             ipc->rcdev.name, reason);
-      if (reason == BOARDIOC_SOFTRESETCAUSE_POWEROFF)
+             ipc->rcdev.name, status);
+      if (status == BOARDIOC_SOFTRESETCAUSE_POWEROFF)
         {
 #ifdef CONFIG_BOARDCTL_POWEROFF
           work_queue(HPWORK, &ipc->work, reset_ipc_boardctl_work,
@@ -240,18 +237,18 @@ static void reset_ipc_check_peer(FAR struct reset_ipc_s *ipc)
         {
 #ifdef CONFIG_BOARDCTL_RESET
           work_queue(HPWORK, &ipc->work, reset_ipc_boardctl_work,
-                     (FAR void *)(uintptr_t)reason, 0);
+                     (FAR void *)(uintptr_t)status, 0);
 #else
-          reset_ipc_set_local_notify(ipc, reason);
+          reset_ipc_set_local_notify(ipc, status);
 #endif
         }
     }
-  else if (reason == RESET_REASON_PRIVATE &&
+  else if (status == RESET_REASON_PRIVATE &&
            ipc->ops->handle_status != NULL)
     {
       /* Transport-private: only it knows what this means. */
 
-      ipc->ops->handle_status(ipc, reason);
+      ipc->ops->handle_status(ipc, status);
     }
 }
 
@@ -260,9 +257,8 @@ static void reset_ipc_check_peer(FAR struct reset_ipc_s *ipc)
  ****************************************************************************/
 
 static int reset_ipc_set_status(FAR struct reset_ipc_s *ipc,
-                                unsigned int reason)
+                                unsigned int status)
 {
-  unsigned int status = reason;
   int timeout = CONFIG_RESET_IPC_STATUS_TIMEOUT_MS;
   int ret = -ENOTSUP;
 
@@ -270,9 +266,9 @@ static int reset_ipc_set_status(FAR struct reset_ipc_s *ipc,
 
   if (ipc->ops->set_status != NULL)
     {
-      _emerg("Set status to remote %s reason: %u\n",
-             ipc->rcdev.name, reason);
-      ret = ipc->ops->set_status(ipc, reason);
+      _emerg("Set status to remote %s status: %u\n",
+             ipc->rcdev.name, status);
+      ret = ipc->ops->set_status(ipc, status);
       _emerg("Set status to remote %s ret %d\n", ipc->rcdev.name, ret);
     }
 
@@ -283,20 +279,20 @@ static int reset_ipc_set_status(FAR struct reset_ipc_s *ipc,
 
   /* Already sent, or already sent by the peer: no re-notify.  The word is
    * still written, since that is the echo the peer polls for to see the
-   * reason it asked for taken; only the interrupt is spared.
+   * status it asked for taken; only the interrupt is spared.
    */
 
   if (status == *ipc->local || status == ipc->shadow)
     {
-      *ipc->local = reason;
+      *ipc->local = status;
       return OK;
     }
 
-  reset_ipc_set_local_notify(ipc, reason);
+  reset_ipc_set_local_notify(ipc, status);
 
   /* Only a reset is echoed back; PAUSE and PRIVATE are fire-and-forget. */
 
-  if (reason >= BOARDIOC_SOFTRESETCAUSE_MAX)
+  if (status >= BOARDIOC_SOFTRESETCAUSE_MAX)
     {
       return OK;
     }
@@ -376,22 +372,22 @@ static int reset_ipc_reboot_notifier(FAR struct notifier_block *nb,
 {
   FAR struct reset_ipc_s *ipc =
     container_of(nb, struct reset_ipc_s, reboot_nb);
-  unsigned int reason;
+  unsigned int status;
 
   if (action == SYS_POWER_OFF)
     {
-      reason = BOARDIOC_SOFTRESETCAUSE_POWEROFF;
+      status = BOARDIOC_SOFTRESETCAUSE_POWEROFF;
     }
   else if (action == SYS_HALT)
     {
-      reason = BOARDIOC_SOFTRESETCAUSE_PANIC;
+      status = BOARDIOC_SOFTRESETCAUSE_PANIC;
     }
   else
     {
-      reason = (uintptr_t)data;
+      status = (uintptr_t)data;
     }
 
-  reset_ipc_send(ipc, reason);
+  reset_ipc_send(ipc, status);
 
   return 0;
 }
