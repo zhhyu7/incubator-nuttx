@@ -285,6 +285,7 @@ static int rpmsg_crypto_dispatch(
       /* Async path: hold rx buffer, set callback, let ISR send response */
 
       rcsdata->rsp = rsp;
+      rcsdata->crp.crp_flags |= CRYPTO_F_CBIMM;
       rcsdata->crp.crp_callback = rpmsg_crypto_done_cb;
       rcsdata->crp.crp_opaque = rcsdata;
       rpmsg_hold_rx_buffer(ept, msg);
@@ -294,6 +295,7 @@ static int rpmsg_crypto_dispatch(
     {
       /* Sync path: invoke and send response directly */
 
+      rcsdata->crp.crp_flags &= ~CRYPTO_F_CBIMM;
       crypto_invoke(&rcsdata->crp);
       rsp->header.result = rcsdata->crp.crp_etype;
       rpmsg_send_nocopy(ept, rsp, rsplen);
