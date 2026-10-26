@@ -40,8 +40,6 @@
 #include <nuttx/timers/timer.h>
 #include <nuttx/timers/gpt_mcal.h>
 
-#include "Gpt_Cbk.h"
-
 #if defined(GPT_DEV_ERROR_DETECT) && \
     GPT_DEV_ERROR_DETECT == STD_ON || \
     defined(GPT_RUNTIME_ERROR_DETECT) && \
