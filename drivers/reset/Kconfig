@@ -19,7 +19,7 @@ config RESET_RPMSG
 		This selection enables rpmsg support for reset.
 
 config RESET_IPC
-	bool "Inter-Processor panic/reset notify support"
+	bool
 	select RESET
 	default n
 	---help---
