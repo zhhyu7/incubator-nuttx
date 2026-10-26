@@ -243,6 +243,7 @@ __start:
 	bl		up_this_cpu
 #else
 	mrc		CP15_MPIDR(r0)
+	mov		r0, r0, lsr #MPIDR_CPUID_SHIFT
 	and		r0, r0, #0x7
 #endif
 
