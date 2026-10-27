@@ -397,12 +397,6 @@ endif
 
 if ARM64_GIC_VERSION = 3
 
-config ARM64_GICV3_SPI_EDGE
-	bool "Configure all SPIs(Shared Peripheral Interrupts) as edge-triggered by default"
-	default n
-	---help---
-		Configure all SPIs(Shared Peripheral Interrupts) as edge-triggered by default.
-
 config ARM64_GICV3_SPI_ROUTING_CPU0
 	bool "Configure SPI interrupt affinity routing to CPU0 by default"
 	default y if SMP
