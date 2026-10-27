@@ -47,13 +47,18 @@
 
 void up_systemreset(void)
 {
-  uint8_t regval = (X86_RST_CNT_CPU_RST |
-                    X86_RST_CNT_SYS_RST |
-                    X86_RST_CNT_FULL_RST);
+  uint8_t regval = X86_RST_CNT_SYS_RST | X86_RST_CNT_FULL_RST;
 
-  /* Write to Reset Control Register */
+  /* The reset starts on the 0 to 1 transition of CPU_RST */
 
   outb(regval, X86_RST_CNT_REG);
+  up_udelay(50);
+  outb(regval | X86_RST_CNT_CPU_RST, X86_RST_CNT_REG);
+  up_udelay(50);
+
+  /* Fall back to the keyboard controller reset line */
+
+  outb(0xfe, 0x64);
 
   while (1)
     {
