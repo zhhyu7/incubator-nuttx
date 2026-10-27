@@ -464,4 +464,13 @@
 
 #define SNIOC_SET_WAKEUP              _SNIOC(0x009E)
 
+/* Command:      SNIOC_DISCARD
+ * Description:  Discard unread data of the caller, as if it had been read
+ *               but without copying it out. Other users are not affected.
+ * Argument:     Maximum number of bytes to discard.
+ * Return:       Number of bytes discarded, or a negated errno value.
+ */
+
+#define SNIOC_DISCARD                 _SNIOC(0x009F)
+
 #endif /* __INCLUDE_NUTTX_SENSORS_IOCTL_H */
