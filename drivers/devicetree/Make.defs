@@ -44,6 +44,10 @@ ifeq ($(CONFIG_CAN_CTUCANFD),y)
   CSRCS += fdt_ctucanfd.c
 endif
 
+ifeq ($(CONFIG_IVSHMEM_FLAT),y)
+  CSRCS += fdt_ivshmem_flat.c
+endif
+
 ifeq ($(CONFIG_TIMER_SP804),y)
 ifeq ($(CONFIG_TIMER),y)
   CSRCS += fdt_sp804.c
