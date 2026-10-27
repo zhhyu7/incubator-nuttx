@@ -44,4 +44,8 @@
  *   #endif
  */
 
+#ifdef CONFIG_DRIVERS_FAULT_INJECT
+ITERABLE_SECTION(fault_point_meta_s)
+#endif
+
 #endif /* !CONFIG_ITERABLE_SECTIONS_LINKER_INSERT */

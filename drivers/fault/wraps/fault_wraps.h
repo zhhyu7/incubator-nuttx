@@ -65,3 +65,31 @@ UP_WRAPOPT(irq_attach_wqueue)
 UP_WRAPOPT(up_enable_irq)
 UP_WRAPOPT(up_disable_irq)
 #endif
+
+#ifdef CONFIG_DRIVERS_FAULT_INJECT_WRAP_FS
+UP_WRAPOPT(file_readv)
+UP_WRAPOPT(file_writev)
+UP_WRAPOPT(register_driver)
+UP_WRAPOPT(inode_find)
+#endif
+
+#ifdef CONFIG_DRIVERS_FAULT_INJECT_WRAP_SEM
+UP_WRAPOPT(nxsem_wait_slow)
+UP_WRAPOPT(nxsem_trywait_slow)
+UP_WRAPOPT(nxsem_post_slow)
+UP_WRAPOPT(nxsem_tickwait_slow)
+UP_WRAPOPT(nxsem_clockwait_slow)
+#endif
+
+#ifdef CONFIG_DRIVERS_FAULT_INJECT_WRAP_MQ
+UP_WRAPOPT(nxmq_send)
+UP_WRAPOPT(nxmq_receive)
+UP_WRAPOPT(file_mq_send)
+UP_WRAPOPT(file_mq_receive)
+#endif
+
+#ifdef CONFIG_DRIVERS_FAULT_INJECT_WRAP_WQ
+UP_WRAPOPT(work_queue)
+UP_WRAPOPT(work_queue_wq)
+UP_WRAPOPT(work_cancel)
+#endif

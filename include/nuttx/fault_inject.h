@@ -379,6 +379,31 @@ struct fault_meta_query_s
     }                                                                         \
   while (0)
 
+/* ssize_t-returning variant of FAULT_INJECT_WRAP_RETVAL.  Identical policy
+ * (RETURN_ERR / DELAY / SKIP) but keeps the real call's return value in a
+ * full-width ssize_t so no int narrowing/widening cast is needed at the
+ * call site (used by the fs/mq read/receive wrappers).
+ */
+
+#  define FAULT_INJECT_WRAP_RETVAL_SSIZE(_group, _fn, _err_default,          \
+                                         _realcall, _out)                     \
+  do                                                                         \
+    {                                                                         \
+      FAULT_INJECT_DECLARE_SITE(__fi_fp_##_fn, __fi_meta_##_fn,              \
+                                #_group "." #_fn,                             \
+                                #_group,                                      \
+                                (1u << FAULT_ACTION_RETURN_ERR) |             \
+                                (1u << FAULT_ACTION_DELAY)      |             \
+                                (1u << FAULT_ACTION_SKIP));                   \
+      if (predict_false(__fi_fp_##_fn.enabled) &&                            \
+          fault_inject_wrap_ssize(&__fi_fp_##_fn, (_err_default), (_out)))    \
+        {                                                                     \
+          break;                                                              \
+        }                                                                     \
+      *(_out) = (_realcall);                                                 \
+    }                                                                         \
+  while (0)
+
 #  define FAULT_INJECT_WRAP_RETVAL_NULL(_group, _fn, _realcall, _out_ptr)    \
   do                                                                         \
     {                                                                         \
@@ -426,6 +451,25 @@ struct fault_meta_query_s
                                         (1u << FAULT_ACTION_SKIP));           \
       if (predict_false(__fi_fp_##_fn.enabled) &&                            \
           fault_inject_wrap_int(&__fi_fp_##_fn, (_err_default), (_out)))      \
+        {                                                                     \
+          break;                                                              \
+        }                                                                     \
+      *(_out) = (_realcall);                                                 \
+    }                                                                         \
+  while (0)
+
+#  define FAULT_INJECT_WRAP_RETVAL_SSIZE_STANDBY(_group, _fn, _err_default,  \
+                                                 _realcall, _out)             \
+  do                                                                         \
+    {                                                                         \
+      FAULT_INJECT_DECLARE_SITE_STANDBY(__fi_fp_##_fn, __fi_meta_##_fn,      \
+                                        #_group "." #_fn,                     \
+                                        #_group,                              \
+                                        (1u << FAULT_ACTION_RETURN_ERR) |     \
+                                        (1u << FAULT_ACTION_DELAY)      |     \
+                                        (1u << FAULT_ACTION_SKIP));           \
+      if (predict_false(__fi_fp_##_fn.enabled) &&                            \
+          fault_inject_wrap_ssize(&__fi_fp_##_fn, (_err_default), (_out)))    \
         {                                                                     \
           break;                                                              \
         }                                                                     \
@@ -565,7 +609,7 @@ void fault_inject_register(FAR struct fault_point_s *fp,
                            FAR const struct fault_point_meta_s *meta);
 
 /****************************************************************************
- * Name: fault_inject_wrap_int / _wrap_ptr / _wrap_skip
+ * Name: fault_inject_wrap_int / _wrap_ssize / _wrap_ptr / _wrap_skip
  *
  * Description:
  *   Slow-path hooks invoked by the FAULT_INJECT_WRAP_* macros once the
@@ -577,6 +621,10 @@ void fault_inject_register(FAR struct fault_point_s *fp,
 bool fault_inject_wrap_int(FAR struct fault_point_s *fp,
                            int err_default,
                            FAR int *err_out);
+
+bool fault_inject_wrap_ssize(FAR struct fault_point_s *fp,
+                             ssize_t err_default,
+                             FAR ssize_t *err_out);
 
 bool fault_inject_wrap_ptr(FAR struct fault_point_s *fp,
                            FAR void * FAR *ptr_out);

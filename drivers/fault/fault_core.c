@@ -215,6 +215,7 @@ static void fault_standby_validate(FAR struct fault_point_s *fp)
  * Name: fault_audit_fill
  ****************************************************************************/
 
+#ifdef CONFIG_DRIVERS_FAULT_INJECT_AUDIT
 static void fault_audit_fill(FAR struct fault_audit_record_s *rec,
                              FAR struct fault_point_s *fp,
                              FAR const struct fault_config_s *cfg,
@@ -253,6 +254,7 @@ static void fault_audit_fill(FAR struct fault_audit_record_s *rec,
         break;
     }
 }
+#endif /* CONFIG_DRIVERS_FAULT_INJECT_AUDIT */
 
 /****************************************************************************
  * Name: fault_audit_emit_seq
@@ -671,6 +673,41 @@ void fault_inject_register(FAR struct fault_point_s *fp,
 bool fault_inject_wrap_int(FAR struct fault_point_s *fp,
                            int err_default,
                            FAR int *err_out)
+{
+  struct fault_config_s cfg;
+
+  if (!fault_decide(fp, &cfg, NULL))
+    {
+      return false;
+    }
+
+  switch (cfg.action)
+    {
+      case FAULT_ACTION_RETURN_ERR:
+        *err_out = cfg.params.err_code;
+        return true;
+
+      case FAULT_ACTION_DELAY:
+        up_udelay(cfg.params.delay_us);
+        return false;
+
+      case FAULT_ACTION_SKIP:
+        *err_out = 0;
+        return true;
+
+      default:
+        *err_out = err_default;
+        return true;
+    }
+}
+
+/****************************************************************************
+ * Name: fault_inject_wrap_ssize
+ ****************************************************************************/
+
+bool fault_inject_wrap_ssize(FAR struct fault_point_s *fp,
+                             ssize_t err_default,
+                             FAR ssize_t *err_out)
 {
   struct fault_config_s cfg;
 

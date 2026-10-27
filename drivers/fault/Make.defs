@@ -33,6 +33,22 @@ ifeq ($(CONFIG_DRIVERS_FAULT_INJECT_WRAP_IRQ),y)
 CSRCS += wraps/fault_wrap_irq.c
 endif
 
+ifeq ($(CONFIG_DRIVERS_FAULT_INJECT_WRAP_FS),y)
+CSRCS += wraps/fault_wrap_fs.c
+endif
+
+ifeq ($(CONFIG_DRIVERS_FAULT_INJECT_WRAP_SEM),y)
+CSRCS += wraps/fault_wrap_sem.c
+endif
+
+ifeq ($(CONFIG_DRIVERS_FAULT_INJECT_WRAP_MQ),y)
+CSRCS += wraps/fault_wrap_mq.c
+endif
+
+ifeq ($(CONFIG_DRIVERS_FAULT_INJECT_WRAP_WQ),y)
+CSRCS += wraps/fault_wrap_wq.c
+endif
+
 DEPPATH += --dep-path fault
 DEPPATH += --dep-path fault/wraps
 VPATH   += :fault:fault/wraps

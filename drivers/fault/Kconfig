@@ -74,4 +74,55 @@ config DRIVERS_FAULT_INJECT_WRAP_IRQ
 		wraps/fault_wrap_irq.c.  Same board-integration requirement as
 		DRIVERS_FAULT_INJECT_WRAP_MM.
 
+config DRIVERS_FAULT_INJECT_WRAP_FS
+	bool "fs/VFS wrappers (file_readv/file_writev/register_driver/inode_find)"
+	default n
+	---help---
+		Build the __wrap_* implementations in
+		drivers/fault/wraps/fault_wrap_fs.c.  Covers the read/write
+		(file_readv/file_writev), driver registration (register_driver)
+		and inode lookup (inode_find) paths.
+
+		The open series (nx_open/file_open) is intentionally excluded
+		because both are variadic and ld --wrap cannot forward va_list.
+		Same board-integration requirement as DRIVERS_FAULT_INJECT_WRAP_MM.
+
+config DRIVERS_FAULT_INJECT_WRAP_SEM
+	bool "semaphore wrappers (nxsem_*_slow)"
+	default n
+	---help---
+		Build the __wrap_nxsem_*_slow implementations in
+		drivers/fault/wraps/fault_wrap_sem.c.  The slow-path symbols
+		(nxsem_wait_slow/trywait_slow/post_slow/tickwait_slow/
+		clockwait_slow) are wrapped rather than the inline fast-path
+		variants, which ld --wrap cannot intercept.
+
+		Same board-integration requirement as DRIVERS_FAULT_INJECT_WRAP_MM.
+
+config DRIVERS_FAULT_INJECT_WRAP_MQ
+	bool "mqueue wrappers (nxmq_send/nxmq_receive/file_mq_send/file_mq_receive)"
+	default n
+	---help---
+		Build the __wrap_* implementations in
+		drivers/fault/wraps/fault_wrap_mq.c.  Covers the kernel-side
+		POSIX message queue send/receive paths.
+
+		Same board-integration requirement as DRIVERS_FAULT_INJECT_WRAP_MM.
+
+config DRIVERS_FAULT_INJECT_WRAP_WQ
+	bool "workqueue wrappers (work_queue/work_queue_wq/work_cancel)"
+	default n
+	---help---
+		Build the __wrap_* implementations in
+		drivers/fault/wraps/fault_wrap_wq.c.  Covers the kernel work
+		queue submit/cancel paths.
+
+		Operationally prefer SKIP / RETURN_ERR actions; the DELAY action
+		is unsafe here because waking a worker re-enters work_queue()
+		under a spinlock.  In a flat build without CONFIG_LIBC_USRWORK
+		there is no work_queue/work_cancel symbol ambiguity; work_queue_wq
+		is kernel-only and always unambiguous.
+
+		Same board-integration requirement as DRIVERS_FAULT_INJECT_WRAP_MM.
+
 endif # DRIVERS_FAULT_INJECT

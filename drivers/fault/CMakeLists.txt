@@ -31,6 +31,22 @@ if(CONFIG_DRIVERS_FAULT_INJECT)
     list(APPEND SRCS wraps/fault_wrap_irq.c)
   endif()
 
+  if(CONFIG_DRIVERS_FAULT_INJECT_WRAP_FS)
+    list(APPEND SRCS wraps/fault_wrap_fs.c)
+  endif()
+
+  if(CONFIG_DRIVERS_FAULT_INJECT_WRAP_SEM)
+    list(APPEND SRCS wraps/fault_wrap_sem.c)
+  endif()
+
+  if(CONFIG_DRIVERS_FAULT_INJECT_WRAP_MQ)
+    list(APPEND SRCS wraps/fault_wrap_mq.c)
+  endif()
+
+  if(CONFIG_DRIVERS_FAULT_INJECT_WRAP_WQ)
+    list(APPEND SRCS wraps/fault_wrap_wq.c)
+  endif()
+
   target_sources(drivers PRIVATE ${SRCS})
   target_include_directories(drivers PRIVATE ${CMAKE_CURRENT_LIST_DIR})
 
