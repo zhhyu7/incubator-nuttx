@@ -110,6 +110,18 @@ static spinlock_t g_mempool_init_lock = SP_UNLOCKED;
  * Private Functions
  ****************************************************************************/
 
+/* A pool can wait for a free block only when it cannot expand on demand.
+ * MEMPOOL_DEFINE() leaves expandsize at MEMPOOL_HEADER_SIZE, so testing for
+ * zero misses every statically defined pool and leaves its waitsem unused.
+ */
+
+static inline bool mempool_can_wait(FAR struct mempool_s *pool)
+{
+  size_t blocksize = MEMPOOL_REALBLOCKSIZE(pool->blocksize);
+
+  return pool->wait && pool->expandsize < blocksize + MEMPOOL_HEADER_SIZE;
+}
+
 static inline FAR sq_entry_t *
 mempool_remove_queue(FAR struct mempool_s *pool, FAR sq_queue_t *queue)
 {
@@ -476,7 +488,7 @@ int mempool_init(FAR struct mempool_s *pool)
       if (ret >= 0)
         {
           spin_lock_init(&pool->lock);
-          if (pool->wait && pool->expandsize == 0u)
+          if (mempool_can_wait(pool))
             {
               nxsem_init(&pool->waitsem, 0, 0);
             }
@@ -836,7 +848,7 @@ void mempool_release(FAR struct mempool_s *pool, FAR void *blk)
   kasan_poison(blk, pool->blocksize);
   kasan_bypass(bypass);
   spin_unlock_irqrestore_notrace(&pool->lock, flags);
-  if (pool->wait && pool->expandsize == 0u)
+  if (mempool_can_wait(pool))
     {
       int semcount = 0;
 
@@ -999,7 +1011,7 @@ int mempool_info(FAR struct mempool_s *pool, FAR struct mempoolinfo_s *info)
       kasan_bypass(bypass);
       spin_unlock_irqrestore_notrace(&pool->lock, flags);
       info->sizeblks = blocksize;
-      if (pool->wait && pool->expandsize == 0u)
+      if (mempool_can_wait(pool))
         {
           int semcount = 0;
 
@@ -1277,7 +1289,7 @@ int mempool_deinit(FAR struct mempool_s *pool)
             }
         }
 
-      if (pool->wait && pool->expandsize == 0u)
+      if (mempool_can_wait(pool))
         {
           nxsem_destroy(&pool->waitsem);
         }
