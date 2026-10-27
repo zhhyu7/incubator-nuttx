@@ -128,6 +128,7 @@ static int pci_ivshmem_probe(FAR struct pci_device_s *dev)
   dev->priv  = priv;
   priv->dev  = dev;
   ivdev      = &priv->ivdev;
+  ivdev->id  = -1;
 
   ret = pci_enable_device(dev);
   if (ret < 0)
