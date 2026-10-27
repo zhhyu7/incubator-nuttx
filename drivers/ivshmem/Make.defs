@@ -24,6 +24,10 @@ ifeq ($(CONFIG_IVSHMEM),y)
 
 CSRCS += ivshmem.c
 
+ifeq ($(CONFIG_IVSHMEM_FLAT),y)
+CSRCS += ivshmem_flat.c
+endif
+
 DEPPATH += --dep-path ivshmem
 VPATH += :ivshmem
 

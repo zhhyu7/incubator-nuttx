@@ -20,5 +20,11 @@
 #
 
 if(CONFIG_IVSHMEM)
-  target_sources(drivers PRIVATE ivshmem.c)
+  set(SRCS ivshmem.c)
+
+  if(CONFIG_IVSHMEM_FLAT)
+    list(APPEND SRCS ivshmem_flat.c)
+  endif()
+
+  target_sources(drivers PRIVATE ${SRCS})
 endif()

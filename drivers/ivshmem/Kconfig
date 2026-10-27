@@ -10,3 +10,14 @@ config IVSHMEM
 		Inter-VM shared memory bus. Matches ivshmem devices registered by
 		a backend (e.g. PCI) with the drivers that use them. Selected by
 		the backends, not chosen directly.
+
+config IVSHMEM_FLAT
+	bool "QEMU ivshmem-flat driver"
+	default n
+	select IVSHMEM
+	---help---
+		Driver for the QEMU ivshmem-flat device: the ivshmem register
+		block and shared memory as plain MMIO regions plus one irq, for
+		machines without a PCI bus. The board registers each device with
+		ivshmem_flat_register(), or from the device tree with
+		fdt_ivshmem_flat_devices_register().
