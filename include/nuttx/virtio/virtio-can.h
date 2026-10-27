@@ -45,6 +45,7 @@
 #define VIRTIO_CAN_F_CAN_FD            1
 #define VIRTIO_CAN_F_RTR_FRAMES        2
 #define VIRTIO_CAN_F_LATE_TX_ACK       3
+#define VIRTIO_CAN_F_IFNAME            4
 
 #define VIRTIO_CAN_RESULT_OK           0
 #define VIRTIO_CAN_RESULT_NOT_OK       1

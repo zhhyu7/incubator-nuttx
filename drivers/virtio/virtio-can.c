@@ -29,6 +29,7 @@
 #include <assert.h>
 #include <debug.h>
 #include <errno.h>
+#include <stdio.h>
 #include <string.h>
 #include <sys/endian.h>
 #include <sys/param.h>
@@ -831,7 +832,8 @@ static int virtio_can_probe(FAR struct virtio_device *vdev)
   virtio_negotiate_features(vdev,
                             (1UL << VIRTIO_CAN_F_CAN_CLASSIC) |
                             (1UL << VIRTIO_CAN_F_CAN_FD) |
-                            (1UL << VIRTIO_CAN_F_RTR_FRAMES), NULL);
+                            (1UL << VIRTIO_CAN_F_RTR_FRAMES) |
+                            (1UL << VIRTIO_CAN_F_IFNAME), NULL);
   virtio_set_status(vdev, VIRTIO_CONFIG_FEATURES_OK);
   priv->rtr = virtio_has_feature(vdev, VIRTIO_CAN_F_RTR_FRAMES);
 
@@ -887,6 +889,21 @@ static int virtio_can_probe(FAR struct virtio_device *vdev)
   priv->dev.ops = &g_virtio_can_ops;
   priv->dev.rxtype = NETDEV_RX_THREAD;
   priv->dev.priority = CONFIG_DRIVERS_VIRTIO_CAN_RXTHREAD_PRIORITY;
+
+  if (virtio_has_feature(vdev, VIRTIO_CAN_F_IFNAME))
+    {
+      char ifname[VIRTIO_CAN_IFNAME_SIZE];
+
+      memset(ifname, 0, sizeof(ifname));
+      virtio_read_config_member(vdev, struct vhost_can_config_s,
+                                ifname, &ifname);
+      ifname[sizeof(ifname) - 1] = '\0';
+
+      if (ifname[0] != '\0')
+        {
+          snprintf(priv->dev.netdev.d_ifname, IFNAMSIZ, "%s", ifname);
+        }
+    }
 
   ret = netdev_lower_register(&priv->dev, NET_LL_CAN);
   if (ret < 0)
