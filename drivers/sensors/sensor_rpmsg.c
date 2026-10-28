@@ -580,11 +580,21 @@ static void sensor_rpmsg_free_stub(FAR struct sensor_rpmsg_stub_s *stub)
   kmm_free(stub);
 }
 
+static void sensor_rpmsg_add_proxy(FAR struct sensor_rpmsg_dev_s *dev,
+                                   FAR struct sensor_rpmsg_proxy_s *proxy)
+{
+  sensor_rpmsg_lock(dev);
+  list_add_tail(&dev->proxylist, &proxy->node);
+  nxsem_post(&dev->proxysem);
+  sensor_rpmsg_unlock(dev);
+}
+
 static FAR struct sensor_rpmsg_proxy_s *
 sensor_rpmsg_alloc_proxy(FAR struct sensor_rpmsg_dev_s *dev,
                          FAR struct rpmsg_endpoint *ept,
                          FAR struct sensor_rpmsg_advsub_s *msg,
-                         FAR struct sensor_state_s *state)
+                         FAR struct sensor_state_s *state,
+                         FAR bool *created)
 {
   FAR struct sensor_rpmsg_proxy_s *proxy;
   FAR struct sensor_rpmsg_proxy_s *ptmp;
@@ -613,6 +623,7 @@ sensor_rpmsg_alloc_proxy(FAR struct sensor_rpmsg_dev_s *dev,
       if (proxy->cookie == msg->cookie)
         {
           sensor_rpmsg_unlock(dev);
+          *created = false;
           return proxy;
         }
 
@@ -650,10 +661,9 @@ sensor_rpmsg_alloc_proxy(FAR struct sensor_rpmsg_dev_s *dev,
       dev->lower.persist = true;
     }
 
-  list_add_tail(&dev->proxylist, &proxy->node);
-  nxsem_post(&dev->proxysem);
   sensor_rpmsg_unlock(dev);
   sminfo(dev->name, "create proxy:%p", proxy);
+  *created = true;
   return proxy;
 }
 
@@ -1315,6 +1325,7 @@ static int sensor_rpmsg_adv_handler(FAR struct rpmsg_endpoint *ept,
   FAR struct sensor_rpmsg_proxy_s *proxy;
   FAR struct sensor_rpmsg_dev_s *dev;
   struct sensor_state_s state;
+  bool created = false;
   int ret;
 
   dev = sensor_rpmsg_find_dev(msg->path);
@@ -1324,35 +1335,46 @@ static int sensor_rpmsg_adv_handler(FAR struct rpmsg_endpoint *ept,
     }
 
   state.esize = UINT32_MAX;
-  proxy = sensor_rpmsg_alloc_proxy(dev, ept, msg, &state);
+  proxy = sensor_rpmsg_alloc_proxy(dev, ept, msg, &state, &created);
   if (!proxy)
     {
       snerr("ERROR: adv create proxy failed:%s\n", dev->path);
       sensor_trace_diag(LOG_ERR, DIAG_SENSOR_RPMSG_ADV,
                         "err:adv create proxy fail proxy fail,path:%s",
                         dev->path);
-    }
-  else
-    {
-      msg->cookie = (uint64_t)(uintptr_t)dev;
-      msg->command = SENSOR_RPMSG_ADVERTISE_ACK;
-      ret = rpmsg_send(ept, msg, len);
-      if (ret < 0)
-        {
-          snerr("ERROR: adv rpmsg send failed:%s, %d, %s\n",
-                dev->path, ret, rpmsg_get_cpuname(ept->rdev));
-          sensor_trace_diag(LOG_ERR, DIAG_SENSOR_RPMSG_ADV,
-                            "err:send fail,path:%s,ret:%d,cpu:%s",
-                            dev->path, ret, rpmsg_get_cpuname(ept->rdev));
-        }
-      else
-        {
-          sensor_rpmsg_update_config(dev, &state);
-          sminfo(dev->name, "rpmsg adv proxy success, remote:%s",
-                 rpmsg_get_cpuname(ept->rdev));
-        }
+      return 0;
     }
 
+  msg->cookie = (uint64_t)(uintptr_t)dev;
+  msg->command = SENSOR_RPMSG_ADVERTISE_ACK;
+  ret = rpmsg_send(ept, msg, len);
+  if (ret < 0)
+    {
+      snerr("ERROR: adv rpmsg send failed:%s, %d, %s\n",
+            dev->path, ret, rpmsg_get_cpuname(ept->rdev));
+      sensor_trace_diag(LOG_ERR, DIAG_SENSOR_RPMSG_ADV,
+                        "err:send fail,path:%s,ret:%d,cpu:%s",
+                        dev->path, ret, rpmsg_get_cpuname(ept->rdev));
+      if (created)
+        {
+          kmm_free(proxy);
+        }
+
+      return 0;
+    }
+
+  /* The proxy is visible to ioctl only after ADVERTISE_ACK is queued,
+   * so the remote stub always exists before any IOCTL arrives.
+   */
+
+  if (created)
+    {
+      sensor_rpmsg_add_proxy(dev, proxy);
+    }
+
+  sensor_rpmsg_update_config(dev, &state);
+  sminfo(dev->name, "rpmsg adv proxy success, remote:%s",
+         rpmsg_get_cpuname(ept->rdev));
   return 0;
 }
 
@@ -1442,26 +1464,40 @@ static int sensor_rpmsg_suback_handler(FAR struct rpmsg_endpoint *ept,
                                        uint32_t src, FAR void *priv)
 {
   FAR struct sensor_rpmsg_advsub_s *msg = data;
+  FAR struct sensor_rpmsg_proxy_s *proxy = NULL;
   FAR struct sensor_rpmsg_dev_s *dev;
   struct sensor_state_s state;
+  bool created = false;
 
   state.esize = UINT32_MAX;
   dev = sensor_rpmsg_find_dev(msg->path);
-  if (dev && (!dev->nsubscribers ||
-      !sensor_rpmsg_alloc_proxy(dev, ept, msg, &state)))
+  if (!dev)
+    {
+      return 0;
+    }
+
+  if (dev->nsubscribers)
+    {
+      proxy = sensor_rpmsg_alloc_proxy(dev, ept, msg, &state, &created);
+    }
+
+  if (!proxy)
     {
       sensor_rpmsg_advsub_one(dev, ept, SENSOR_RPMSG_UNSUBSCRIBE);
       snerr("ERROR: suback failed:%s\n", dev->path);
       sensor_trace_diag(LOG_ERR, DIAG_SENSOR_RPMSG_SUBACK_FAIL,
                         "err:suback fail,path:%s", dev->path);
-    }
-  else
-    {
-      sensor_rpmsg_update_config(dev, &state);
-      sminfo(dev->name, "rpmsg suback success, remote:%s",
-             rpmsg_get_cpuname(ept->rdev));
+      return 0;
     }
 
+  if (created)
+    {
+      sensor_rpmsg_add_proxy(dev, proxy);
+    }
+
+  sensor_rpmsg_update_config(dev, &state);
+  sminfo(dev->name, "rpmsg suback success, remote:%s",
+         rpmsg_get_cpuname(ept->rdev));
   return 0;
 }
 
