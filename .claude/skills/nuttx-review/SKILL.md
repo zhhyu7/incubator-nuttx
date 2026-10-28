@@ -29,7 +29,7 @@ Review vela/nuttx patches against architect standards before submitting to Gerri
 - **Pure nxstyle/formatting fixes** — Use `/code-style` skill; nxstyle handles these mechanically
 - **Merge/Revert commits** — Mechanical commits; no architectural review needed
 - **Defconfig-only changes** — Unless also touching Kconfig files
-- **Third-party code (external/)** — Different standards apply; use `/port-thirdparty-lib`
+- **Third-party code (external/)** — Different standards apply; use `/kernel:port-thirdparty-lib`
 - **Non-code changes (docs only)** — No architectural review needed
 
 ## Workflow

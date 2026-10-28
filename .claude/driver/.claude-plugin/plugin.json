@@ -1,0 +1,14 @@
+{
+  "name": "driver",
+  "version": "1.0.0",
+  "description": "NuttX 驱动与子系统开发：驱动开发工作流与子系统 pattern、GNSS 子系统",
+  "author": {
+    "name": "Vela 内核组"
+  },
+  "repository": "vela/nuttx",
+  "metadata": {
+    "layer": "L0",
+    "owner": "Vela 内核组",
+    "migratedFrom": "vela/.claude@c1f2395 skills/{nuttx-driver-development,gnss}"
+  }
+}

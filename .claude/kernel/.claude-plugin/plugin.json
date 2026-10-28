@@ -1,0 +1,14 @@
+{
+  "name": "kernel",
+  "version": "1.0.0",
+  "description": "NuttX 内核开发指南：同步原语与异步模式选型、无锁队列、三方库移植",
+  "author": {
+    "name": "Vela 内核组"
+  },
+  "repository": "vela/nuttx",
+  "metadata": {
+    "layer": "L0",
+    "owner": "Vela 内核组",
+    "migratedFrom": "vela/.claude@c1f2395 skills/{nuttx-coding,lockfree-queue,port-thirdparty-lib}"
+  }
+}

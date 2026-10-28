@@ -11,6 +11,16 @@
       "name": "net",
       "source": "./net",
       "description": "NuttX 网络全栈（协议栈/CAN/LIN/以太网/USRsock-RPMSG）Jira 问题与崩溃分析"
+    },
+    {
+      "name": "kernel",
+      "source": "./kernel",
+      "description": "NuttX 内核开发指南：同步原语与异步模式选型、无锁队列、三方库移植"
+    },
+    {
+      "name": "driver",
+      "source": "./driver",
+      "description": "NuttX 驱动与子系统开发：驱动开发工作流与子系统 pattern、GNSS 子系统"
     }
   ]
 }
