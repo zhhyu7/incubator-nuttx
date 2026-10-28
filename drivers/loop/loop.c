@@ -41,8 +41,10 @@
  * Private Function Prototypes
  ****************************************************************************/
 
-static ssize_t loop_readv(FAR struct file *filep, FAR struct uio *uio);
-static ssize_t loop_writev(FAR struct file *filep, FAR struct uio *uio);
+static ssize_t loop_read(FAR struct file *filep, FAR char *buffer,
+                 size_t buflen);
+static ssize_t loop_write(FAR struct file *filep, FAR const char *buffer,
+                 size_t buflen);
 static int     loop_ioctl(FAR struct file *filep, int cmd,
                  unsigned long arg);
 
@@ -54,14 +56,14 @@ static const struct file_operations g_loop_fops =
 {
   NULL,          /* open */
   NULL,          /* close */
-  NULL,          /* read */
-  NULL,          /* write */
+  loop_read,     /* read */
+  loop_write,    /* write */
   NULL,          /* seek */
   loop_ioctl,    /* ioctl */
   NULL,          /* truncate */
   NULL,          /* poll */
-  loop_readv,    /* readv */
-  loop_writev    /* writev */
+  NULL,          /* readv */
+  NULL           /* writev */
 };
 
 /****************************************************************************
@@ -72,7 +74,8 @@ static const struct file_operations g_loop_fops =
  * Name: loop_read
  ****************************************************************************/
 
-static ssize_t loop_readv(FAR struct file *filep, FAR struct uio *uio)
+static ssize_t loop_read(FAR struct file *filep, FAR char *buffer,
+                         size_t len)
 {
   return 0; /* Return EOF */
 }
@@ -81,14 +84,10 @@ static ssize_t loop_readv(FAR struct file *filep, FAR struct uio *uio)
  * Name: loop_write
  ****************************************************************************/
 
-static ssize_t loop_writev(FAR struct file *filep, FAR struct uio *uio)
+static ssize_t loop_write(FAR struct file *filep, FAR const char *buffer,
+                          size_t len)
 {
-  /* Say that everything was written */
-
-  size_t ret = uio->uio_resid;
-
-  uio_advance(uio, ret);
-  return ret;
+  return len; /* Say that everything was written */
 }
 
 /****************************************************************************

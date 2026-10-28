@@ -41,8 +41,10 @@
  * Private Function Prototypes
  ****************************************************************************/
 
-static ssize_t devnull_readv(FAR struct file *filep, FAR struct uio *uio);
-static ssize_t devnull_writev(FAR struct file *filep, FAR struct uio *uio);
+static ssize_t devnull_read(FAR struct file *filep, FAR char *buffer,
+                            size_t buflen);
+static ssize_t devnull_write(FAR struct file *filep, FAR const char *buffer,
+                             size_t buflen);
 static int     devnull_poll(FAR struct file *filep, FAR struct pollfd *fds,
                             bool setup);
 
@@ -52,16 +54,16 @@ static int     devnull_poll(FAR struct file *filep, FAR struct pollfd *fds,
 
 static const struct file_operations g_devnull_fops =
 {
-  NULL,           /* open */
-  NULL,           /* close */
-  NULL,           /* read */
-  NULL,           /* writev */
-  NULL,           /* seek */
-  NULL,           /* ioctl */
-  NULL,           /* truncate */
-  devnull_poll,   /* poll */
-  devnull_readv,  /* readv */
-  devnull_writev  /* writev */
+  NULL,          /* open */
+  NULL,          /* close */
+  devnull_read,  /* read */
+  devnull_write, /* write */
+  NULL,          /* seek */
+  NULL,          /* ioctl */
+  NULL,          /* truncate */
+  devnull_poll,  /* poll */
+  NULL,          /* readv */
+  NULL           /* writev */
 };
 
 /****************************************************************************
@@ -72,10 +74,12 @@ static const struct file_operations g_devnull_fops =
  * Name: devnull_read
  ****************************************************************************/
 
-static ssize_t devnull_readv(FAR struct file *filep, FAR struct uio *uio)
+static ssize_t devnull_read(FAR struct file *filep, FAR char *buffer,
+                            size_t len)
 {
   UNUSED(filep);
-  UNUSED(uio);
+  UNUSED(buffer);
+  UNUSED(len);
 
   return 0; /* Return EOF */
 }
@@ -84,16 +88,13 @@ static ssize_t devnull_readv(FAR struct file *filep, FAR struct uio *uio)
  * Name: devnull_write
  ****************************************************************************/
 
-static ssize_t devnull_writev(FAR struct file *filep, FAR struct uio *uio)
+static ssize_t devnull_write(FAR struct file *filep, FAR const char *buffer,
+                             size_t len)
 {
   UNUSED(filep);
+  UNUSED(buffer);
 
-  /* Say that everything was written */
-
-  size_t ret = uio->uio_resid;
-
-  uio_advance(uio, ret);
-  return ret;
+  return len; /* Say that everything was written */
 }
 
 /****************************************************************************
