@@ -49,6 +49,26 @@ ifeq ($(CONFIG_DRIVERS_FAULT_INJECT_WRAP_WQ),y)
 CSRCS += wraps/fault_wrap_wq.c
 endif
 
+ifeq ($(CONFIG_DRIVERS_FAULT_INJECT_WRAP_SPI),y)
+CSRCS += wraps/fault_wrap_spi.c
+endif
+
+ifeq ($(CONFIG_DRIVERS_FAULT_INJECT_WRAP_I2C),y)
+CSRCS += wraps/fault_wrap_i2c.c
+endif
+
+ifeq ($(CONFIG_DRIVERS_FAULT_INJECT_WRAP_CAN),y)
+CSRCS += wraps/fault_wrap_can.c
+endif
+
+ifeq ($(CONFIG_DRIVERS_FAULT_INJECT_WRAP_CLK),y)
+CSRCS += wraps/fault_wrap_clk.c
+endif
+
+ifeq ($(CONFIG_DRIVERS_FAULT_INJECT_WRAP_RESET),y)
+CSRCS += wraps/fault_wrap_reset.c
+endif
+
 DEPPATH += --dep-path fault
 DEPPATH += --dep-path fault/wraps
 VPATH   += :fault:fault/wraps

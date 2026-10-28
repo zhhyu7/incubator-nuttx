@@ -125,4 +125,85 @@ config DRIVERS_FAULT_INJECT_WRAP_WQ
 
 		Same board-integration requirement as DRIVERS_FAULT_INJECT_WRAP_MM.
 
+config DRIVERS_FAULT_INJECT_WRAP_SPI
+	bool "spi wrapper (spi_transfer)"
+	depends on SPI && SPI_EXCHANGE
+	default n
+	---help---
+		Build the __wrap_spi_transfer implementation in
+		drivers/fault/wraps/fault_wrap_spi.c.  spi_transfer() is the
+		global SPI transfer-sequence entry point (drivers/spi/
+		spi_transfer.c); it is a real function symbol, not an ops vtable
+		method, so ld --wrap can intercept it.
+
+		Only the global spi_transfer() path is wrapped.  Per-device ops
+		invoked through SPI_SEND / SPI_EXCHANGE macros resolve through
+		dev->ops and cannot be intercepted by ld --wrap.
+
+		Same board-integration requirement as DRIVERS_FAULT_INJECT_WRAP_MM.
+
+config DRIVERS_FAULT_INJECT_WRAP_I2C
+	bool "i2c wrappers (i2c_read/i2c_write/i2c_writeread)"
+	depends on I2C
+	default n
+	---help---
+		Build the __wrap_i2c_* implementations in
+		drivers/fault/wraps/fault_wrap_i2c.c.  Covers the global I2C
+		convenience helpers i2c_read() / i2c_write() / i2c_writeread()
+		(drivers/i2c/i2c_{read,write,writeread}.c).
+
+		These are real function symbols, not ops vtable methods.  The
+		lower-level I2C_TRANSFER() macro path resolves through dev->ops
+		and cannot be intercepted by ld --wrap.
+
+		Same board-integration requirement as DRIVERS_FAULT_INJECT_WRAP_MM.
+
+config DRIVERS_FAULT_INJECT_WRAP_CAN
+	bool "can wrappers (can_receive/can_txready)"
+	depends on CAN
+	default n
+	---help---
+		Build the __wrap_can_* implementations in
+		drivers/fault/wraps/fault_wrap_can.c.  Wraps the CAN upper-half
+		entry points can_receive() (RX FIFO push, driven from the RX IRQ)
+		and can_txready() (drivers/can/can.c).
+
+		can_receive() / can_txready() normally run in IRQ context:
+		prefer RETURN_ERR / SKIP.  The DELAY action is declared supported
+		but runs up_udelay() with no IRQ-context guard, so arming DELAY
+		here busy-waits inside the ISR and harms interrupt latency; avoid
+		it unless that cost is acceptable.
+
+		Same board-integration requirement as DRIVERS_FAULT_INJECT_WRAP_MM.
+
+config DRIVERS_FAULT_INJECT_WRAP_CLK
+	bool "clk wrappers (clk_enable/clk_set_rate)"
+	depends on CLK
+	default n
+	---help---
+		Build the __wrap_clk_* implementations in
+		drivers/fault/wraps/fault_wrap_clk.c.  Covers the global clock
+		management entry points clk_enable() and clk_set_rate()
+		(drivers/clk/clk.c).
+
+		Same board-integration requirement as DRIVERS_FAULT_INJECT_WRAP_MM.
+
+config DRIVERS_FAULT_INJECT_WRAP_RESET
+	bool "reset wrappers (reset_control_reset/assert_reason, deassert)"
+	depends on RESET
+	default n
+	---help---
+		Build the __wrap_reset_control_* implementations in
+		drivers/fault/wraps/fault_wrap_reset.c.  Wraps the real global
+		reset-controller functions reset_control_reset_reason(),
+		reset_control_assert_reason() and reset_control_deassert()
+		(drivers/reset/core.c).
+
+		The plain reset_control_reset() / reset_control_assert() helpers
+		are static inline wrappers in <nuttx/reset/reset.h> that forward
+		to the _reason() functions, so their callers are already covered
+		through the wrapped _reason() symbols.
+
+		Same board-integration requirement as DRIVERS_FAULT_INJECT_WRAP_MM.
+
 endif # DRIVERS_FAULT_INJECT

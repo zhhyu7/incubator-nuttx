@@ -47,6 +47,26 @@ if(CONFIG_DRIVERS_FAULT_INJECT)
     list(APPEND SRCS wraps/fault_wrap_wq.c)
   endif()
 
+  if(CONFIG_DRIVERS_FAULT_INJECT_WRAP_SPI)
+    list(APPEND SRCS wraps/fault_wrap_spi.c)
+  endif()
+
+  if(CONFIG_DRIVERS_FAULT_INJECT_WRAP_I2C)
+    list(APPEND SRCS wraps/fault_wrap_i2c.c)
+  endif()
+
+  if(CONFIG_DRIVERS_FAULT_INJECT_WRAP_CAN)
+    list(APPEND SRCS wraps/fault_wrap_can.c)
+  endif()
+
+  if(CONFIG_DRIVERS_FAULT_INJECT_WRAP_CLK)
+    list(APPEND SRCS wraps/fault_wrap_clk.c)
+  endif()
+
+  if(CONFIG_DRIVERS_FAULT_INJECT_WRAP_RESET)
+    list(APPEND SRCS wraps/fault_wrap_reset.c)
+  endif()
+
   target_sources(drivers PRIVATE ${SRCS})
   target_include_directories(drivers PRIVATE ${CMAKE_CURRENT_LIST_DIR})
 

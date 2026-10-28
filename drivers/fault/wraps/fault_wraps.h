@@ -93,3 +93,29 @@ UP_WRAPOPT(work_queue)
 UP_WRAPOPT(work_queue_wq)
 UP_WRAPOPT(work_cancel)
 #endif
+
+#ifdef CONFIG_DRIVERS_FAULT_INJECT_WRAP_SPI
+UP_WRAPOPT(spi_transfer)
+#endif
+
+#ifdef CONFIG_DRIVERS_FAULT_INJECT_WRAP_I2C
+UP_WRAPOPT(i2c_read)
+UP_WRAPOPT(i2c_write)
+UP_WRAPOPT(i2c_writeread)
+#endif
+
+#ifdef CONFIG_DRIVERS_FAULT_INJECT_WRAP_CAN
+UP_WRAPOPT(can_receive)
+UP_WRAPOPT(can_txready)
+#endif
+
+#ifdef CONFIG_DRIVERS_FAULT_INJECT_WRAP_CLK
+UP_WRAPOPT(clk_enable)
+UP_WRAPOPT(clk_set_rate)
+#endif
+
+#ifdef CONFIG_DRIVERS_FAULT_INJECT_WRAP_RESET
+UP_WRAPOPT(reset_control_reset_reason)
+UP_WRAPOPT(reset_control_assert_reason)
+UP_WRAPOPT(reset_control_deassert)
+#endif
