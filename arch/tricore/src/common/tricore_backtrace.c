@@ -42,22 +42,20 @@
  ****************************************************************************/
 
 nosanitize_address
-static int backtrace(uintptr_t *reg, void **buffer, int size, int *skip)
+static int backtrace(uintptr_t pcxi, void **buffer, int size, int *skip)
 {
-  int i = 0;
-  uintptr_t *csa = reg;
-  uintptr_t pcxi = csa[REG_UPCXI];
   uintptr_t return_addr;
+  uintptr_t *csa;
+  int i = 0;
 
-  for (; csa && i < size; csa = tricore_csa2addr(csa[REG_UPCXI]))
+  for (; pcxi != 0 && i < size; pcxi = csa[REG_UPCXI])
     {
+      csa = tricore_csa2addr(pcxi);
       return_addr = (pcxi & PCXI_UL) ? csa[REG_UA11] : csa[REG_LA11];
       if (return_addr && (*skip)-- <= 0)
         {
           buffer[i++] = (void *)return_addr;
         }
-
-      pcxi = csa[REG_UPCXI];
     }
 
   return i;
@@ -105,7 +103,6 @@ int up_backtrace(struct tcb_s *tcb,
                  void **buffer, int size, int skip)
 {
   struct tcb_s *rtcb = running_task();
-  uintptr_t *regs;
   int ret = 0;
 
   if (size <= 0 || !buffer)
@@ -115,8 +112,7 @@ int up_backtrace(struct tcb_s *tcb,
 
   if (tcb == NULL || tcb == rtcb)
     {
-      regs = tricore_csa2addr(tricore_mfcr(CPU_PCXI));
-      ret = backtrace(regs, buffer, size, &skip);
+      ret = backtrace(tricore_mfcr(CPU_PCXI), buffer, size, &skip);
     }
   else
     {
@@ -125,7 +121,7 @@ int up_backtrace(struct tcb_s *tcb,
           return 0;
         }
 
-      ret = backtrace(tcb->xcp.regs + TC_CONTEXT_REGS,
+      ret = backtrace(tricore_addr2csa(tcb->xcp.regs + TC_CONTEXT_REGS),
                       buffer, size, &skip);
     }
 
