@@ -7,6 +7,7 @@ config FS_FUSE
 	bool "FUSE (Filesystem in Userspace) core"
 	default n
 	depends on !DISABLE_MOUNTPOINT
+	select FS_UIO
 	---help---
 		Enable the transport-independent FUSE client core.  The core
 		implements the NuttX mountpt_operations on top of the standard

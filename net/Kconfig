@@ -41,6 +41,7 @@ config NET
 	bool "Networking support"
 	default n
 	select ARCH_HAVE_NET
+	select FS_UIO
 	---help---
 		Enable or disable all network features
 
