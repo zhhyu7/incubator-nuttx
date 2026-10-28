@@ -1603,19 +1603,9 @@ int close_mtddriver(FAR struct inode *pinode);
  *
  ****************************************************************************/
 
+ssize_t file_read(FAR struct file *filep, FAR void *buf, size_t nbytes);
 ssize_t file_readv(FAR struct file *filep,
                    FAR const struct iovec *iov, int iovcnt);
-
-static inline
-ssize_t file_read(FAR struct file *filep, FAR void *buf, size_t nbytes)
-{
-  struct iovec iov;
-
-  iov.iov_base = buf;
-  iov.iov_len = nbytes;
-
-  return file_readv(filep, &iov, 1);
-}
 
 /****************************************************************************
  * Name: nx_read
@@ -1638,16 +1628,8 @@ ssize_t file_read(FAR struct file *filep, FAR void *buf, size_t nbytes)
  *
  ****************************************************************************/
 
+ssize_t nx_read(int fd, FAR void *buf, size_t nbytes);
 ssize_t nx_readv(int fd, FAR const struct iovec *iov, int iovcnt);
-
-static inline ssize_t nx_read(int fd, FAR void *buf, size_t nbytes)
-{
-  struct iovec iov;
-
-  iov.iov_base = buf;
-  iov.iov_len = nbytes;
-  return nx_readv(fd, &iov, 1);
-}
 
 /****************************************************************************
  * Name: file_write
@@ -1675,20 +1657,10 @@ static inline ssize_t nx_read(int fd, FAR void *buf, size_t nbytes)
  *
  ****************************************************************************/
 
+ssize_t file_write(FAR struct file *filep, FAR const void *buf,
+                   size_t nbytes);
 ssize_t file_writev(FAR struct file *filep,
                     FAR const struct iovec *iov, int iovcnt);
-
-static inline ssize_t file_write(FAR struct file *filep,
-                                 FAR const void *buf,
-                                 size_t nbytes)
-{
-  struct iovec iov;
-
-  iov.iov_base = (FAR void *)buf;
-  iov.iov_len = nbytes;
-
-  return file_writev(filep, &iov, 1);
-}
 
 /****************************************************************************
  * Name: nx_write
@@ -1715,16 +1687,8 @@ static inline ssize_t file_write(FAR struct file *filep,
  *
  ****************************************************************************/
 
+ssize_t nx_write(int fd, FAR const void *buf, size_t nbytes);
 ssize_t nx_writev(int fd, FAR const struct iovec *iov, int iovcnt);
-
-static inline ssize_t nx_write(int fd, FAR const void *buf, size_t nbytes)
-{
-  struct iovec iov;
-
-  iov.iov_base = (FAR void *)buf;
-  iov.iov_len = nbytes;
-  return nx_writev(fd, &iov, 1);
-}
 
 /****************************************************************************
  * Name: file_pread
