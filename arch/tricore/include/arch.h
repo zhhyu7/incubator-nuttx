@@ -70,19 +70,30 @@
 #define tricore_addr2csa(addr) ((uintptr_t)(((((uintptr_t)(addr)) & 0xF0000000) >> 12) \
                                             | (((uintptr_t)(addr) & 0x003FFFC0) >> 6)))
 
-/* MTCR and MFCR */
+/* MTCR and MFCR.
+ *
+ * TASKING must use compiler builtins (__mfcr/__mtcr) instead of GNU-style
+ * output-only volatile inline asm: TASKING mis-compiles "mfcr %0,%1" by
+ * re-executing the mfcr on the same path and using the 2nd result, so the
+ * saved value is wrong. GCC keeps volatile asm semantics correct.
+ */
 
-#define tricore_mtcr(reg, val)                                             \
-  ({                                                                       \
-    __asm__ volatile ("mtcr %0,%1\n\t"::"i"(reg),"d"(val):"memory");       \
-  })
+#ifdef CONFIG_TRICORE_TOOLCHAIN_TASKING
+  #define tricore_mtcr(reg, val) __mtcr((reg), (val))
+  #define tricore_mfcr(reg)      (__mfcr(reg))
+#else
+  #define tricore_mtcr(reg, val)                                           \
+    ({                                                                     \
+      __asm__ volatile ("mtcr %0,%1\n\t"::"i"(reg),"d"(val):"memory");     \
+    })
 
-#define tricore_mfcr(reg)                                                  \
-  ({                                                                       \
-    uint32_t __val;                                                        \
-    __asm__ volatile ("mfcr %0,%1": "=d" (__val) :"i"(reg): "memory");     \
-    __val;                                                                 \
-  })
+  #define tricore_mfcr(reg)                                                \
+    ({                                                                     \
+      uint32_t __val;                                                      \
+      __asm__ volatile ("mfcr %0,%1": "=d" (__val) :"i"(reg): "memory"); \
+      __val;                                                               \
+    })
+#endif
 
 /* Jump back to the return address. */
 

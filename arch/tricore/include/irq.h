@@ -335,13 +335,7 @@ void up_irq_enable(void);
 
 noinstrument_function static inline_function uintptr_t up_getpc(void)
 {
-#ifdef CONFIG_TRICORE_TOOLCHAIN_TASKING
-  return tricore_mfcr(CPU_PC);
-#else
-  uintptr_t pc;
-  __asm__ volatile ("mfcr %0,%1": "=d" (pc) :"i"(CPU_PC): "memory");
-  return pc;
-#endif
+  return (uintptr_t)tricore_mfcr(CPU_PC);
 }
 
 noinstrument_function static inline_function uintptr_t up_getsp(void)
@@ -386,6 +380,8 @@ noinstrument_function static inline_function irqstate_t up_irq_save(void)
       tricore_mtcr(CPU_ICR, icr);
       UP_ISB();
     }
+#elif defined(CONFIG_TRICORE_TOOLCHAIN_TASKING)
+  flags = __disable_and_save();
 #else
   __asm__ volatile ("disable %0" : "=d"(flags) :: "memory");
 #endif
@@ -417,6 +413,8 @@ void up_irq_restore(irqstate_t flags)
       tricore_mtcr(CPU_ICR, icr);
       UP_ISB();
     }
+#elif defined(CONFIG_TRICORE_TOOLCHAIN_TASKING)
+  __restore(flags);
 #else
   __asm__ volatile ("restore %0" :: "d"(flags) : "memory");
 #endif
