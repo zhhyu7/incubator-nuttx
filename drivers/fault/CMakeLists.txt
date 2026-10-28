@@ -67,6 +67,14 @@ if(CONFIG_DRIVERS_FAULT_INJECT)
     list(APPEND SRCS wraps/fault_wrap_reset.c)
   endif()
 
+  if(CONFIG_DRIVERS_FAULT_INJECT_WRAP_RPTUN)
+    list(APPEND SRCS wraps/fault_wrap_rptun.c)
+  endif()
+
+  if(CONFIG_DRIVERS_FAULT_INJECT_WRAP_WDG)
+    list(APPEND SRCS wraps/fault_wrap_wdg.c)
+  endif()
+
   target_sources(drivers PRIVATE ${SRCS})
   target_include_directories(drivers PRIVATE ${CMAKE_CURRENT_LIST_DIR})
 

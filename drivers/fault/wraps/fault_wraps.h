@@ -119,3 +119,15 @@ UP_WRAPOPT(reset_control_reset_reason)
 UP_WRAPOPT(reset_control_assert_reason)
 UP_WRAPOPT(reset_control_deassert)
 #endif
+
+#ifdef CONFIG_DRIVERS_FAULT_INJECT_WRAP_RPTUN
+UP_WRAPOPT(rptun_boot)
+UP_WRAPOPT(rptun_poweroff)
+UP_WRAPOPT(rptun_reset)
+UP_WRAPOPT(rptun_wait)
+#endif
+
+#ifdef CONFIG_DRIVERS_FAULT_INJECT_WRAP_WDG
+UP_WRAPOPT(watchdog_register)
+UP_WRAPOPT(watchdog_unregister)
+#endif

@@ -206,4 +206,34 @@ config DRIVERS_FAULT_INJECT_WRAP_RESET
 
 		Same board-integration requirement as DRIVERS_FAULT_INJECT_WRAP_MM.
 
+config DRIVERS_FAULT_INJECT_WRAP_RPTUN
+	bool "rptun wrappers (rptun_boot/poweroff/reset/wait)"
+	depends on RPTUN
+	default n
+	---help---
+		Build the __wrap_rptun_* implementations in
+		drivers/fault/wraps/fault_wrap_rptun.c.  Wraps the global rptun
+		entry points rptun_boot(), rptun_poweroff(), rptun_reset() and
+		rptun_wait() (drivers/rptun/rptun.c) to inject remote-core
+		bring-up / power-off / reset / cross-core sync-wait faults
+		(RETURN_ERR / DELAY / SKIP).  drivers/rptun/rptun.c itself stays
+		untouched.
+
+		Same board-integration requirement as DRIVERS_FAULT_INJECT_WRAP_MM.
+
+config DRIVERS_FAULT_INJECT_WRAP_WDG
+	bool "watchdog wrappers (watchdog_register/unregister)"
+	depends on WATCHDOG
+	default n
+	---help---
+		Build the __wrap_watchdog_* implementations in
+		drivers/fault/wraps/fault_wrap_wdg.c.  Wraps the global watchdog
+		entry points watchdog_register() and watchdog_unregister()
+		(drivers/timers/watchdog.c).  watchdog_register() can be made to
+		fail (RETURN_NULL) or stall (DELAY); watchdog_unregister() can be
+		swallowed (SKIP) or stalled (DELAY).  drivers/timers/watchdog.c
+		itself stays untouched.
+
+		Same board-integration requirement as DRIVERS_FAULT_INJECT_WRAP_MM.
+
 endif # DRIVERS_FAULT_INJECT

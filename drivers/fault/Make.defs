@@ -69,6 +69,14 @@ ifeq ($(CONFIG_DRIVERS_FAULT_INJECT_WRAP_RESET),y)
 CSRCS += wraps/fault_wrap_reset.c
 endif
 
+ifeq ($(CONFIG_DRIVERS_FAULT_INJECT_WRAP_RPTUN),y)
+CSRCS += wraps/fault_wrap_rptun.c
+endif
+
+ifeq ($(CONFIG_DRIVERS_FAULT_INJECT_WRAP_WDG),y)
+CSRCS += wraps/fault_wrap_wdg.c
+endif
+
 DEPPATH += --dep-path fault
 DEPPATH += --dep-path fault/wraps
 VPATH   += :fault:fault/wraps
