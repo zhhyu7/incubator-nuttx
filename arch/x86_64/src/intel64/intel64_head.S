@@ -482,6 +482,15 @@ npd_loop:
 	dec     %ecx
 	jnz     npd_loop
 
+	/* The 1:1 map used global pages, which a CR3 reload would keep in the
+	 * TLB: toggle CR4.PGE to drop them.
+	 */
+	mov     %cr4, %rax
+	and     $~X86_CR4_PGE, %rax
+	mov     %rax, %cr4
+	or      $X86_CR4_PGE, %rax
+	mov     %rax, %cr4
+
 	ret
 
 	.size   __revoke_low_memory, . - __revoke_low_memory
