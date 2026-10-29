@@ -42,11 +42,35 @@
 #include <nuttx/fs/ioctl.h>
 #include <nuttx/mtd/mtd.h>
 #include <nuttx/mtd/mtd_log.h>
-#include <nuttx/mutex.h>
+
+#ifdef CONFIG_MTDLOG_IRQ_SUPPORT
+#  include <nuttx/spinlock.h>
+#else
+#  include <nuttx/mutex.h>
+#endif
 
 /****************************************************************************
  * Pre-processor Definitions
  ****************************************************************************/
+
+/* CONFIG_MTDLOG_IRQ_SUPPORT (default y) = spin_lock_irqsave (IRQ-safe);
+ * off = nxmutex (thread context only).  LOCK/UNLOCK take an explicit flags
+ * args; LOCK and LOCK_INIT return int (0 for the spinlock backend).
+ */
+
+#ifdef CONFIG_MTDLOG_IRQ_SUPPORT
+typedef spinlock_t mtdlog_lock_t;
+#  define MTDLOG_LOCK_INIT(l)     ({ spin_lock_init(l); 0; })
+#  define MTDLOG_LOCK_DESTROY(l)  ((void)(l))
+#  define MTDLOG_LOCK(l, f)       ((f) = spin_lock_irqsave(l), 0)
+#  define MTDLOG_UNLOCK(l, f)     spin_unlock_irqrestore(l, f)
+#else
+typedef mutex_t mtdlog_lock_t;
+#  define MTDLOG_LOCK_INIT(l)     nxmutex_init(l)
+#  define MTDLOG_LOCK_DESTROY(l)  nxmutex_destroy(l)
+#  define MTDLOG_LOCK(l, f)       ((void)(f), nxmutex_lock(l))
+#  define MTDLOG_UNLOCK(l, f)     ((void)(f), nxmutex_unlock(l))
+#endif
 
 /* The magic number for the mtdlog storage format. */
 
@@ -135,7 +159,7 @@ struct mtdlog_pos_s
 struct mtdlog_s
 {
   FAR struct mtd_dev_s *mtd;            /* MTD device used by the mtdlog */
-  mutex_t              lock;            /* Mutex for access to mtdlog */
+  mtdlog_lock_t        lock;            /* Lock for access to the mtdlog */
   struct mtdlog_pos_s  tailpos;         /* Tail position on the mtdlog */
   struct mtdlog_pos_s  headpos;         /* Head position on the mtdlog */
   uint32_t             progsize;        /* Size of one read/write block */
@@ -1629,6 +1653,8 @@ static int mtdlog_seek_blk_group(FAR struct mtdlog_s *mtdlog,
 
 static int mtdlog_open(FAR struct file *filep)
 {
+  int ret;
+  irqstate_t flags;
   FAR struct mtdlog_user_s *upriv;
   FAR struct inode *inode = filep->f_inode;
   FAR struct mtdlog_s *mtdlog = inode->i_private;
@@ -1639,9 +1665,15 @@ static int mtdlog_open(FAR struct file *filep)
       return -ENOMEM;
     }
 
-  nxmutex_lock(&mtdlog->lock);
+  ret = MTDLOG_LOCK(&mtdlog->lock, flags);
+  if (ret < 0)
+    {
+      kmm_free(upriv);
+      return ret;
+    }
+
   upriv->rpos = mtdlog->headpos;
-  nxmutex_unlock(&mtdlog->lock);
+  MTDLOG_UNLOCK(&mtdlog->lock, flags);
 
   filep->f_priv = upriv;
   return 0;
@@ -1669,13 +1701,19 @@ static ssize_t mtdlog_read(FAR struct file *filep,
                            FAR char *buffer, size_t len)
 {
   int ret;
+  irqstate_t flags;
   FAR struct inode *inode = filep->f_inode;
   FAR struct mtdlog_s *mtdlog = inode->i_private;
   FAR struct mtdlog_user_s *upriv = filep->f_priv;
 
-  nxmutex_lock(&mtdlog->lock);
+  ret = MTDLOG_LOCK(&mtdlog->lock, flags);
+  if (ret < 0)
+    {
+      return ret;
+    }
+
   ret = mtdlog_read_log_entry(mtdlog, upriv, buffer, len);
-  nxmutex_unlock(&mtdlog->lock);
+  MTDLOG_UNLOCK(&mtdlog->lock, flags);
 
   return ret;
 }
@@ -1688,6 +1726,7 @@ static ssize_t mtdlog_write(FAR struct file *filep,
                             FAR const char *buffer, size_t len)
 {
   int ret;
+  irqstate_t flags;
   FAR struct inode *inode = filep->f_inode;
   FAR struct mtdlog_s *mtdlog = inode->i_private;
 
@@ -1696,9 +1735,14 @@ static ssize_t mtdlog_write(FAR struct file *filep,
       return -EINVAL;
     }
 
-  nxmutex_lock(&mtdlog->lock);
+  ret = MTDLOG_LOCK(&mtdlog->lock, flags);
+  if (ret < 0)
+    {
+      return ret;
+    }
+
   ret = mtdlog_write_log_entry(mtdlog, buffer, len);
-  nxmutex_unlock(&mtdlog->lock);
+  MTDLOG_UNLOCK(&mtdlog->lock, flags);
 
   return ret;
 }
@@ -1713,11 +1757,16 @@ static int mtdlog_ioctl(FAR struct file *filep,
                         int cmd, unsigned long arg)
 {
   int ret;
+  irqstate_t flags;
   FAR struct inode *inode = filep->f_inode;
   FAR struct mtdlog_s *mtdlog = inode->i_private;
   FAR struct mtdlog_user_s *upriv = filep->f_priv;
 
-  nxmutex_lock(&mtdlog->lock);
+  ret = MTDLOG_LOCK(&mtdlog->lock, flags);
+  if (ret < 0)
+    {
+      return ret;
+    }
 
   switch (cmd)
     {
@@ -1877,7 +1926,8 @@ static int mtdlog_ioctl(FAR struct file *filep,
         ret = -ENOTTY;
     }
 
-  nxmutex_unlock(&mtdlog->lock);
+  MTDLOG_UNLOCK(&mtdlog->lock, flags);
+
   return ret;
 }
 
@@ -1948,7 +1998,14 @@ int mtdlog_register(FAR const char *path, FAR struct mtd_dev_s *mtd)
   mtdlog->progsize = geo.blocksize;
   mtdlog->erasesize = geo.erasesize;
   mtdlog->erasestate = erasestate;
-  nxmutex_init(&mtdlog->lock);
+
+  ret = MTDLOG_LOCK_INIT(&mtdlog->lock);
+  if (ret < 0)
+    {
+      ferr("ERROR: Failed to initialize lock\n");
+      kmm_free(mtdlog);
+      return ret;
+    }
 
   if (mtdlog->blocksize < MTDLOG_MIN_BLKSIZE)
     {
@@ -1961,6 +2018,7 @@ int mtdlog_register(FAR const char *path, FAR struct mtd_dev_s *mtd)
   if (ret < 0)
     {
       ferr("ERROR: Failed to initialize mtdlog\n");
+      MTDLOG_LOCK_DESTROY(&mtdlog->lock);
       kmm_free(mtdlog);
       return ret;
     }
@@ -1969,6 +2027,7 @@ int mtdlog_register(FAR const char *path, FAR struct mtd_dev_s *mtd)
   if (ret < 0)
     {
       ferr("ERROR: Failed to register driver\n");
+      MTDLOG_LOCK_DESTROY(&mtdlog->lock);
       kmm_free(mtdlog);
       return ret;
     }
@@ -2006,7 +2065,7 @@ int mtdlog_unregister(FAR const char *path)
 
   inode = file.f_inode;
   mtdlog = inode->i_private;
-  nxmutex_destroy(&mtdlog->lock);
+  MTDLOG_LOCK_DESTROY(&mtdlog->lock);
   kmm_free(mtdlog);
 
   file_close(&file);

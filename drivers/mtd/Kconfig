@@ -355,6 +355,15 @@ config MTDLOG_BREAD_FALLBACK
 		(e.g. Aurix flash), disable this to remove the MTD_BREAD
 		fallback code and reduce code size.
 
+config MTDLOG_IRQ_SUPPORT
+	bool "Allow mtdlog access from interrupt context"
+	default y
+	depends on MTDLOG
+	---help---
+		Enable used spinlock (IRQ-safe, flash I/O runs with IRQs disabled).
+		disable it used nxmutex lock. Disable if mtdlog is never
+		accessed from an interrupt handler.
+
 comment "MTD Device Drivers"
 
 menuconfig MTD_NAND
