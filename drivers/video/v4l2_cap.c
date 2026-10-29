@@ -229,8 +229,8 @@ static int save_scene_param(FAR capture_mng_t *cmng,
                             enum v4l2_scene_mode mode,
                             uint32_t id,
                             FAR struct v4l2_ext_control *control);
-static int complete_capture(uint8_t err_code, uint32_t datasize,
-                            FAR const struct timeval *ts,
+static int complete_capture(uint8_t err_code,
+                            FAR const imgdata_frame_info_t *info,
                             FAR void *arg);
 static int validate_frame_setting(FAR capture_mng_t *cmng,
                                   enum v4l2_buf_type type,
@@ -845,6 +845,14 @@ static int convert_to_imgdatafmt(FAR video_format_t *video,
         data->pixelformat = IMGDATA_PIX_FMT_ENTROPY;
         break;
 
+      case V4L2_PIX_FMT_H264:
+        data->pixelformat = IMGDATA_PIX_FMT_H264;
+        break;
+
+      case V4L2_PIX_FMT_HEVC:
+        data->pixelformat = IMGDATA_PIX_FMT_HEVC;
+        break;
+
       case V4L2_PIX_FMT_JPEG_WITH_SUBIMG:
         data->pixelformat = IMGDATA_PIX_FMT_JPEG_WITH_SUBIMG;
         break;
@@ -891,6 +899,14 @@ static int convert_to_imgsensorfmt(FAR video_format_t *video,
 
       case V4L2_PIX_FMT_ENTROPY:
         sensor->pixelformat = IMGSENSOR_PIX_FMT_ENTROPY;
+        break;
+
+      case V4L2_PIX_FMT_H264:
+        sensor->pixelformat = IMGSENSOR_PIX_FMT_H264;
+        break;
+
+      case V4L2_PIX_FMT_HEVC:
+        sensor->pixelformat = IMGSENSOR_PIX_FMT_HEVC;
         break;
 
       case V4L2_PIX_FMT_JPEG_WITH_SUBIMG:
@@ -1606,7 +1622,24 @@ static size_t get_bufsize(FAR video_format_t *vf)
         return ret * 2;
       case V4L2_PIX_FMT_JPEG:
       case V4L2_PIX_FMT_ENTROPY:
+      case V4L2_PIX_FMT_H264:
+      case V4L2_PIX_FMT_HEVC:
         return ret;
+    }
+}
+
+/* Formats whose payload is an encoded bitstream rather than pixels. */
+
+static bool is_compressed_format(uint32_t pixelformat)
+{
+  switch (pixelformat)
+    {
+      case V4L2_PIX_FMT_H264:
+      case V4L2_PIX_FMT_HEVC:
+        return true;
+
+      default:
+        return false;
     }
 }
 
@@ -2233,8 +2266,7 @@ static int save_scene_param(FAR capture_mng_t *cmng,
 /* Callback function which device driver call when capture has done. */
 
 static int complete_capture(uint8_t err_code,
-                            uint32_t datasize,
-                            FAR const struct timeval *ts,
+                            FAR const imgdata_frame_info_t *info,
                             FAR void *arg)
 {
   FAR capture_mng_t *cmng = (FAR capture_mng_t *)arg;
@@ -2270,7 +2302,7 @@ static int complete_capture(uint8_t err_code,
    * go directly to set next buffer.
    */
 
-  if (datasize == 0)
+  if (info->size == 0)
     {
       goto set_next_buf;
     }
@@ -2279,7 +2311,7 @@ static int complete_capture(uint8_t err_code,
 
   if (err_code == 0)
     {
-      type_inf->bufinf.vbuf_next->buf.flags = 0;
+      type_inf->bufinf.vbuf_next->buf.flags = info->flags;
       if (type_inf->remaining_capnum > 0)
         {
           type_inf->remaining_capnum--;
@@ -2287,14 +2319,12 @@ static int complete_capture(uint8_t err_code,
     }
   else
     {
-      type_inf->bufinf.vbuf_next->buf.flags = V4L2_BUF_FLAG_ERROR;
+      type_inf->bufinf.vbuf_next->buf.flags =
+        info->flags | V4L2_BUF_FLAG_ERROR;
     }
 
-  type_inf->bufinf.vbuf_next->buf.bytesused = datasize;
-  if (ts != NULL)
-    {
-      type_inf->bufinf.vbuf_next->buf.timestamp = *ts;
-    }
+  type_inf->bufinf.vbuf_next->buf.bytesused = info->size;
+  TIMESPEC_TO_TIMEVAL(&type_inf->bufinf.vbuf_next->buf.timestamp, &info->ts);
 
   video_framebuff_capture_done(&type_inf->bufinf);
 
@@ -3000,6 +3030,18 @@ static int capture_try_fmt(FAR struct file *filep,
       return -EINVAL;
     }
 
+  /* A compressed bitstream is produced by the video stream only, and it
+   * always covers the whole sensor frame: a clipped rectangle would carry
+   * a width/height that no longer matches the encoded picture.
+   */
+
+  if (is_compressed_format(fmt->fmt.pix.pixelformat) &&
+      (fmt->type != V4L2_BUF_TYPE_VIDEO_CAPTURE ||
+       is_clipped(&type_inf->clip)))
+    {
+      return -EINVAL;
+    }
+
   switch (fmt->fmt.pix.pixelformat)
     {
       case V4L2_PIX_FMT_SUBIMG_UYVY:
@@ -3031,6 +3073,8 @@ static int capture_try_fmt(FAR struct file *filep,
       case V4L2_PIX_FMT_JPEG:
       case V4L2_PIX_FMT_ENTROPY:
       case V4L2_PIX_FMT_JPEG_WITH_SUBIMG:
+      case V4L2_PIX_FMT_H264:
+      case V4L2_PIX_FMT_HEVC:
         nr_fmt = 1;
         vf[CAPTURE_FMT_MAIN].width       = fmt->fmt.pix.width;
         vf[CAPTURE_FMT_MAIN].height      = fmt->fmt.pix.height;
@@ -3417,6 +3461,13 @@ static int capture_s_selection(FAR struct file *filep,
   if (type_inf->state != CAPTURE_STATE_STREAMOFF)
     {
       return -EBUSY;
+    }
+
+  /* Same rule as capture_try_fmt(): a bitstream is never clipped. */
+
+  if (is_compressed_format(type_inf->fmt[CAPTURE_FMT_MAIN].pixelformat))
+    {
+      return -EINVAL;
     }
 
   if (!validate_clip_setting(&clip->r, type_inf->fmt))
@@ -3974,6 +4025,8 @@ static int capture_enum_fmt(FAR struct file *filep,
           strlcpy(f->description,
                   cmng->imgsensor->fmtdescs[f->index].description,
                   sizeof(f->description));
+          f->flags = is_compressed_format(f->pixelformat) ?
+                       V4L2_FMT_FLAG_COMPRESSED : 0;
         }
     }
   else

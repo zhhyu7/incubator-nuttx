@@ -49,6 +49,8 @@
 #define IMGDATA_PIX_FMT_YUV420P          (7)
 #define IMGDATA_PIX_FMT_NV12             (8)
 #define IMGDATA_PIX_FMT_ENTROPY          (9)
+#define IMGDATA_PIX_FMT_H264             (10)
+#define IMGDATA_PIX_FMT_HEVC             (11)
 
 /* Method access helper macros */
 
@@ -86,21 +88,36 @@ typedef struct imgdata_interval_s
   uint32_t denominator;
 } imgdata_interval_t;
 
+/* Description of a completed frame, passed to imgdata_capture_t.
+ *
+ *   size  - Number of bytes captured. A value of 0 indicates a
+ *           drop-frame event: the driver had no buffer available
+ *           (set_buf was called with addr=NULL) and consumed the
+ *           frame without storing data. The upper layer should
+ *           re-supply a buffer via set_buf when one becomes available.
+ *   ts    - Timestamp of the captured frame
+ *   flags - V4L2_BUF_FLAG_* bits describing the frame, such as
+ *           KEYFRAME/PFRAME/BFRAME for a compressed stream; 0 when the
+ *           driver has nothing to report
+ */
+
+typedef struct imgdata_frame_info_s
+{
+  uint32_t size;
+  struct timespec ts;
+  uint32_t flags;
+} imgdata_frame_info_t;
+
 /* Callback invoked by imgdata driver when a frame capture completes.
  *
  * Parameters:
  *   result - 0 on success, non-zero error code on failure
- *   size   - Number of bytes captured. A value of 0 indicates a
- *            drop-frame event: the driver had no buffer available
- *            (set_buf was called with addr=NULL) and consumed the
- *            frame without storing data. The upper layer should
- *            re-supply a buffer via set_buf when one becomes available.
- *   ts     - Timestamp of the captured frame
+ *   info   - Description of the frame
  *   arg    - Opaque argument passed to start_capture
  */
 
-typedef int (*imgdata_capture_t)(uint8_t result, uint32_t size,
-                                 FAR const struct timeval *ts,
+typedef int (*imgdata_capture_t)(uint8_t result,
+                                 FAR const imgdata_frame_info_t *info,
                                  FAR void *arg);
 
 /* Structure for Data Control I/F */

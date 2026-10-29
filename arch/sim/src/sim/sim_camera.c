@@ -490,8 +490,7 @@ static int sim_camera_data_stop_capture(struct imgdata_s *data)
 static void sim_camera_work(void *arg)
 {
   sim_camera_priv_t *priv = (sim_camera_priv_t *)arg;
-  struct timespec ts;
-  struct timeval tv;
+  imgdata_frame_info_t info;
   int ret;
 
   if (priv->capture_cb == NULL)
@@ -503,10 +502,10 @@ static void sim_camera_work(void *arg)
   ret = host_video_dqbuf(priv->vdev, priv->next_buf, priv->buf_size);
   if (ret >= 0)
     {
-      clock_gettime(CLOCK_MONOTONIC, &ts);
-      TIMESPEC_TO_TIMEVAL(&tv, &ts);
-      priv->capture_cb(0, priv->next_buf ? ret : 0,
-                       &tv, priv->capture_arg);
+      clock_gettime(CLOCK_MONOTONIC, &info.ts);
+      info.size  = priv->next_buf ? ret : 0;
+      info.flags = 0;
+      priv->capture_cb(0, &info, priv->capture_arg);
     }
 
   irq_restore_nopreempt(flags);

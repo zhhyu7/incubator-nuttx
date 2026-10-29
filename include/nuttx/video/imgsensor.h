@@ -125,6 +125,8 @@
 #define IMGSENSOR_PIX_FMT_YUV420P          (7)
 #define IMGSENSOR_PIX_FMT_NV12             (8)
 #define IMGSENSOR_PIX_FMT_ENTROPY          (9)
+#define IMGSENSOR_PIX_FMT_H264             (10)
+#define IMGSENSOR_PIX_FMT_HEVC             (11)
 
 /* Method access helper macros */
 

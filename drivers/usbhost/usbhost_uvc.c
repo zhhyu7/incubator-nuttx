@@ -1393,8 +1393,7 @@ uvc_imgdata_validate_frame_setting(FAR struct imgdata_s *data,
 }
 
 static bool uvc_deliver_frame(FAR struct uvc_dev_s *dev,
-                              size_t data_size,
-                              FAR struct timeval *timestamp)
+                              size_t data_size)
 {
   FAR struct uvc_priv_s *priv = dev->device;
 
@@ -1444,8 +1443,13 @@ static bool uvc_deliver_frame(FAR struct uvc_dev_s *dev,
 
   if (dev->capture_callback)
     {
-      int ret = dev->capture_callback(0, data_size, timestamp,
-                                      dev->capture_arg);
+      imgdata_frame_info_t info;
+      int ret;
+
+      clock_gettime(CLOCK_REALTIME, &info.ts);
+      info.size  = data_size;
+      info.flags = 0;
+      ret = dev->capture_callback(0, &info, dev->capture_arg);
       if (ret == OK)
         {
           return true;
@@ -1514,20 +1518,21 @@ static void uvc_iso_complete_frame(FAR struct uvc_dev_s *dev)
 
 static void uvc_iso_deliver_completed_frame(FAR struct uvc_dev_s *dev)
 {
-  struct timeval ts;
-
-  gettimeofday(&ts, NULL);
-
   if (dev->iso_frame_dest == NULL)
     {
       if (dev->capture_callback)
         {
-          dev->capture_callback(0, 0, &ts, dev->capture_arg);
+          imgdata_frame_info_t info;
+
+          clock_gettime(CLOCK_REALTIME, &info.ts);
+          info.size  = 0;
+          info.flags = 0;
+          dev->capture_callback(0, &info, dev->capture_arg);
         }
     }
   else if (dev->iso_frame_complete_size != 0)
     {
-      uvc_deliver_frame(dev, dev->iso_frame_complete_size, &ts);
+      uvc_deliver_frame(dev, dev->iso_frame_complete_size);
     }
 
   dev->iso_frame_complete_size = 0;
@@ -1991,9 +1996,12 @@ static int uvc_capture_thread(int argc, FAR char *argv[])
 
               if (dev->capture_callback)
                 {
-                  struct timeval tv;
-                  gettimeofday(&tv, NULL);
-                  dev->capture_callback(0, 0, &tv, dev->capture_arg);
+                  imgdata_frame_info_t info;
+
+                  clock_gettime(CLOCK_REALTIME, &info.ts);
+                  info.size  = 0;
+                  info.flags = 0;
+                  dev->capture_callback(0, &info, dev->capture_arg);
                 }
 
               uvc_iso_restart(dev);

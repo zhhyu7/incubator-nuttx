@@ -467,8 +467,7 @@ reload:
         }
       else
         {
-          struct timespec ts;
-          struct timeval tv;
+          imgdata_frame_info_t info;
 
           DEBUGASSERT(ret == priv->buf_size);
 
@@ -477,9 +476,10 @@ reload:
               return 0;
             }
 
-          clock_systime_timespec(&ts);
-          TIMESPEC_TO_TIMEVAL(&tv, &ts);
-          priv->capture_cb(0, priv->buf_size, &tv, priv->capture_arg);
+          clock_systime_timespec(&info.ts);
+          info.size  = priv->buf_size;
+          info.flags = 0;
+          priv->capture_cb(0, &info, priv->capture_arg);
         }
     }
 }

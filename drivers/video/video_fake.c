@@ -1357,6 +1357,7 @@ static void video_fake_worker(FAR void *arg)
   FAR struct video_fake_s *priv = arg;
   imgdata_capture_t callback;
   FAR void *callback_arg;
+  imgdata_frame_info_t info;
   FAR uint8_t *buffer;
   uint32_t size;
   uint32_t length = 0;
@@ -1366,8 +1367,6 @@ static void video_fake_worker(FAR void *arg)
   clock_t since_base;
   uint8_t result = 0;
   clock_t now;
-  struct timespec capture_time;
-  struct timeval timestamp;
   irqstate_t flags;
   int ret = OK;
 
@@ -1428,9 +1427,10 @@ static void video_fake_worker(FAR void *arg)
         }
     }
 
-  clock_systime_timespec(&capture_time);
-  TIMESPEC_TO_TIMEVAL(&timestamp, &capture_time);
-  callback(result, length, &timestamp, callback_arg);
+  clock_systime_timespec(&info.ts);
+  info.size  = length;
+  info.flags = 0;
+  callback(result, &info, callback_arg);
 
   flags = spin_lock_irqsave_nopreempt(&priv->lock);
   if (priv->running)
