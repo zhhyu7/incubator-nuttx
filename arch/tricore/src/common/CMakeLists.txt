@@ -105,8 +105,6 @@ if(CONFIG_MCAL_UART)
   list(APPEND SRCS tricore_uart_mcal.c)
 endif()
 
-set(IFXFLAGS -DIFX_CFG_EXTEND_TRAP_HOOKS)
-
 target_sources(arch PRIVATE ${SRCS})
 nuttx_add_aux_library(STARTUP_OBJS crt0.c)
 target_compile_options(
@@ -114,8 +112,6 @@ target_compile_options(
   PRIVATE
     $<GENEX_EVAL:$<TARGET_PROPERTY:nuttx_global,NUTTX_ELF_APP_COMPILE_OPTIONS>>)
 target_sources(nuttx PRIVATE tricore_doirq.c tricore_vectors.c)
-target_compile_options(arch PRIVATE ${IFXFLAGS})
-target_compile_options(nuttx PRIVATE ${IFXFLAGS})
 target_include_directories(
   nuttx SYSTEM PRIVATE ${CMAKE_SOURCE_DIR}/include ${CMAKE_BINARY_DIR}/include
                        ${CMAKE_BINARY_DIR}/include_arch)
