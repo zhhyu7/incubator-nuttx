@@ -277,6 +277,17 @@ static int nx_vioctl(int fd, int req, va_list ap)
 
 ssize_t ioctl_arglen(int cmd, unsigned long arg)
 {
+  /* A NULL arg points at no buffer, so there is nothing to copy whatever
+   * the command is.  Callers marshalling the argument for a remote ioctl
+   * would otherwise copy from, or into, a NULL pointer (e.g. the FIONBIO
+   * that file_dup2() issues).
+   */
+
+  if (arg == 0)
+    {
+      return 0;
+    }
+
   switch (cmd)
     {
       case FIONBIO:
@@ -348,11 +359,6 @@ ssize_t ioctl_arglen(int cmd, unsigned long arg)
           FAR const struct mouse_vendor_cmd_s *req =
             (FAR const struct mouse_vendor_cmd_s *)(uintptr_t)arg;
 
-          if (req == NULL)
-            {
-              return -EINVAL;
-            }
-
           return ioctl_arglen_add(sizeof(*req), req->len);
         }
 
@@ -361,11 +367,6 @@ ssize_t ioctl_arglen(int cmd, unsigned long arg)
         {
           FAR const struct rpmsgdev_private_ioctl *req =
             (FAR const struct rpmsgdev_private_ioctl *)(uintptr_t)arg;
-
-          if (req == NULL)
-            {
-              return -EINVAL;
-            }
 
           return ioctl_arglen_add(sizeof(*req), req->len);
         }
@@ -386,14 +387,8 @@ ssize_t ioctl_arglen(int cmd, unsigned long arg)
 #endif
       case MTDIOC_SWITCH_BOOT:
         {
-          size_t len;
+          size_t len = strnlen((FAR const char *)(uintptr_t)arg, SSIZE_MAX);
 
-          if (arg == 0)
-            {
-              return -EINVAL;
-            }
-
-          len = strnlen((FAR const char *)(uintptr_t)arg, SSIZE_MAX);
           return ioctl_arglen_add(1, len);
         }
 

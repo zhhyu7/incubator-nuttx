@@ -61,10 +61,11 @@ header:
 * A positive result is the number of bytes in the contiguous buffer pointed
   to by ``arg``.
 * Zero means the argument is an immediate value or is unused.  No argument
-  buffer should be copied.
+  buffer should be copied.  A NULL ``arg`` short-circuits to zero without
+  inspecting the command, because there is nothing to copy either way.
 * A negative result is a negated errno: ``-ENOTTY`` for an unsupported
-  command, ``-EINVAL`` for a missing variable-size header or string, or
-  ``-EOVERFLOW`` when the size cannot be represented by ``ssize_t``.
+  command, or ``-EOVERFLOW`` when the size cannot be represented by
+  ``ssize_t``.
 
 Variable-size commands require an accessible input header containing the
 length, or a NUL-terminated string.  The helper checks size arithmetic; it

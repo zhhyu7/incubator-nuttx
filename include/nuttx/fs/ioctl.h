@@ -924,7 +924,8 @@ extern "C"
  *
  * Returned Value:
  *   >0: arg points to a buffer of this size.
- *    0: arg is passed by value or ignored, with no buffer to copy.
+ *    0: arg is passed by value or ignored, with no buffer to copy.  A NULL
+ *       arg short-circuits to this without inspecting cmd.
  *   <0: Negated errno for an unsupported command or an invalid size.
  *   The result excludes transport headers and does not validate memory
  *   accessibility or guarantee that a particular transport supports cmd.
