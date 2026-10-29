@@ -808,8 +808,8 @@ estimate_next_capture_state(FAR capture_mng_t *cmng,
     }
 }
 
-static void convert_to_imgdatafmt(FAR video_format_t *video,
-                                  FAR imgdata_format_t *data)
+static int convert_to_imgdatafmt(FAR video_format_t *video,
+                                 FAR imgdata_format_t *data)
 {
   ASSERT(video && data);
 
@@ -845,14 +845,19 @@ static void convert_to_imgdatafmt(FAR video_format_t *video,
         data->pixelformat = IMGDATA_PIX_FMT_ENTROPY;
         break;
 
-      default: /* V4L2_PIX_FMT_JPEG_WITH_SUBIMG */
+      case V4L2_PIX_FMT_JPEG_WITH_SUBIMG:
         data->pixelformat = IMGDATA_PIX_FMT_JPEG_WITH_SUBIMG;
         break;
+
+      default:
+        return -EINVAL;
     }
+
+  return OK;
 }
 
-static void convert_to_imgsensorfmt(FAR video_format_t *video,
-                                    FAR imgsensor_format_t *sensor)
+static int convert_to_imgsensorfmt(FAR video_format_t *video,
+                                   FAR imgsensor_format_t *sensor)
 {
   ASSERT(video && sensor);
 
@@ -888,10 +893,15 @@ static void convert_to_imgsensorfmt(FAR video_format_t *video,
         sensor->pixelformat = IMGSENSOR_PIX_FMT_ENTROPY;
         break;
 
-      default: /* V4L2_PIX_FMT_JPEG_WITH_SUBIMG */
+      case V4L2_PIX_FMT_JPEG_WITH_SUBIMG:
         sensor->pixelformat = IMGSENSOR_PIX_FMT_JPEG_WITH_SUBIMG;
         break;
+
+      default:
+        return -EINVAL;
     }
+
+  return OK;
 }
 
 static void convert_to_imgdatainterval(FAR struct v4l2_fract *video,
@@ -994,16 +1004,27 @@ static int start_capture(FAR struct capture_mng_s *cmng,
   imgsensor_interval_t si;
   imgsensor_stream_type_t stream_type;
   int ret;
+  int i;
 
   ASSERT(fmt && interval && cmng->imgsensor && cmng->imgdata);
 
   get_clipped_format(nr_fmt, fmt, clip, c_fmt);
 
-  convert_to_imgdatafmt(&c_fmt[CAPTURE_FMT_MAIN], &df[IMGDATA_FMT_MAIN]);
-  convert_to_imgdatafmt(&c_fmt[CAPTURE_FMT_SUB], &df[IMGDATA_FMT_SUB]);
+  for (i = 0; i < nr_fmt; i++)
+    {
+      ret = convert_to_imgdatafmt(&c_fmt[i], &df[i]);
+      if (ret == OK)
+        {
+          ret = convert_to_imgsensorfmt(&fmt[i], &sf[i]);
+        }
+
+      if (ret != OK)
+        {
+          return ret;
+        }
+    }
+
   convert_to_imgdatainterval(interval, &di);
-  convert_to_imgsensorfmt(&fmt[CAPTURE_FMT_MAIN], &sf[IMGSENSOR_FMT_MAIN]);
-  convert_to_imgsensorfmt(&fmt[CAPTURE_FMT_SUB], &sf[IMGSENSOR_FMT_SUB]);
   convert_to_imgsensorinterval(interval, &si);
 
   stream_type = type == V4L2_BUF_TYPE_VIDEO_CAPTURE ?
@@ -1523,6 +1544,7 @@ static int validate_frame_setting(FAR capture_mng_t *cmng,
   imgdata_interval_t di;
   imgsensor_interval_t si;
   int ret;
+  int i;
 
   ASSERT(vfmt && interval && cmng->imgsensor && cmng->imgdata);
 
@@ -1532,11 +1554,21 @@ static int validate_frame_setting(FAR capture_mng_t *cmng,
 
   get_clipped_format(nr_fmt, vfmt, clip, c_fmt);
 
-  convert_to_imgdatafmt(&c_fmt[CAPTURE_FMT_MAIN], &df[IMGDATA_FMT_MAIN]);
-  convert_to_imgdatafmt(&c_fmt[CAPTURE_FMT_SUB], &df[IMGDATA_FMT_SUB]);
+  for (i = 0; i < nr_fmt; i++)
+    {
+      ret = convert_to_imgdatafmt(&c_fmt[i], &df[i]);
+      if (ret == OK)
+        {
+          ret = convert_to_imgsensorfmt(&vfmt[i], &sf[i]);
+        }
+
+      if (ret != OK)
+        {
+          return ret;
+        }
+    }
+
   convert_to_imgdatainterval(interval, &di);
-  convert_to_imgsensorfmt(&vfmt[CAPTURE_FMT_MAIN], &sf[IMGSENSOR_FMT_MAIN]);
-  convert_to_imgsensorfmt(&vfmt[CAPTURE_FMT_SUB], &sf[IMGSENSOR_FMT_SUB]);
   convert_to_imgsensorinterval(interval, &si);
 
   ret = IMGSENSOR_VALIDATE_FRAME_SETTING(cmng->imgsensor,
@@ -2220,6 +2252,8 @@ static int complete_capture(uint8_t err_code,
       0
     };
 
+  int i;
+
   flags = spin_lock_irqsave_nopreempt(&cmng->lock);
 
   buf_type = cmng->still_inf.state == CAPTURE_STATE_CAPTURE ?
@@ -2300,10 +2334,13 @@ set_next_buf:
                          type_inf->fmt,
                          &type_inf->clip,
                          c_fmt);
-      convert_to_imgdatafmt(&c_fmt[CAPTURE_FMT_MAIN],
-                            &df[IMGDATA_FMT_MAIN]);
-      convert_to_imgdatafmt(&c_fmt[CAPTURE_FMT_SUB],
-                            &df[IMGDATA_FMT_SUB]);
+
+      /* The format was accepted at STREAMON, so it still converts. */
+
+      for (i = 0; i < type_inf->nr_fmt; i++)
+        {
+          DEBUGVERIFY(convert_to_imgdatafmt(&c_fmt[i], &df[i]));
+        }
 
       IMGDATA_SET_BUF(cmng->imgdata,
         type_inf->nr_fmt, df,
