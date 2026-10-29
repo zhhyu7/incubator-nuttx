@@ -1761,7 +1761,7 @@ static int rpmsg_crypto_kprocess_handler(FAR struct rpmsg_endpoint *ept,
                 memcpy(krp->krp_param[2].crp_p,
                        msg->buf + krp->krp_param[0].crp_nbits / 8 +
                                   krp->krp_param[1].crp_nbits / 8,
-                                  krp->krp_param[3].crp_nbits / 8);
+                                  krp->krp_param[2].crp_nbits / 8);
               }
 
             break;
