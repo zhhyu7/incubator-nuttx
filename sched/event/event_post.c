@@ -68,7 +68,7 @@
 int nxevent_post(FAR nxevent_t *event, nxevent_mask_t events,
                  nxevent_flags_t eflags)
 {
-  nxevent_mask_t clear = 0u;
+  nxevent_mask_t clear = 0ul;
   FAR nxevent_wait_t *wait;
   FAR nxevent_wait_t *tmp;
   irqstate_t flags;
@@ -86,11 +86,11 @@ int nxevent_post(FAR nxevent_t *event, nxevent_mask_t events,
 
       if (eflags & NXEVENT_POST_SET)
         {
-          event->events = events ? events : ~0u;
+          event->events = events ? events : ~0ul;
         }
       else
         {
-          event->events |= events ? events : ~0u;
+          event->events |= events ? events : ~0ul;
         }
 
       if (!list_is_empty(&event->list))

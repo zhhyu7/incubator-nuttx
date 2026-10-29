@@ -77,14 +77,14 @@ nxevent_mask_t nxevent_tickwait_wait(FAR nxevent_t *event,
 
   if (!events)
     {
-      events = ~0u;
+      events = ~0ul;
     }
 
   flags = spin_lock_irqsave(&event->lock);
 
   if (eflags & NXEVENT_WAIT_RESET)
     {
-      event->events = 0u;
+      event->events = 0ul;
     }
 
   /* Fetch for any event */
@@ -112,7 +112,7 @@ nxevent_mask_t nxevent_tickwait_wait(FAR nxevent_t *event,
 
   else if (!delay)
     {
-      events = 0u;
+      events = 0ul;
     }
 
   /* Let's wait for the event to arrive */
@@ -156,7 +156,7 @@ nxevent_mask_t nxevent_tickwait_wait(FAR nxevent_t *event,
               list_delete(&(wait->node));
             }
 
-          events = 0u;
+          events = 0ul;
         }
     }
 
