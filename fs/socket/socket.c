@@ -108,10 +108,12 @@ static DEFINE_PER_CPU_BMP(struct inode, g_sock_inode) =
 #    define CONFIG_FS_MAX_SOCKETS 0 /* 0 means no limit */
 #  endif
 
-MEMPOOL_DEFINE_WITH_ALLOC(g_socket_mempool, sizeof(struct socket),
-                          CONFIG_FS_PREALLOC_SOCKETS, CONFIG_FS_MAX_SOCKETS,
-                          CONFIG_FS_ALLOC_SOCKETS,
-                          fs_heap_alloc_callback, fs_heap_free_callback);
+MEMPOOL_DEFINE_BMP_WITH_ALLOC(g_socket_mempool, sizeof(struct socket),
+                              CONFIG_FS_PREALLOC_SOCKETS,
+                              CONFIG_FS_MAX_SOCKETS,
+                              CONFIG_FS_ALLOC_SOCKETS,
+                              fs_heap_alloc_callback, fs_heap_free_callback);
+#define g_socket_mempool this_cpu_var_bmp(g_socket_mempool)
 #endif
 
 /****************************************************************************

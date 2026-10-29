@@ -162,6 +162,18 @@
                                                  MM_ALIGN, \
                                                  NULL, NULL)
 
+#ifdef CONFIG_BMP
+#  define MEMPOOL_DEFINE_BMP_WITH_ALLOC(name, blksize, prealloc, maxalloc, \
+                                        dynalloc, alloc_func, free_func) \
+  MEMPOOL_DEFINE_BMP_WITH_THROTTLE_ALIGN_SECTION(name, NULL, blksize, \
+                                                 prealloc, maxalloc, \
+                                                 dynalloc, 0, \
+                                                 MM_ALIGN, \
+                                                 alloc_func, free_func)
+#else
+#  define MEMPOOL_DEFINE_BMP_WITH_ALLOC MEMPOOL_DEFINE_WITH_ALLOC
+#endif
+
 /****************************************************************************
  * Public Types
  ****************************************************************************/

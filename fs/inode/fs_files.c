@@ -738,10 +738,11 @@ int fdlist_copy(FAR struct fdlist *plist, FAR struct fdlist *clist,
 #    define CONFIG_FS_MAX_FILES 0 /* 0 means no limit */
 #  endif
 
-MEMPOOL_DEFINE_WITH_ALLOC(g_file_mempool, sizeof(struct file),
-                          CONFIG_FS_PREALLOC_FILES, CONFIG_FS_MAX_FILES,
-                          CONFIG_FS_ALLOC_FILES,
-                          fs_heap_alloc_callback, fs_heap_free_callback);
+MEMPOOL_DEFINE_BMP_WITH_ALLOC(g_file_mempool, sizeof(struct file),
+                              CONFIG_FS_PREALLOC_FILES, CONFIG_FS_MAX_FILES,
+                              CONFIG_FS_ALLOC_FILES,
+                              fs_heap_alloc_callback, fs_heap_free_callback);
+#define g_file_mempool this_cpu_var_bmp(g_file_mempool)
 
 FAR struct file *file_allocate(void)
 {
