@@ -46,6 +46,8 @@
 
 #if CONFIG_IOB_EXTRA_HEADS > 0
 /* Head pools carry no payload-size tag (priv = NULL) and no throttle.
+ * The block holds a bare struct iob_s whose io_data points at external
+ * memory, so the payload argument of IOB_ALIGN_SIZE() is 0.
  * The variadic last argument is forwarded as the section name so each
  * CPU's head pool can live in the same memory section as its level-1
  * data pool when CONFIG_IOB_SECTION1_CPUn (or CONFIG_IOB_SECTION) is
@@ -54,9 +56,10 @@
 
 #  define IOBPOOL_HEAD_DEFINE(name, blkcnt, ...) \
   MEMPOOL_DEFINE_WITH_THROTTLE_ALIGN_SECTION(name, NULL, \
-                               IOB_ALIGN_SIZE(sizeof(struct iob_s)), \
-                               blkcnt, 0, 0, 0, IOB_ALIGNMENT, \
-                               NULL, NULL, ##__VA_ARGS__)
+                                             IOB_ALIGN_SIZE(0), \
+                                             blkcnt, 0, 0, 0, \
+                                             IOB_ALIGNMENT, \
+                                             NULL, NULL, ##__VA_ARGS__)
 #endif
 
 /****************************************************************************
