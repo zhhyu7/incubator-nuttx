@@ -913,6 +913,7 @@ static int rpmsgmtd_geometry_handler(FAR struct rpmsg_endpoint *ept,
   FAR struct rpmsgmtd_cookie_s *cookie =
       (FAR struct rpmsgmtd_cookie_s *)(uintptr_t)header->cookie;
 
+  cookie->result = header->result;
   if (cookie->result >= 0)
     {
       memcpy(cookie->data, data, len);
@@ -950,6 +951,7 @@ static int rpmsgmtd_ioctl_handler(FAR struct rpmsg_endpoint *ept,
       (FAR struct rpmsgmtd_cookie_s *)(uintptr_t)header->cookie;
   FAR struct rpmsgmtd_ioctl_s *rsp = data;
 
+  cookie->result = header->result;
   if (cookie->result >= 0 && rsp->arglen > 0)
     {
       memcpy(cookie->data, (FAR void *)rsp->buf, rsp->arglen);
