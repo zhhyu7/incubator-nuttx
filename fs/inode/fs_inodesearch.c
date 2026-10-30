@@ -533,6 +533,7 @@ static int _inode_search(FAR struct inode_search_s *desc)
 
               if (INODE_IS_SOFTLINK(inode))
                 {
+                  FAR char *outer;
                   int status;
 
                   /* If this intermediate inode in the is a soft link, then
@@ -541,6 +542,14 @@ static int _inode_search(FAR struct inode_search_s *desc)
                    * instead.
                    */
 
+                  /* 'name' points into desc->buffer.  Detach it so the
+                   * nested search cannot release and reuse it; the nested
+                   * search leaves its own buffer in desc->buffer.
+                   */
+
+                  outer = desc->buffer;
+                  desc->buffer = NULL;
+
                   status = _inode_linktarget(inode, desc);
                   if (status < 0)
                     {
@@ -548,6 +557,8 @@ static int _inode_search(FAR struct inode_search_s *desc)
                        * does not exist.
                        */
 
+                      RELEASE_SEARCH(desc);
+                      desc->buffer = outer;
                       ret = status;
                       break;
                     }
@@ -583,13 +594,16 @@ static int _inode_search(FAR struct inode_search_s *desc)
                                   buffer = lib_get_tempbuffer(PATH_MAX);
                                   if (buffer == NULL)
                                     {
+                                      RELEASE_SEARCH(desc);
+                                      desc->buffer = outer;
                                       ret = -ENOMEM;
                                     }
                                   else
                                     {
                                       snprintf(buffer, PATH_MAX, "%s/%s",
                                                desc->relpath, name);
-                                      lib_put_tempbuffer(desc->buffer);
+                                      RELEASE_SEARCH(desc);
+                                      lib_put_tempbuffer(outer);
                                       desc->buffer = buffer;
                                       relpath = buffer;
                                       ret = OK;
@@ -597,6 +611,8 @@ static int _inode_search(FAR struct inode_search_s *desc)
                                 }
                               else
                                 {
+                                  RELEASE_SEARCH(desc);
+                                  desc->buffer = outer;
                                   relpath = name;
                                 }
 
@@ -607,6 +623,9 @@ static int _inode_search(FAR struct inode_search_s *desc)
 
                           inode = newnode;
                         }
+
+                      RELEASE_SEARCH(desc);
+                      desc->buffer = outer;
                     }
                 }
 #endif
