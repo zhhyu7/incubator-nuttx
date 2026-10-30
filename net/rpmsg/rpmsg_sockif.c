@@ -565,15 +565,56 @@ static inline void rpmsg_socket_destroy_ept(
 static void rpmsg_socket_ns_bound(struct rpmsg_endpoint *ept)
 {
   FAR struct rpmsg_socket_conn_s *conn = ept->priv;
-  struct rpmsg_socket_sync_s msg;
+  FAR struct rpmsg_socket_sync_s *msg;
+  uint32_t len = sizeof(*msg);
+  irqstate_t flags;
 
-  msg.cmd  = RPMSG_SOCKET_CMD_SYNC;
-  msg.size = circbuf_size(&conn->recvbuf);
-  msg.pid  = nxsched_getpid();
-  msg.uid  = getuid();
-  msg.gid  = getgid();
+  if (!ept->rdev)
+    {
+      return;
+    }
 
-  rpmsg_send(&conn->ept, &msg, sizeof(msg));
+  /* Reserve the tx buffer without holding recvlock, since it may block
+   * waiting for a free vring buffer.
+   */
+
+  msg = rpmsg_get_tx_payload_buffer(ept, &len, true);
+  if (msg == NULL)
+    {
+      return;
+    }
+
+  DEBUGASSERT(len >= sizeof(*msg));
+
+  msg->cmd = RPMSG_SOCKET_CMD_SYNC;
+  msg->pid = nxsched_getpid();
+  msg->uid = getuid();
+  msg->gid = getgid();
+
+  flags = spin_lock_irqsave(&conn->recvlock);
+
+  /* Runs in the rx callback context, where a blocking rpmsg_send() would
+   * spin in is_rpmsg_ept_ready() for the full 15s RPMSG_TICK_COUNT timeout
+   * and stall every inbound message on this core.  Keep the check and the
+   * nocopy send atomic against the endpoint being unregistered instead.
+   *
+   * conn->unbind is intentionally not checked: a stale flag left by an
+   * earlier NS_DESTROY is cleared only when a SYNC is received, so bailing
+   * out on it would leave a reconnecting peer without our recvbuf size.
+   */
+
+  if (!is_rpmsg_ept_ready(ept))
+    {
+      spin_unlock_irqrestore(&conn->recvlock, flags);
+      rpmsg_release_tx_buffer(ept, msg);
+      return;
+    }
+
+  msg->size = circbuf_size(&conn->recvbuf);
+  rpmsg_send_offchannel_nocopy(ept, ept->addr, ept->dest_addr,
+                               msg, sizeof(*msg));
+
+  spin_unlock_irqrestore(&conn->recvlock, flags);
 }
 
 static void rpmsg_socket_ns_unbind(FAR struct rpmsg_endpoint *ept)
