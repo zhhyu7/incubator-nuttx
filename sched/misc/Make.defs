@@ -22,6 +22,10 @@
 
 CSRCS += assert.c panic_notifier.c reboot_notifier.c
 
+ifeq ($(CONFIG_SMP),y)
+CSRCS += cpu_notifier.c
+endif
+
 ifeq ($(CONFIG_ARCH_DEADLOCKDUMP),y)
 CSRCS += deadlock.c
 endif

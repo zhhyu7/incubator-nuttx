@@ -32,6 +32,7 @@
 #include <debug.h>
 
 #include <nuttx/arch.h>
+#include <nuttx/cpu_notifier.h>
 #include <nuttx/kmalloc.h>
 #include <nuttx/sched.h>
 #include <nuttx/sched_note.h>
@@ -83,6 +84,14 @@ void nx_idle_trampoline(void)
     }
 
   sched_unlock();
+
+  /* Tell the subscribers that this CPU is up, from the CPU itself so they
+   * can reach hardware that is banked per core.  The architecture has
+   * initialised this CPU's interrupt controller by now, so an interrupt
+   * enabled from here sticks.
+   */
+
+  cpu_notifier_call_chain(CPU_ONLINE, NULL);
 
   /* Enter the IDLE loop */
 
