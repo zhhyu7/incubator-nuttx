@@ -24,6 +24,7 @@
  * Included Files
  ****************************************************************************/
 
+#include <nuttx/cpu_notifier.h>
 #include <nuttx/nuttx.h>
 #include <nuttx/reboot_notifier.h>
 #include <nuttx/rptun/rptun.h>
@@ -50,6 +51,9 @@ struct rptun_bmp_dev_s
   int                     irq_trigger;
   cpu_set_t               cpuset;
   struct notifier_block   rebootnb;
+#ifdef CONFIG_SMP
+  struct notifier_block   cpunb;
+#endif
 };
 
 /****************************************************************************
@@ -153,11 +157,25 @@ static int rptun_bmp_notify(FAR struct rptun_dev_s *dev, uint32_t vqid)
   return 0;
 }
 
-static int rptun_bmp_set_irq(FAR void *arg)
-{
-  FAR struct rptun_bmp_dev_s *priv = arg;
+#ifdef CONFIG_SMP
+/****************************************************************************
+ * Name: rptun_bmp_cpu_notifier
+ *
+ * Description:
+ *   Bring the doorbell of a core that has just come online into the state
+ *   the tunnel asks for.  Runs on that core, which is what makes the
+ *   per-core enable land in the right place.
+ *
+ ****************************************************************************/
 
-  if (priv->callback)
+static int rptun_bmp_cpu_notifier(FAR struct notifier_block *nb,
+                                  unsigned long action, FAR void *data)
+{
+  FAR struct rptun_bmp_dev_s *priv;
+
+  priv = container_of(nb, struct rptun_bmp_dev_s, cpunb);
+
+  if (priv->callback != NULL)
     {
       up_enable_irq(priv->irq_event);
     }
@@ -168,29 +186,42 @@ static int rptun_bmp_set_irq(FAR void *arg)
 
   return 0;
 }
+#endif
 
 static int rptun_bmp_register_callback(FAR struct rptun_dev_s *dev,
                                        rptun_callback_t callback,
                                        FAR void *arg)
 {
   FAR struct rptun_bmp_dev_s *priv = (FAR struct rptun_bmp_dev_s *)dev;
-#ifdef CONFIG_SMP
-  cpu_set_t cpuset = (1 << CPU_SETSIZE) - 1;
-#endif
 
   priv->callback = callback;
   priv->arg      = arg;
 
 #ifdef CONFIG_SMP
   /* The doorbell SGI is enabled per core: up_enable_irq() writes the
-   * calling core's GICR_ISENABLER0 and affects that core only.  Enable it
-   * on every core so delivery does not depend on which core the sender
-   * targets, nor on which core happens to run this registration.
+   * calling core's GICR_ISENABLER0 and affects that core only, so every
+   * core has to run it for delivery to be independent of which core the
+   * sender targets and of which core runs this registration.
+   *
+   * Subscribing to the CPU chain covers both halves of that:
+   * register_cpu_notifier() runs the callback on the cores that are online,
+   * and the chain runs it on each core that starts later.  The late cores
+   * cannot be served by a broadcast made here, because whether a
+   * redistributor keeps an SGI pending while its core is powered down is
+   * implementation defined: BES1701 drops it where QEMU's virt GIC latches
+   * it.
    */
 
-  nxsched_cpu_call(cpuset, rptun_bmp_set_irq, priv);
+  register_cpu_notifier(&priv->cpunb);
 #else
-  rptun_bmp_set_irq(priv);
+  if (callback != NULL)
+    {
+      up_enable_irq(priv->irq_event);
+    }
+  else
+    {
+      up_disable_irq(priv->irq_event);
+    }
 #endif
 
   return 0;
@@ -252,6 +283,10 @@ int rptun_bmp_init(FAR const char *cpuname, bool master,
 
   dev->rebootnb.notifier_call = rptun_bmp_notifier;
   register_reboot_notifier(&dev->rebootnb);
+
+#ifdef CONFIG_SMP
+  dev->cpunb.notifier_call = rptun_bmp_cpu_notifier;
+#endif
 
   ret = irq_attach(dev->irq_event,
                    rptun_bmp_interrupt, dev);
