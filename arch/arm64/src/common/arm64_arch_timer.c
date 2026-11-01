@@ -300,7 +300,12 @@ struct oneshot_lowerhalf_s *arm64_oneshot_initialize(void)
   return priv;
 }
 
-void up_timer_initialize(void)
+/* Weak: a chip that owns other timers defines its own up_timer_initialize()
+ * to choose which one drives the alarm, and calls arm64_oneshot_initialize()
+ * from there for the generic timer.
+ */
+
+void weak_function up_timer_initialize(void)
 {
   up_alarm_set_lowerhalf(arm64_oneshot_initialize());
 }
