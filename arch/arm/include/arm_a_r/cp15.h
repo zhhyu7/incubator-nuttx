@@ -324,11 +324,12 @@
 /* Multiprocessor Affinity Register (MPIDR): CRn=c0, opc1=0, CRm=c0, opc2=5 */
 
 #ifndef CONFIG_ARCH_CORTEXA55_AARCH32
-#define MPIDR_CPUID_SHIFT   (0)       /* Bits 0-2: CPU ID */
+#define MPIDR_CPUID_AFFLVL  0       /* CPU ID is in Aff0[2:0]. */
 #else
-#define MPIDR_CPUID_SHIFT   (8)       /* A55 CPU ID is in Aff1[2:0]. */
+#define MPIDR_CPUID_AFFLVL  1       /* CPU ID is in Aff1[2:0]. */
 #endif
 
+#define MPIDR_CPUID_SHIFT   (MPIDR_CPUID_AFFLVL * 8)
 #define MPIDR_CPUID_MASK    (7 << MPIDR_CPUID_SHIFT)
 #  define MPIDR_CPUID_CPU0  (0 << MPIDR_CPUID_SHIFT)
 #  define MPIDR_CPUID_CPU1  (1 << MPIDR_CPUID_SHIFT)
@@ -374,11 +375,17 @@
 #define MPID_TO_CORE(mpid, aff_level) \
   (((mpid) >> MPIDR_AFF ## aff_level ## _SHIFT) & MPIDR_AFFLVL_MASK)
 
+#define MPIDR_AFF_SHIFT(aff_level) \
+  MPIDR_AFF_SHIFT_(aff_level)
+
+#define MPIDR_AFF_SHIFT_(aff_level) \
+  MPIDR_AFF ## aff_level ## _SHIFT
+
 #define CORE_TO_MPID(core, aff_level) \
   ({ \
     uint64_t __mpidr = GET_MPIDR(); \
-    __mpidr &= ~(MPIDR_AFFLVL_MASK << MPIDR_AFF ## aff_level ## _SHIFT); \
-    __mpidr |= (core << MPIDR_AFF ## aff_level ## _SHIFT); \
+    __mpidr &= ~(MPIDR_AFFLVL_MASK << MPIDR_AFF_SHIFT(aff_level)); \
+    __mpidr |= (core << MPIDR_AFF_SHIFT(aff_level)); \
     __mpidr &= MPIDR_ID_MASK; \
     __mpidr; \
   })

@@ -1184,7 +1184,7 @@ int arm_gic_v2m_initialize(void);
 #ifdef CONFIG_SMP
 static inline uint32_t arm_get_mpid(int cpu)
 {
-  return CORE_TO_MPID(cpu, 0);
+  return CORE_TO_MPID(cpu, MPIDR_CPUID_AFFLVL);
 }
 #else
 #  define arm_get_mpid(cpu) ((void)(cpu), GET_MPIDR())
