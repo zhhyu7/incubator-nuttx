@@ -1643,6 +1643,25 @@ static bool is_compressed_format(uint32_t pixelformat)
     }
 }
 
+/* ENUM_FMT reports JPEG and ENTROPY as compressed too, while
+ * is_compressed_format() leaves them croppable.
+ */
+
+static uint32_t get_fmtdesc_flags(uint32_t pixelformat)
+{
+  switch (pixelformat)
+    {
+      case V4L2_PIX_FMT_JPEG:
+      case V4L2_PIX_FMT_ENTROPY:
+      case V4L2_PIX_FMT_H264:
+      case V4L2_PIX_FMT_HEVC:
+        return V4L2_FMT_FLAG_COMPRESSED;
+
+      default:
+        return 0;
+    }
+}
+
 #ifdef CONFIG_FS_FILEMAP
 static size_t get_heapsize(FAR capture_type_inf_t *type_inf)
 {
@@ -4025,8 +4044,7 @@ static int capture_enum_fmt(FAR struct file *filep,
           strlcpy(f->description,
                   cmng->imgsensor->fmtdescs[f->index].description,
                   sizeof(f->description));
-          f->flags = is_compressed_format(f->pixelformat) ?
-                       V4L2_FMT_FLAG_COMPRESSED : 0;
+          f->flags = get_fmtdesc_flags(f->pixelformat);
         }
     }
   else
@@ -4037,6 +4055,7 @@ static int capture_enum_fmt(FAR struct file *filep,
         }
 
       f->pixelformat = V4L2_PIX_FMT_UYVY;
+      f->flags = 0;
     }
 
   return 0;

@@ -112,7 +112,8 @@ typedef struct imgdata_frame_info_s
  *
  * Parameters:
  *   result - 0 on success, non-zero error code on failure
- *   info   - Description of the frame
+ *   info   - Description of the frame, never NULL; a dropped frame is
+ *            reported with info->size == 0
  *   arg    - Opaque argument passed to start_capture
  */
 
