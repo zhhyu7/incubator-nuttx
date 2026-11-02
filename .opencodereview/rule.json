@@ -16,7 +16,7 @@
       "merge_system_rule": false
     },
     {
-      "path": "**/Kconfig*",
+      "path": "**/{Kconfig*,defconfig}",
       "rule": ".opencodereview/rules/kconfig.md",
       "merge_system_rule": false
     },
