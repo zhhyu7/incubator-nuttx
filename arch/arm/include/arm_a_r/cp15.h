@@ -35,6 +35,7 @@
  ****************************************************************************/
 
 #include <nuttx/config.h>
+#include <nuttx/macro.h>
 
 /****************************************************************************
  * Pre-processor Definitions
@@ -255,60 +256,60 @@
 #define CP15_MAINTLBPA(r)  _CP15(5, r, c15, c6, 2)  /* Main TLB PA register (Cortex-A9) */
 #define CP15_MAINTLBAT(r)  _CP15(5, r, c15, c7, 2)  /* Main TLB Attribute register (Cortex-A9) */
 
-#define CP15_SET(reg, value)            \
-  do                                    \
-    {                                   \
-      __asm__ __volatile__              \
-      (                                 \
-        "mcr " CP15_ ## reg(0) "\n"     \
-        :: "r"(value): "memory"         \
-      );                                \
-    }                                   \
-  while(0)                              \
+#define CP15_SET(reg, value)                       \
+  do                                               \
+    {                                              \
+      __asm__ __volatile__                         \
+      (                                            \
+        "mcr " CONCATENATE(CP15_, reg)(0) "\n"     \
+        :: "r"(value): "memory"                    \
+      );                                           \
+    }                                              \
+  while(0)                                         \
 
-#define CP15_SET2(reg, op, value)       \
-  do                                    \
-    {                                   \
-      __asm__ __volatile__              \
-      (                                 \
-        "mcr " CP15_ ## reg(0, op) "\n" \
-        :: "r"(value): "memory"         \
-      );                                \
-    }                                   \
-  while(0)                              \
+#define CP15_SET2(reg, op, value)                  \
+  do                                               \
+    {                                              \
+      __asm__ __volatile__                         \
+      (                                            \
+        "mcr " CONCATENATE(CP15_, reg)(0, op) "\n" \
+        :: "r"(value): "memory"                    \
+      );                                           \
+    }                                              \
+  while(0)                                         \
 
-#define CP15_GET(reg)                   \
-  ({                                    \
-     uint32_t _value;                   \
-     __asm__ __volatile__               \
-     (                                  \
-       "mrc " CP15_ ## reg(0) "\n"      \
-       : "=r"(_value) :: "memory"       \
-     );                                 \
-     _value;                            \
-  })                                    \
+#define CP15_GET(reg)                              \
+  ({                                               \
+     uint32_t _value;                              \
+     __asm__ __volatile__                          \
+     (                                             \
+       "mrc " CONCATENATE(CP15_, reg)(0) "\n"      \
+       : "=r"(_value) :: "memory"                  \
+     );                                            \
+     _value;                                       \
+  })                                               \
 
-#define CP15_SET64(reg, value)          \
-  do                                    \
-    {                                   \
-      __asm__ __volatile__              \
-      (                                 \
-        "mcrr " CP15_ ## reg(0,0) "\n"  \
-        :: "r"(value): "memory"         \
-      );                                \
-    }                                   \
-  while(0)                              \
+#define CP15_SET64(reg, value)                     \
+  do                                               \
+    {                                              \
+      __asm__ __volatile__                         \
+      (                                            \
+        "mcrr " CONCATENATE(CP15_, reg)(0,0) "\n"  \
+        :: "r"(value): "memory"                    \
+      );                                           \
+    }                                              \
+  while(0)                                         \
 
-#define CP15_GET64(reg)                 \
-  ({                                    \
-     uint64_t _value;                   \
-     __asm__ __volatile__               \
-     (                                  \
-       "mrrc " CP15_ ## reg(0,0) "\n"   \
-       : "=r"(_value) :: "memory"       \
-     );                                 \
-     _value;                            \
-  })                                    \
+#define CP15_GET64(reg)                            \
+  ({                                               \
+     uint64_t _value;                              \
+     __asm__ __volatile__                          \
+     (                                             \
+       "mrrc " CONCATENATE(CP15_, reg)(0,0) "\n"   \
+       : "=r"(_value) :: "memory"                  \
+     );                                            \
+     _value;                                       \
+  })                                               \
 
 #define CP15_MODIFY(v,m,a) CP15_SET(a, ((CP15_GET(a) & ~(m)) | ((uintptr_t)(v) & (m))))
 

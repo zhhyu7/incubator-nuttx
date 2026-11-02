@@ -44,11 +44,36 @@
 #define CNT_CTL_IMASK_BIT       1
 #define CNT_CTL_ISTATUS_BIT     2
 
-#if defined(CONFIG_ARCH_TRUSTZONE_SECURE) || \
-    defined(CONFIG_ARCH_TRUSTZONE_DISABLED)
-#  define GIC_IRQ_TIMER         GIC_IRQ_STM
+/* AArch32 CNTP_* is banked per security state only when EL3 can execute
+ * AArch32 (FEAT_AA32EL3).  Under an external AArch64 EL3 a single instance
+ * remains, mapped to CNTP_CTL_EL0, which is the EL1 physical timer the
+ * normal world owns, and the secure physical timer moves to CNTPS_*_EL1,
+ * which AArch32 cannot encode.  A secure payload there has to use the
+ * virtual timer, so ARM_HAVE_EL3_MONITOR gates this rather than the
+ * security state alone.  The interrupt and the registers are selected
+ * together because the count and the compare must share a timebase.
+ *
+ * https://support.arm.com/documentation/ddi0601/2026-09/AArch32-Registers
+ */
+
+#if defined(CONFIG_ARCH_TRUSTZONE_SECURE) && \
+    defined(CONFIG_ARM_HAVE_EL3_MONITOR)
+#  define ARM_TIMER_IRQ         GIC_IRQ_VTM
+#  define ARM_TIMER_COUNT       CNTVCT
+#  define ARM_TIMER_TVAL        CNTV_TVAL
+#  define ARM_TIMER_CVAL        CNTV_CVAL
+#  define ARM_TIMER_CTL         CNTV_CTL
 #else
-#  define GIC_IRQ_TIMER         GIC_IRQ_PTM
+#  if defined(CONFIG_ARCH_TRUSTZONE_SECURE) || \
+      defined(CONFIG_ARCH_TRUSTZONE_DISABLED)
+#    define ARM_TIMER_IRQ       GIC_IRQ_STM
+#  else
+#    define ARM_TIMER_IRQ       GIC_IRQ_PTM
+#  endif
+#  define ARM_TIMER_COUNT       CNTPCT
+#  define ARM_TIMER_TVAL        CNTP_TVAL
+#  define ARM_TIMER_CVAL        CNTP_CVAL
+#  define ARM_TIMER_CTL         CNTP_CTL
 #endif
 
 /****************************************************************************
@@ -63,30 +88,30 @@ static inline void arm_timer_set_freq(uint32_t freq)
 
 static inline uint64_t arm_timer_phy_count(void)
 {
-  return CP15_GET64(CNTPCT);
+  return CP15_GET64(ARM_TIMER_COUNT);
 }
 
 static inline void arm_timer_phy_set_relative(uint32_t tval)
 {
-  CP15_SET(CNTP_TVAL, tval);
+  CP15_SET(ARM_TIMER_TVAL, tval);
 }
 
 static inline void arm_timer_phy_set_absolute(uint64_t cval)
 {
-  CP15_SET64(CNTP_CVAL, cval);
+  CP15_SET64(ARM_TIMER_CVAL, cval);
 }
 
 static inline void arm_timer_phy_enable(bool enable)
 {
   CP15_MODIFY((uint32_t)enable << CNT_CTL_ENABLE_BIT,
-              BIT(CNT_CTL_ENABLE_BIT), CNTP_CTL);
+              BIT(CNT_CTL_ENABLE_BIT), ARM_TIMER_CTL);
   UP_ISB();
 }
 
 static inline void arm_timer_phy_set_irq_mask(bool mask)
 {
   CP15_MODIFY((uint32_t)mask << CNT_CTL_IMASK_BIT,
-              BIT(CNT_CTL_IMASK_BIT), CNTP_CTL);
+              BIT(CNT_CTL_IMASK_BIT), ARM_TIMER_CTL);
   UP_ISB();
 }
 
@@ -152,7 +177,7 @@ static void arm_timer_initialize_per_cpu(unsigned int freq)
   arm_timer_phy_enable(true);
   arm_timer_phy_set_irq_mask(false);
 
-  up_enable_irq(GIC_IRQ_TIMER);
+  up_enable_irq(ARM_TIMER_IRQ);
 }
 
 /****************************************************************************
@@ -191,7 +216,7 @@ struct oneshot_lowerhalf_s *arm_timer_initialize(unsigned int freq)
 
   oneshot_count_init(lower, arm_timer_get_freq());
 
-  irq_attach(GIC_IRQ_TIMER, arm_timer_interrupt, lower);
+  irq_attach(ARM_TIMER_IRQ, arm_timer_interrupt, lower);
 
   return lower;
 }
