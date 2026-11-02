@@ -625,7 +625,6 @@ FAR struct tcp_conn_s *tcp_alloc(uint8_t domain)
 
   conn = mempool_allocate(&g_tcp_connections, 0);
 
-#ifndef CONFIG_NET_SOLINGER
   /* Is the free list empty? */
 
   if (!conn)
@@ -679,13 +678,9 @@ FAR struct tcp_conn_s *tcp_alloc(uint8_t domain)
            * of active connections and release all resources held by the
            * connection.
            *
-           * REVISIT:  Could there be any higher level, socket interface
-           * that needs to be informed that we did this to them?
-           *
-           * Actually yes. When CONFIG_NET_SOLINGER is enabled there is a
-           * pending callback in netclose_disconnect waiting for getting
-           * woken up.  Otherwise there's the callback too, but no one is
-           * waiting for it.
+           * No socket refers to it any more (crefs == 0) and close()
+           * does not wait for the close callback, also not with
+           * SO_LINGER, so nobody needs to be informed.
            */
 
           tcp_free(conn);
@@ -700,7 +695,6 @@ FAR struct tcp_conn_s *tcp_alloc(uint8_t domain)
           conn = mempool_allocate(&g_tcp_connections, 0);
         }
     }
-#endif
 
   tcp_conn_list_unlock();
 
