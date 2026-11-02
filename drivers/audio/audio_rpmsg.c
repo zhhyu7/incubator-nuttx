@@ -1647,6 +1647,44 @@ static int audio_rpmsg_enqueuebuffer(FAR struct audio_lowerhalf_s *dev,
 }
 
 /****************************************************************************
+ * Name: audio_rpmsg_flush
+ *
+ * Description:
+ *   Return the buffers that have not been sent to the peer yet.
+ *
+ ****************************************************************************/
+
+static int audio_rpmsg_flush(FAR struct audio_rpmsg_s *aud)
+{
+  FAR struct ap_buffer_s *partial = NULL;
+  FAR struct ap_buffer_s *apb;
+
+  nxrmutex_lock(&aud->mutex);
+
+  /* The head buffer may be partially sent, keep it for the peer. */
+
+  apb = (FAR struct ap_buffer_s *)dq_peek(&aud->pendq);
+  if (apb != NULL && apb->curbyte != 0)
+    {
+      partial = (FAR struct ap_buffer_s *)dq_remfirst(&aud->pendq);
+    }
+
+  while (!dq_empty(&aud->pendq))
+    {
+      apb = (FAR struct ap_buffer_s *)dq_remfirst(&aud->pendq);
+      audio_rpmsg_callback(aud, AUDIO_CALLBACK_DEQUEUE, apb);
+    }
+
+  if (partial != NULL)
+    {
+      dq_addfirst(&partial->dq_entry, &aud->pendq);
+    }
+
+  nxrmutex_unlock(&aud->mutex);
+  return OK;
+}
+
+/****************************************************************************
  * Name: audio_rpmsg_ioctl
  *
  * Description: Perform a device ioctl
@@ -1664,6 +1702,11 @@ static int audio_rpmsg_ioctl(FAR struct audio_lowerhalf_s *dev, int cmd,
   int ret;
 
   audinfo("cmd=%d arg=%lu\n", cmd, arg);
+
+  if (cmd == AUDIOIOC_FLUSH && !aud->consumer)
+    {
+      return audio_rpmsg_flush(aud);
+    }
 
   ret = audio_rpmsg_local_ioctl(aud, cmd, arg);
   if (ret != -ENOTTY)
