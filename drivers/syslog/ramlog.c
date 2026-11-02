@@ -270,7 +270,7 @@ static void ramlog_dump(void)
 
   up_puts("\r\n========== RAMLOG DUMP BEGIN ==========\r\n");
 
-  ring_mpmc_dequeue_start(r, UINT32_MAX, 1, &buf);
+  ring_mpmc_dequeue_start(r, UINT32_MAX, &buf);
 
 #if CONFIG_RAMLOG_DUMP_ON_PANIC_SIZE > 0
   if (buf.cnt > CONFIG_RAMLOG_DUMP_ON_PANIC_SIZE)

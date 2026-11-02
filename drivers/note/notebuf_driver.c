@@ -62,8 +62,7 @@ static void notebuf_flush(FAR void *arg)
   size_t dropped = 0;
 #endif
 
-  ring_mpmc_dequeue_start(&buf->ring,
-                          ring_count(&buf->ring), 1, &rb);
+  ring_mpmc_dequeue_start(&buf->ring, ring_count(&buf->ring), &rb);
   if (rb.len1 > 0)
     {
 #ifdef CONFIG_DRIVERS_NOTE_STATS

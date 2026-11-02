@@ -357,7 +357,7 @@ static void note_netdev_flush(FAR struct note_driver_s *driver)
 
       count = MIN(count, maxlen);
 
-      ring_mpmc_dequeue_start(&drv->ring, count, 1, &buf);
+      ring_mpmc_dequeue_start(&drv->ring, count, &buf);
       note_netdev_copyin(drv, buf.ptr1, buf.len1);
       note_netdev_copyin(drv, buf.ptr2, buf.len2);
       ring_mpmc_dequeue_finish(&drv->ring, &buf);

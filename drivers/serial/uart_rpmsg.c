@@ -291,7 +291,7 @@ static ssize_t uart_rpmsg_read(FAR struct file *filep, FAR char *buffer,
 
   for (; ; )
     {
-      ring_spsc_dequeue_start(&priv->ring, buflen, sizeof(char), &rbuf);
+      ring_spsc_dequeue_start(&priv->ring, buflen, &rbuf);
 
       ret = 0;
       if (rbuf.len1 != 0)
