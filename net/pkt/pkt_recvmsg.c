@@ -176,8 +176,10 @@ static void pkt_recvfrom_newdata(FAR struct net_driver_s *dev,
  ****************************************************************************/
 
 static inline void pkt_recvfrom_sender(int ifindex, FAR struct iob_s *iob,
+                                       int l2offset, size_t framelen,
                                        FAR struct pkt_recvfrom_s *pstate)
 {
+  struct eth_hdr_s ethhdr;
   FAR struct sockaddr_ll *from;
 
   if (pstate->pr_msg->msg_name != NULL)
@@ -189,11 +191,11 @@ static inline void pkt_recvfrom_sender(int ifindex, FAR struct iob_s *iob,
 
       from->sll_halen = ETH_ALEN;
 
-      if (iob != NULL && iob->io_pktlen >= sizeof(struct eth_hdr_s))
+      if (iob != NULL && framelen >= sizeof(ethhdr) &&
+          iob_copyout((FAR uint8_t *)&ethhdr, iob, sizeof(ethhdr),
+                      l2offset) == sizeof(ethhdr))
         {
-          FAR struct eth_hdr_s *ethhdr =
-              (FAR struct eth_hdr_s *)iob->io_data;
-          memcpy(from->sll_addr, ethhdr->src, ETH_ALEN);
+          memcpy(from->sll_addr, ethhdr.src, ETH_ALEN);
         }
       else
         {
@@ -260,7 +262,8 @@ static uint32_t pkt_recvfrom_eventhandler(FAR struct net_driver_s *dev,
 
           /* Save the sender's address in the caller's 'from' location */
 
-          pkt_recvfrom_sender(dev->d_ifindex, dev->d_iob, pstate);
+          pkt_recvfrom_sender(dev->d_ifindex, dev->d_iob,
+                              -NET_LL_HDRLEN(dev), dev->d_len, pstate);
 
           /* indicate that the data has been consumed */
 
@@ -452,7 +455,8 @@ static inline int pkt_readdata(FAR struct pkt_recvfrom_s *pstate,
 
       if (dev != NULL && pstate->pr_msg->msg_name != NULL)
         {
-          pkt_recvfrom_sender(dev->d_ifindex, iob, pstate);
+          pkt_recvfrom_sender(dev->d_ifindex, iob, 0,
+                              iob->io_pktlen, pstate);
         }
 
       /* And free the I/O buffer chain */
