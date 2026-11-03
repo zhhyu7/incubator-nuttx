@@ -17,6 +17,7 @@ Review vela/nuttx patches against architect standards before submitting to Gerri
   - `_global.md` — cross-subsystem rules (patch org, style, root cause, error handling, ten good habits)
   - `<subsystem>.md` — subsystem-specific rules (one per subsystem in the routing table below)
 - **`examples/`** — *Case law*: full before/after diffs from source Gerrit changes. Loaded on demand (typically at most 1-2 example files per review), when an identified issue benefits from illustrating a concrete precedent (e.g., citing a `#change-id` from the Traceability table of a rules file). Keep token budget in mind — prefer citing the precedent by change-id without loading the full example when the rule alone is self-explanatory.
+- AICR gate rules are not in this skill. They are generated into `nuttx/.opencodereview/` from `nuttx/.claude/aicr-rules/` (this repo's part) and `.claude/aicr-rules/common/` (common part); see `.claude/aicr-rules/README.md`.
 
 ## Usage
 

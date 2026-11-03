@@ -1,0 +1,37 @@
+{
+  "schema": 1,
+  "repo": "vela/nuttx",
+  "files": {
+    "c.md": [
+      "@common/00-header.md",
+      "@common/10-memory.md",
+      "@common/20-concurrency.md",
+      "@common/30-resource.md",
+      "@common/40-error.md",
+      "@common/50-numeric.md",
+      "@common/60-input.md",
+      "70-embedded.md",
+      "80-arch-nuttx.md",
+      "@common/90-discipline.md",
+      "82-nuttx-extra.md"
+    ],
+    "kconfig.md": [
+      "@common/kconfig.md",
+      "kconfig-nuttx.md"
+    ],
+    "build.md": [
+      "@common/build.md",
+      "build-nuttx.md"
+    ],
+    "third-party.md": [
+      "@common/third-party.md"
+    ]
+  },
+  "exclude": [
+    "Documentation/**",
+    "**/*.rst",
+    "**/*.md",
+    ".claude/**"
+  ],
+  "kconfig_path": "**/{Kconfig*,defconfig}"
+}

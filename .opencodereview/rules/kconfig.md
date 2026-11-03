@@ -1,4 +1,4 @@
-<!-- 由 vela-tool-service/ci/aicr/rules/c/build.py 生成，勿手改；修改该目录下的 src/ 后重新生成 -->
+<!-- 由 vela/.claude aicr-rules/build.py 生成，勿手改；改 .claude/aicr-rules/ 或 vela/.claude aicr-rules/common/ 后重新生成。common=vela/.claude@8260436d5668 src=37fb1adb605bfa8c out=531d5eb3c3620d3c -->
 
 ## Vela Kconfig 评审规则
 
