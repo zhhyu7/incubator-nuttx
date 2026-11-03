@@ -39,6 +39,7 @@
 
 #include <nuttx/clock.h>
 #include <nuttx/coredump.h>
+#include <nuttx/init.h>
 #include <nuttx/kmalloc.h>
 #include <nuttx/kthread.h>
 #include <nuttx/mm/mm.h>
@@ -1694,6 +1695,16 @@ static int rptun_dev_stop(FAR struct remoteproc *rproc)
     }
   else if (priv->rproc.state != RPROC_OFFLINE)
     {
+      /* Dying core (interrupt or panic context): the full teardown
+       * would need a working scheduler and locks possibly held by
+       * the panicking task, so only stop the remote.
+       */
+
+      if (up_interrupt_context() || OSINIT_IS_PANIC())
+        {
+          return rptun_stop(rproc);
+        }
+
       if (priv->pid >= 0)
         {
           priv->stop = true;
@@ -1888,7 +1899,7 @@ static int rptun_ioctl_foreach(FAR const char *cpuname, int cmd,
   FAR struct rptun_priv_s *priv;
   int ret = OK;
 
-  if (!up_interrupt_context())
+  if (!up_interrupt_context() && !OSINIT_IS_PANIC())
     {
       nxrmutex_lock(&g_rptun_lock);
     }
@@ -1906,7 +1917,7 @@ static int rptun_ioctl_foreach(FAR const char *cpuname, int cmd,
         }
     }
 
-  if (!up_interrupt_context())
+  if (!up_interrupt_context() && !OSINIT_IS_PANIC())
     {
       nxrmutex_unlock(&g_rptun_lock);
     }

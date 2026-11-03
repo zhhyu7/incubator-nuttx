@@ -197,6 +197,10 @@ int board_power_off(int status)
 #ifdef CONFIG_BOARDCTL_RESET
 int board_reset(int status)
 {
+#ifdef CONFIG_RPTUN
+  rptun_poweroff(NULL);
+#endif
+
   /* Reset simulator */
 
   host_reset(status);
