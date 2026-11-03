@@ -384,3 +384,44 @@ FAR struct iob_s *netdev_iob_clone(FAR struct net_driver_s *dev,
 
   return iob;
 }
+
+/****************************************************************************
+ * Name: netdev_iob_clone_alloc
+ *
+ * Description:
+ *   Clone an IOB chain into a buffer for dev, from its allocator (d_alloc)
+ *   or the global pool when it supplies none, with NET_LL_GUARDSIZE(dev)
+ *   reserved at the head.  For a copy that is sent on dev, e.g. a
+ *   forwarded packet.
+ *
+ * Assumptions:
+ *   The caller has locked the network.
+ *
+ ****************************************************************************/
+
+FAR struct iob_s *netdev_iob_clone_alloc(FAR struct net_driver_s *dev,
+                                         FAR struct iob_s *iob,
+                                         bool throttled)
+{
+  FAR struct iob_s *clone;
+  int ret;
+
+  clone = netdev_iob_tryalloc(dev, IOB_BUFSIZE(iob), throttled);
+  if (clone == NULL)
+    {
+      nwarn("WARNING: IOB alloc failed for dev %s!\n", dev->d_ifname);
+      return NULL;
+    }
+
+  ret = iob_clone_partial(iob, iob->io_pktlen, 0, clone, 0,
+                          throttled, false);
+  if (ret < 0)
+    {
+      iob_free_chain(clone);
+      nwarn("WARNING: IOB clone failed for dev %s, ret=%d!\n",
+            dev->d_ifname, ret);
+      return NULL;
+    }
+
+  return clone;
+}

@@ -1377,6 +1377,30 @@ FAR struct iob_s *netdev_iob_clone(FAR struct net_driver_s *dev,
                                    bool throttled);
 
 /****************************************************************************
+ * Name: netdev_iob_clone_alloc
+ *
+ * Description:
+ *   Clone an IOB chain into a buffer for dev, from its allocator (d_alloc)
+ *   or the global pool when it supplies none, with NET_LL_GUARDSIZE(dev)
+ *   reserved at the head.  For a copy that is sent on dev, e.g. a
+ *   forwarded packet.  A d_alloc device must still accept a foreign
+ *   buffer on transmit, as the pool fallback hands it one.
+ *
+ * Input Parameters:
+ *   dev       - The device the copy is sent on.
+ *   iob       - The IOB chain to clone.
+ *   throttled - Draw from the throttled reserve when true.
+ *
+ * Assumptions:
+ *   The caller has locked the network.
+ *
+ ****************************************************************************/
+
+FAR struct iob_s *netdev_iob_clone_alloc(FAR struct net_driver_s *dev,
+                                         FAR struct iob_s *iob,
+                                         bool throttled);
+
+/****************************************************************************
  * Name: netdev_ipv6_add/del
  *
  * Description:

@@ -195,10 +195,12 @@ static int ipv4_decr_ttl(FAR struct ipv4_hdr_s *ipv4)
  *   the TX poll is received from the forwarding device.
  *
  * Input Parameters:
- *   dev      - The device on which the packet was received and which
- *              contains the IPv4 packet.
- *   fwdddev  - The device on which the packet must be forwarded.
- *   ipv4     - A pointer to the IPv4 header in within the IPv4 packet
+ *   dev       - The device on which the packet was received and which
+ *               contains the IPv4 packet.
+ *   fwdddev   - The device on which the packet must be forwarded.
+ *   broadcast - The packet goes to several devices and local delivery, so
+ *               dev keeps it unmodified and a copy is sent.  Otherwise it
+ *               is consumed on success.
  *
  * Returned Value:
  *   Zero is returned if the packet was successfully forward;  A negated
@@ -209,12 +211,14 @@ static int ipv4_decr_ttl(FAR struct ipv4_hdr_s *ipv4)
 
 static int ipv4_dev_forward(FAR struct net_driver_s *dev,
                             FAR struct net_driver_s *fwddev,
-                            FAR struct ipv4_hdr_s *ipv4)
+                            bool broadcast)
 {
+  FAR struct ipv4_hdr_s *ipv4 = IPv4BUF;
   FAR struct forward_s *fwd = NULL;
 #ifdef CONFIG_DEBUG_NET_WARN
   int hdrsize;
 #endif
+  bool migrate;
   int ret;
 
   if (IFF_IS_NODST_FORWARD(fwddev->d_flags))
@@ -301,9 +305,34 @@ static int ipv4_dev_forward(FAR struct net_driver_s *dev,
     }
 #endif
 
-  /* Relay the device buffer */
+  /* The forwarding device needs a copy in its own buffer when it allocates
+   * them itself or the headroom is less than it needs.
+   */
 
-  fwd->f_iob = dev->d_iob;
+  migrate = dev->d_iob->io_offset < NET_LL_GUARDSIZE(fwddev);
+#if CONFIG_IOB_EXTRA_HEADS > 0
+  migrate = migrate || fwddev->d_alloc != NULL;
+#endif
+
+  /* Relay the device buffer, or a copy when dev keeps the original */
+
+  if (broadcast || migrate)
+    {
+      fwd->f_iob = netdev_iob_clone_alloc(fwddev, dev->d_iob, true);
+    }
+  else
+    {
+      fwd->f_iob = dev->d_iob;
+    }
+
+  if (fwd->f_iob == NULL)
+    {
+      nwarn("WARNING: Failed to clone IOB\n");
+      ret = -ENOMEM;
+      goto errout_with_fwd;
+    }
+
+  ipv4 = (FAR struct ipv4_hdr_s *)IOB_DATA(fwd->f_iob);
 
   /* Decrement the TTL in the copy of the IPv4 header (retaining the
    * original TTL in the source to handle the broadcast case).  If the
@@ -334,13 +363,31 @@ static int ipv4_dev_forward(FAR struct net_driver_s *dev,
   ret = netfwd_forward(dev, fwd);
   if (ret >= 0)
     {
-      netdev_iob_clear(dev);
+      if (!broadcast)
+        {
+          if (migrate)
+            {
+              /* A copy was sent: drop the original */
+
+              netdev_iob_release(dev);
+            }
+
+          netdev_iob_clear(dev);
+        }
+
       return OK;
     }
 
 errout_with_fwd:
   if (fwd != NULL)
     {
+      /* Drop a copy that was not sent */
+
+      if (fwd->f_iob != NULL && fwd->f_iob != dev->d_iob)
+        {
+          iob_free_chain(fwd->f_iob);
+        }
+
       netfwd_free(fwd);
     }
 
@@ -373,8 +420,6 @@ static int ipv4_forward_callback(FAR struct net_driver_s *fwddev,
                                  FAR void *arg)
 {
   FAR struct net_driver_s *dev = (FAR struct net_driver_s *)arg;
-  FAR struct ipv4_hdr_s *ipv4;
-  FAR struct iob_s *iob;
   int ret;
 
   DEBUGASSERT(fwddev != NULL);
@@ -395,34 +440,16 @@ static int ipv4_forward_callback(FAR struct net_driver_s *fwddev,
 
   if (fwddev != dev)
     {
-      /* Backup the forward IP packet */
-
-      iob = netdev_iob_clone(dev, true);
-      if (iob == NULL)
-        {
-          nerr("ERROR: IOB clone failed when forwarding broadcast.\n");
-          return -ENOMEM;
-        }
-
-      /* Recover the pointer to the IPv4 header in the receiving device's
-       * d_buf.
+      /* Send a copy asynchrously on the forwarding device; dev keeps the
+       * original for the remaining devices and local delivery.
        */
 
-      ipv4 = IPv4BUF;
-
-      /* Send the packet asynchrously on the forwarding device. */
-
-      ret = ipv4_dev_forward(dev, fwddev, ipv4);
+      ret = ipv4_dev_forward(dev, fwddev, true);
       if (ret < 0)
         {
-          iob_free_chain(iob);
           nwarn("WARNING: ipv4_dev_forward failed: %d\n", ret);
           return ret;
         }
-
-      /* Restore device iob with backup iob */
-
-      netdev_iob_replace(dev, iob);
     }
 
   return OK;
@@ -502,7 +529,7 @@ int ipv4_forward(FAR struct net_driver_s *dev, FAR struct ipv4_hdr_s *ipv4)
     {
       /* Send the packet asynchrously on the forwarding device. */
 
-      ret = ipv4_dev_forward(dev, fwddev, ipv4);
+      ret = ipv4_dev_forward(dev, fwddev, false);
       if (ret < 0)
         {
           nwarn("WARNING: ipv4_dev_forward failed: %d\n", ret);

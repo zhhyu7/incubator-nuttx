@@ -318,10 +318,12 @@ static int ipv6_packet_conversion(FAR struct net_driver_s *dev,
  *   the TX poll is received from the forwarding device.
  *
  * Input Parameters:
- *   dev      - The device on which the packet was received and which
- *              contains the IPv6 packet.
- *   fwdddev  - The device on which the packet must be forwarded.
- *   ipv6     - A pointer to the IPv6 header in within the IPv6 packet
+ *   dev       - The device on which the packet was received and which
+ *               contains the IPv6 packet.
+ *   fwdddev   - The device on which the packet must be forwarded.
+ *   broadcast - The packet goes to several devices and local delivery, so
+ *               dev keeps it unmodified and a copy is sent.  Otherwise it
+ *               is consumed on success.
  *
  * Returned Value:
  *   Zero is returned if the packet was successfully forwarded;  A negated
@@ -332,12 +334,18 @@ static int ipv6_packet_conversion(FAR struct net_driver_s *dev,
 
 static int ipv6_dev_forward(FAR struct net_driver_s *dev,
                             FAR struct net_driver_s *fwddev,
-                            FAR struct ipv6_hdr_s *ipv6)
+                            bool broadcast)
 {
+  FAR struct ipv6_hdr_s *ipv6 = IPv6BUF;
   FAR struct forward_s *fwd = NULL;
+#ifdef CONFIG_NET_6LOWPAN
+  uint8_t ttl = ipv6->ttl;
+  int len = dev->d_len;
+#endif
 #ifdef CONFIG_DEBUG_NET_WARN
   int hdrsize;
 #endif
+  bool migrate;
   int ret;
 
   /* Check if destination device supports IP forwarding capability */
@@ -383,6 +391,19 @@ static int ipv6_dev_forward(FAR struct net_driver_s *dev,
   /* Perform any necessary packet conversions. */
 
   ret = ipv6_packet_conversion(dev, fwddev, ipv6);
+
+#ifdef CONFIG_NET_6LOWPAN
+  if (broadcast)
+    {
+      /* A conversion sends the packet in place, decrementing its TTL and
+       * clearing d_len; a broadcast keeps the packet as received.
+       */
+
+      ipv6->ttl  = ttl;
+      dev->d_len = len;
+    }
+#endif
+
   if (ret < 0)
     {
       nwarn("WARNING: ipv6_packet_conversion failed: %d\n", ret);
@@ -443,9 +464,34 @@ static int ipv6_dev_forward(FAR struct net_driver_s *dev,
         }
 #endif
 
-      /* Relay the device buffer */
+      /* The forwarding device needs a copy in its own buffer when it
+       * allocates them itself or the headroom is less than it needs.
+       */
 
-      fwd->f_iob = dev->d_iob;
+      migrate = dev->d_iob->io_offset < NET_LL_GUARDSIZE(fwddev);
+#if CONFIG_IOB_EXTRA_HEADS > 0
+      migrate = migrate || fwddev->d_alloc != NULL;
+#endif
+
+      /* Relay the device buffer, or a copy when dev keeps the original */
+
+      if (broadcast || migrate)
+        {
+          fwd->f_iob = netdev_iob_clone_alloc(fwddev, dev->d_iob, true);
+        }
+      else
+        {
+          fwd->f_iob = dev->d_iob;
+        }
+
+      if (fwd->f_iob == NULL)
+        {
+          nwarn("WARNING: Failed to clone IOB\n");
+          ret = -ENOMEM;
+          goto errout_with_fwd;
+        }
+
+      ipv6 = (FAR struct ipv6_hdr_s *)IOB_DATA(fwd->f_iob);
 
       /* Decrement the TTL in the copy of the IPv6 header (retaining the
        * original TTL in the sourcee to handle the broadcast case).  If the
@@ -476,7 +522,18 @@ static int ipv6_dev_forward(FAR struct net_driver_s *dev,
       ret = netfwd_forward(dev, fwd);
       if (ret >= 0)
         {
-          netdev_iob_clear(dev);
+          if (!broadcast)
+            {
+              if (migrate)
+                {
+                  /* A copy was sent: drop the original */
+
+                  netdev_iob_release(dev);
+                }
+
+              netdev_iob_clear(dev);
+            }
+
           return OK;
         }
     }
@@ -484,6 +541,13 @@ static int ipv6_dev_forward(FAR struct net_driver_s *dev,
 errout_with_fwd:
   if (fwd != NULL)
     {
+      /* Drop a copy that was not sent */
+
+      if (fwd->f_iob != NULL && fwd->f_iob != dev->d_iob)
+        {
+          iob_free_chain(fwd->f_iob);
+        }
+
       netfwd_free(fwd);
     }
 
@@ -516,8 +580,6 @@ static int ipv6_forward_callback(FAR struct net_driver_s *fwddev,
                                  FAR void *arg)
 {
   FAR struct net_driver_s *dev = (FAR struct net_driver_s *)arg;
-  FAR struct ipv6_hdr_s *ipv6;
-  FAR struct iob_s *iob;
   int ret;
 
   DEBUGASSERT(fwddev != NULL);
@@ -538,34 +600,16 @@ static int ipv6_forward_callback(FAR struct net_driver_s *fwddev,
 
   if (fwddev != dev)
     {
-      /* Backup the forward IP packet */
-
-      iob = netdev_iob_clone(dev, true);
-      if (iob == NULL)
-        {
-          nerr("ERROR: IOB clone failed when forwarding broadcast.\n");
-          return -ENOMEM;
-        }
-
-      /* Recover the pointer to the IPv6 header in the receiving device's
-       * d_buf.
+      /* Send a copy asynchrously on the forwarding device; dev keeps the
+       * original for the remaining devices and local delivery.
        */
 
-      ipv6 = IPv6BUF;
-
-      /* Send the packet asynchrously on the forwarding device. */
-
-      ret = ipv6_dev_forward(dev, fwddev, ipv6);
+      ret = ipv6_dev_forward(dev, fwddev, true);
       if (ret < 0)
         {
-          iob_free_chain(iob);
           nwarn("WARNING: ipv6_dev_forward failed: %d\n", ret);
           return ret;
         }
-
-      /* Restore device iob with backup iob */
-
-      netdev_iob_replace(dev, iob);
     }
 
   return OK;
@@ -643,7 +687,7 @@ int ipv6_forward(FAR struct net_driver_s *dev, FAR struct ipv6_hdr_s *ipv6)
     {
       /* Send the packet asynchrously on the forwarding device. */
 
-      ret = ipv6_dev_forward(dev, fwddev, ipv6);
+      ret = ipv6_dev_forward(dev, fwddev, false);
       if (ret < 0)
         {
           nwarn("WARNING: ipv6_dev_forward failed: %d\n", ret);
