@@ -73,5 +73,9 @@ if(CONFIG_RPMSG)
     list(APPEND SRCS rpmsg_procfs.c)
   endif()
 
+  if(CONFIG_RPMSG_WAKELOCK)
+    list(APPEND SRCS rpmsg_wakelock.c)
+  endif()
+
   target_sources(drivers PRIVATE ${SRCS})
 endif()
