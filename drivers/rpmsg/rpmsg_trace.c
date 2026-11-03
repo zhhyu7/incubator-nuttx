@@ -107,21 +107,32 @@ void rpmsg_vtrace(FAR const char *name, bool bt, FAR const void *buf,
           FAR void *buffer[CONFIG_RPMSG_TRACE_BACKTRACE];
           char buf[BACKTRACE_BUFFER_SIZE(CONFIG_RPMSG_TRACE_BACKTRACE)];
           struct va_format vaf;
+          va_list copy;
 
+          /* va_list may be an array type, so &ap of a parameter is not
+           * a va_list *; take a local copy instead.
+           */
+
+          va_copy(copy, ap);
           vaf.fmt = format;
-          vaf.va = &ap;
+          vaf.va = &copy;
 
           backtrace(buffer, CONFIG_RPMSG_TRACE_BACKTRACE);
           backtrace_format(buf, sizeof(buf), buffer,
                            CONFIG_RPMSG_TRACE_BACKTRACE);
           flags = spin_lock_irqsave(&g_rpmsg_trace_lock);
           rpmsg_trace_printf("%pV, %s", &vaf, buf);
+          va_end(copy);
         }
       else
 #endif
         {
+          va_list copy;
+
+          va_copy(copy, ap);
           flags = spin_lock_irqsave(&g_rpmsg_trace_lock);
-          rpmsg_trace_vprintf(format, ap);
+          rpmsg_trace_vprintf(format, copy);
+          va_end(copy);
         }
 
       rpmsg_trace_binary(buf, len);
