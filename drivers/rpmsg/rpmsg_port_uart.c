@@ -537,11 +537,21 @@ static void
 rpmsg_port_uart_process_rx_conn(FAR struct rpmsg_port_uart_s *rpuart,
                                 uint8_t ch)
 {
+  bool conned;
+
+  /* Only the EVT_CONNED update is serialized against the tx thread's
+   * check-and-send; register/unregister below may re-enter this function
+   * on the same thread through the rx worker.
+   */
+
   nxmutex_lock(&rpuart->conn_lock);
+  conned = rpmsg_port_uart_set(rpuart, RPMSG_PORT_UART_EVT_CONNED);
+  nxmutex_unlock(&rpuart->conn_lock);
+
   if (ch == RPMSG_PORT_UART_CONNREQ)
     {
       rpmsgvbs("Connect Request Command 0x%lx\n", rpuart->event.events);
-      if (rpmsg_port_uart_set(rpuart, RPMSG_PORT_UART_EVT_CONNED))
+      if (conned)
         {
           rpmsg_port_drop_packets(&rpuart->port, RPMSG_PORT_DROP_TXQ);
           rpmsg_port_unregister(&rpuart->port);
@@ -554,14 +564,12 @@ rpmsg_port_uart_process_rx_conn(FAR struct rpmsg_port_uart_s *rpuart,
   else if (ch == RPMSG_PORT_UART_CONNACK)
     {
       rpmsgvbs("Connect Ack Command 0x%lx\n", rpuart->event.events);
-      if (!rpmsg_port_uart_set(rpuart, RPMSG_PORT_UART_EVT_CONNED))
+      if (!conned)
         {
           rpmsg_port_drop_packets(&rpuart->port, RPMSG_PORT_DROP_ALL);
           rpmsg_port_register(&rpuart->port, rpuart->localcpu);
         }
     }
-
-  nxmutex_unlock(&rpuart->conn_lock);
 }
 
 /****************************************************************************
