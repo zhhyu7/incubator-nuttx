@@ -24,7 +24,9 @@
 
 #include <debug.h>
 
+#include <inttypes.h>
 #include <sys/param.h>
+#include <string.h>
 
 #include <nuttx/list.h>
 #include <nuttx/kmalloc.h>
@@ -240,14 +242,27 @@ static int rpmsg_wakelock_ept_cb(FAR struct rpmsg_endpoint *ept,
                                  FAR void *priv)
 {
   FAR struct rpmsg_wakelock_msg_s *msg = data;
-  uint32_t command = msg->cmd;
+  uint32_t command;
 
-  if (command < nitems(g_rpmsg_wakelock_handler))
+  /* The name must end with a NUL inside the received message */
+
+  if (len < sizeof(*msg) ||
+      memchr(msg->data, '\0', len - offsetof(struct rpmsg_wakelock_msg_s,
+                                             data)) == NULL)
+    {
+      rpmsgerr("rpmsg_wakelock_ept_cb: bad message, len %zu\n", len);
+      return -EINVAL;
+    }
+
+  command = msg->cmd;
+  if (command < nitems(g_rpmsg_wakelock_handler) &&
+      g_rpmsg_wakelock_handler[command] != NULL)
     {
       return g_rpmsg_wakelock_handler[command](ept, data, len, src, priv);
     }
 
-  rpmsgerr("rpmsg_wakelock_ept_cb: invalid command: %d\n", command);
+  rpmsgerr("rpmsg_wakelock_ept_cb: invalid command: %" PRIu32 "\n",
+           command);
   return -EINVAL;
 }
 
@@ -277,6 +292,15 @@ int rpmsg_wakelock(FAR struct rpmsg_endpoint *ept,
   int ret;
 
   DEBUGASSERT(priv != NULL);
+
+  /* pm_wakelock_init() keeps a shorter name only, which the peer could
+   * not match on release.
+   */
+
+  if (strlen(str) >= sizeof(((FAR struct pm_wakelock_s *)0)->name))
+    {
+      return -ENAMETOOLONG;
+    }
 
   msg = rpmsg_get_tx_payload_buffer(ept, &msglen, true);
   if (msg == NULL)
@@ -371,8 +395,23 @@ int rpmsg_wakelock_init(FAR struct rpmsg_device *rdev,
 void rpmsg_wakelock_deinit(FAR struct rpmsg_endpoint *ept)
 {
   FAR struct rpmsg_wakelock_s *priv = ept->priv;
+  FAR struct rpmsg_wakelock_node_s *wl;
+  FAR struct rpmsg_wakelock_node_s *tmp;
 
   rpmsg_destroy_ept(ept);
+
+  /* Drop what a peer that went away still holds, or this CPU never
+   * sleeps again.
+   */
+
+  list_for_every_entry_safe(&priv->list, wl, tmp,
+                            struct rpmsg_wakelock_node_s, node)
+    {
+      list_delete(&wl->node);
+      pm_wakelock_uninit(&wl->wakelock);
+      kmm_free(wl);
+    }
+
   nxmutex_destroy(&priv->lock);
   kmm_free(priv);
 }
