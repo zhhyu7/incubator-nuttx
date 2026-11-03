@@ -31,6 +31,7 @@
 
 #include <assert.h>
 #include <errno.h>
+#include <string.h>
 #include <debug.h>
 #include <fnmatch.h>
 
@@ -88,6 +89,8 @@ static ssize_t rpmsg_procfs_read(FAR struct file *filep, FAR char *buffer,
                                  size_t buflen);
 static ssize_t rpmsg_procfs_write(FAR struct file *filep,
                                   FAR const char *buffer, size_t buflen);
+static int     rpmsg_procfs_stat(FAR const char *relpath,
+                                 FAR struct stat *buf);
 
 /****************************************************************************
  * Private Data
@@ -99,6 +102,14 @@ static const struct procfs_operations g_rpmsg_procfs_ops =
   rpmsg_procfs_close,  /* close */
   rpmsg_procfs_read,   /* read */
   rpmsg_procfs_write,  /* write */
+  NULL,                /* poll */
+
+  NULL,                /* opendir */
+  NULL,                /* closedir */
+  NULL,                /* readdir */
+  NULL,                /* rewinddir */
+
+  rpmsg_procfs_stat,   /* stat */
 };
 
 static struct procfs_entry_s g_rpmsg_procfs_root =
@@ -152,6 +163,17 @@ static int rpmsg_procfs_close(FAR struct file *filep)
 
   kmm_free(filep->f_priv);
   filep->f_priv = NULL;
+  return OK;
+}
+
+/****************************************************************************
+ * Name: rpmsg_procfs_stat
+ ****************************************************************************/
+
+static int rpmsg_procfs_stat(FAR const char *relpath, FAR struct stat *buf)
+{
+  memset(buf, 0, sizeof(struct stat));
+  buf->st_mode = S_IFREG | S_IROTH | S_IRGRP | S_IRUSR | S_IWUSR;
   return OK;
 }
 
