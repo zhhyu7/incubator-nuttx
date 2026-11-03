@@ -370,15 +370,19 @@ FAR struct kwork_wqueue_s *work_queue_create(FAR const char *name,
  * Name: work_queue_dispatch
  *
  * Description:
- *   Execute all pending work items on a given work queue by iterating
- *   through each worker thread and invoking its execution routine.
+ *   Run the expired work of a queue on the calling thread. The caller
+ *   must be one of the queue's workers, typically a callback that waits
+ *   for something another work item of the same queue provides;
+ *   otherwise nothing is done.
  *
  * Input Parameters:
  *   wqueue - Work queue instance.
  *
  ****************************************************************************/
 
+#if defined(CONFIG_BUILD_FLAT) || defined(__KERNEL__)
 void work_queue_dispatch(FAR struct kwork_wqueue_s *wqueue);
+#endif
 
 /****************************************************************************
  * Name: work_queue_free
@@ -412,7 +416,9 @@ int work_queue_free(FAR struct kwork_wqueue_s *wqueue);
  *
  * **************************************************************************/
 
+#if defined(CONFIG_BUILD_FLAT) || defined(__KERNEL__)
 bool work_queue_in_queue(FAR struct kwork_wqueue_s *wqueue);
+#endif
 
 /****************************************************************************
  * Name: work_queue/work_queue_wq
@@ -513,9 +519,11 @@ int work_queue_priority_wq(FAR struct kwork_wqueue_s *wqueue);
  *
  ****************************************************************************/
 
+#if defined(CONFIG_BUILD_FLAT) || defined(__KERNEL__)
 int work_queue_setpriority(int qid, int priority);
 int work_queue_setpriority_wq(FAR struct kwork_wqueue_s *wqueue,
                               int priority);
+#endif
 
 /****************************************************************************
  * Name: work_cancel/work_cancel_wq

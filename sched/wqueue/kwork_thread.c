@@ -133,6 +133,7 @@ DEFINE_PER_CPU_BSS_BMP(struct lp_wqueue_s, g_lpwork);
 static inline_function void work_dispatch(FAR struct kwork_wqueue_s *wqueue,
                                           FAR struct kworker_s *kworker)
 {
+  FAR struct work_s *running = kworker->work;
   FAR struct work_s *work;
   FAR struct work_s *next;
   unsigned int wakeups = 0u;
@@ -244,9 +245,11 @@ static inline_function void work_dispatch(FAR struct kwork_wqueue_s *wqueue,
       sched_note_wqueue_leave(worker, arg);
       flags = wqueue_lock(wqueue, true);
 
-      /* Mark the thread un-busy */
+      /* Back to the callback that called work_queue_dispatch(), if any,
+       * so work_cancel_sync() still finds it running.
+       */
 
-      kworker->work = NULL;
+      kworker->work = running;
 
       /* Accumulate any cancel_sync waiters; they are posted once the lock
        * is released at the end of the function.
@@ -397,8 +400,10 @@ static int work_thread_create(FAR const char *name, int priority,
  * Name: work_queue_dispatch
  *
  * Description:
- *   Execute all pending work items on a given work queue by iterating
- *   through each worker thread and invoking its execution routine.
+ *   Run the expired work of a queue on the calling thread. The caller
+ *   must be one of the queue's workers, typically a callback that waits
+ *   for something another work item of the same queue provides;
+ *   otherwise nothing is done.
  *
  * Input Parameters:
  *   wqueue - Work queue instance.
