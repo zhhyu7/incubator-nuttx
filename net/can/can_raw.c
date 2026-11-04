@@ -780,11 +780,15 @@ static ssize_t can_raw_sendmsg(FAR struct socket *psock,
 
   if (nonblock)
     {
-      iob = netdev_iob_tryalloc(conn->dev, NET_CAN_BUFSIZE, true);
+      iob = netdev_iob_tryalloc(conn->dev,
+                                NET_CAN_PKTSIZE +
+                                NET_LL_GUARDSIZE(conn->dev), true);
     }
   else
     {
-      iob = netdev_iob_timedalloc(conn->dev, NET_CAN_BUFSIZE, true,
+      iob = netdev_iob_timedalloc(conn->dev,
+                                  NET_CAN_PKTSIZE +
+                                  NET_LL_GUARDSIZE(conn->dev), true,
                                   _SO_TIMEOUT(conn->sconn.s_sndtimeo));
     }
 

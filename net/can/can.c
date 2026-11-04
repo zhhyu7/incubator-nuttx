@@ -1216,7 +1216,7 @@ int can_cansend(FAR struct can_conn_s *conn)
    * one free IOB to initialize the write buffer head.
    */
 
-  if (iob_navail_with_size(NET_CAN_BUFSIZE, false) <= 0
+  if (iob_navail_with_size(NET_CAN_PKTSIZE, false) <= 0
 #if CONFIG_NET_SEND_BUFSIZE > 0
       || iob_get_queue_size(&conn->write_q) >= conn->sconn.s_sndbufs
 #endif

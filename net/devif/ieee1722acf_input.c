@@ -391,20 +391,15 @@ int ieee1722acf_input(FAR struct net_driver_s *dev, uint8_t subtype)
           goto out;
         }
 
-      can_iob = netdev_iob_tryalloc(dev, NET_CAN_BUFSIZE, true);
+      /* The CAN frame is only passed up to can_input(), no headroom needed */
+
+      can_iob = iob_tryalloc_with_size(NET_CAN_PKTSIZE, true);
       if (can_iob == NULL)
         {
           nerr("ERROR: Failed to allocate CAN IOB\n");
           ret = -ENOMEM;
           goto out;
         }
-
-      /* Reserve headroom equal to the source device's L2 header length so
-       * that IOB_DATA points to the CAN frame start, without having to
-       * pretend the source device has no L2 header.
-       */
-
-      can_iob->io_offset = NET_LL_HDRLEN(dev);
 
       IOB_SET_OWNER(can_iob, "ieee1722acf forward");
 
