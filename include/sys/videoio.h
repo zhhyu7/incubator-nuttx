@@ -1779,7 +1779,7 @@ struct v4l2_decoder_cmd
 
 /* Query control */
 
-#define VIDIOC_QUERY_EXT_CTRL         _VIDIOC(0x00c0)
+#define VIDIOC_QUERY_EXT_CTRL         _VIDIOC(0x0067)
 
 /* Cancel DQBUF
  *  enum #v4l2_buf_type
