@@ -1,0 +1,10 @@
+{
+  "admission": {
+    "modules": [
+      "Vela_System_Timer_Timer_Integration",
+      "Vela_System_Timer_Posix_timer_Integration",
+      "Vela_System_Arch_Timer_Integration"
+    ],
+    "comment": "timer subsystem: exercised by timerjitter / cmocka_time / cmocka_posix_timer"
+  }
+}

@@ -1,0 +1,6 @@
+{
+  "admission": {
+    "modules": ["Vela_System_Arch_Os_Integration"],
+    "comment": "smoke: basic boot test for the nuttx repo"
+  }
+}

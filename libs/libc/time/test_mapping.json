@@ -1,0 +1,11 @@
+{
+  "admission": {
+    "modules": [
+      "Vela_System_Arch_Time_zone_Integration",
+      "Vela_System_Timer_Timer_Integration",
+      "Vela_System_Timer_Posix_timer_Integration",
+      "Vela_System_Arch_Timer_Integration"
+    ],
+    "comment": "TZ and time library (direct); timer cases rely on clock APIs as their time base (indirect)"
+  }
+}

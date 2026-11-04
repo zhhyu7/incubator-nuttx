@@ -1,0 +1,9 @@
+{
+  "admission": {
+    "modules": [
+      "Vela_System_Sched_Pthread_Pthread_Integration",
+      "Vela_System_Arch_Pthread_Integration"
+    ],
+    "comment": "pthread implementation (direct); mutex lives in nuttx/libs/libc/pthread/ so it is not mapped here"
+  }
+}

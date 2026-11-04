@@ -1,0 +1,6 @@
+{
+  "admission": {
+    "modules": [],
+    "comment": "assessed: no wdog covering case exists (cmocka_time cases have none), smoke only"
+  }
+}

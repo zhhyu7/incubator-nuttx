@@ -1,0 +1,14 @@
+{
+  "admission": {
+    "modules": [
+      "Vela_System_Libc_Libctest_Integration",
+      "Vela_System_Pse52_Ansi_Integration",
+      "Vela_System_Pse52_Posix_Integration",
+      "Vela_System_Pse52_Xopen_Integration",
+      "Vela_System_Pse52_Xpg4_Integration",
+      "Vela_System_Sched_Pthread_Mutex_Integration",
+      "Vela_System_Ltp*"
+    ],
+    "comment": "libc conformance (libctest/PSE52); mutex implemented in libc/pthread (direct); LTP cases all call libc (indirect)"
+  }
+}
