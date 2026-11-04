@@ -1,0 +1,9 @@
+{
+  "admission": {
+    "modules": [
+      "Vela_System_Rpmsg_Cu_Integration",
+      "Vela_System_Rpmsg_Ping_Integration"
+    ],
+    "comment": "rptun public headers"
+  }
+}
