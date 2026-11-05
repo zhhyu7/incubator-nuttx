@@ -51,7 +51,11 @@ set(PROCESS_SIM_LD_SCRIPT
     -e 's/__init_array_start/_sinit/g' -e 's/__init_array_end/_einit/g' \
     -e 's/__fini_array_start/_sfini/g' -e 's/__fini_array_end/_efini/g' \
     -e 's/SEGMENT_START("text-segment", [^)]*)/SEGMENT_START("text-segment", 0x40000000)/g' \
-    -e 's/ALIGNOF(NEXT_SECTION)/ALIGNOF(.bss)/g' > "$target_ld"
+    -e 's/ALIGNOF(NEXT_SECTION)/ALIGNOF(.bss)/g' \
+    -e 's/\*(\.text \.stub \.text\.\* \.gnu\.linkonce\.t\.\*)/*(.text .stub .text.* .gnu.linkonce.t.*)\n    *(.ltext .ltext.*)/' \
+    -e 's/\.rodata \.rodata\.\* \.gnu\.linkonce\.r\.\*)/& *(.lrodata .lrodata.*)/' \
+    -e 's/\.data \.data\.\* \.gnu\.linkonce\.d\.\*)/& *(.ldata .ldata.*)\n    *asan_globals/' \
+    > "$target_ld"
     echo "__init_array_start = .; __init_array_end = .; __fini_array_start = .; __fini_array_end = .;" >> "$target_ld"
 ]])
 # cmake-format: on
