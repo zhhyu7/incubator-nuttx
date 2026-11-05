@@ -1,0 +1,18 @@
+{
+  "admission": {
+    "modules": [
+      "Vela_System_Driver_Audio_Integration",
+      "Vela_Media_Api_Focus_Integration",
+      "Vela_Media_Api_Player_Integration",
+      "Vela_Media_Api_Policy_Integration",
+      "Vela_Media_Api_Recorder_Integration",
+      "Vela_Media_Api_Session_Integration",
+      "Vela_Media_Focus_Integration",
+      "Vela_Media_Mediatool_Integration",
+      "Vela_Media_Mediatool_sync_Integration",
+      "Vela_Media_Mediatool_async_Integration",
+      "Vela_Media_Music_local_Integration"
+    ],
+    "comment": "AUDIOIOC ABI shared by the audio upper half, fake/tunnel drivers, alsa-lib, tinycompress and mediad policy"
+  }
+}

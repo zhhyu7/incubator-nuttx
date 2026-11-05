@@ -1,0 +1,6 @@
+{
+  "admission": {
+    "modules": ["Vela_System_Driver_Framebuffer_Integration"],
+    "comment": "framebuffer drivers exercised by drivertest_framebuffer; no media CT case uses video/v4l2 drivers"
+  }
+}
