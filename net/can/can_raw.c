@@ -635,9 +635,9 @@ static ssize_t can_raw_recvmsg(FAR struct socket *psock,
       return -ENOSYS;
     }
 
-  if (msg->msg_iovlen != 1)
+  if (msg->msg_iovlen == 0)
     {
-      return -ENOTSUP;
+      return -EMSGSIZE;
     }
 
   while (iob == NULL)
@@ -668,8 +668,8 @@ static ssize_t can_raw_recvmsg(FAR struct socket *psock,
       msg->msg_flags |= MSG_CONFIRM;
     }
 
-  recvlen = MIN(msg->msg_iov->iov_len, iob->io_pktlen);
-  ret = iob_copyout(msg->msg_iov->iov_base, iob, recvlen, 0);
+  ret = iob_copyout_iov(msg->msg_iov, msg->msg_iovlen, iob,
+                        iob->io_pktlen, 0);
   if (ret < 0)
     {
       iob_free_chain(iob);
@@ -719,7 +719,8 @@ static ssize_t can_raw_sendmsg(FAR struct socket *psock,
 {
   FAR struct can_conn_s *conn;
   FAR struct iob_s *iob;
-  size_t framelen;
+  size_t framelen = 0;
+  size_t i;
   bool nonblock;
   int ret;
 
@@ -743,12 +744,30 @@ static ssize_t can_raw_sendmsg(FAR struct socket *psock,
 
   conn = psock->s_conn;
 
-  if (msg == NULL || msg->msg_iovlen != 1)
+  if (msg == NULL)
     {
       return -EINVAL;
     }
 
-  framelen = msg->msg_iov->iov_len;
+  if (msg->msg_iovlen == 0)
+    {
+      return -EMSGSIZE;
+    }
+
+  for (i = 0; i < msg->msg_iovlen; i++)
+    {
+      if (msg->msg_iov[i].iov_len > CANFD_MTU - framelen)
+        {
+          return -EINVAL;
+        }
+
+      if (msg->msg_iov[i].iov_len > 0 && msg->msg_iov[i].iov_base == NULL)
+        {
+          return -EINVAL;
+        }
+
+      framelen += msg->msg_iov[i].iov_len;
+    }
 
 #if defined(CONFIG_NET_CANPROTO_OPTIONS) && defined(CONFIG_NET_CAN_CANFD)
   if (_SO_GETOPT(conn->sconn.s_options, CAN_RAW_FD_FRAMES))
@@ -801,16 +820,21 @@ static ssize_t can_raw_sendmsg(FAR struct socket *psock,
 
   if (nonblock)
     {
-      ret = iob_trycopyin(iob, msg->msg_iov->iov_base, framelen, 0,
-                          false);
+      ret = iob_trycopyin_iov(iob, msg->msg_iov, msg->msg_iovlen, 0,
+                              false);
     }
   else
     {
-      ret = iob_copyin(iob, msg->msg_iov->iov_base, framelen, 0, false);
+      ret = iob_copyin_iov(iob, msg->msg_iov, msg->msg_iovlen, 0, false);
     }
 
-  if (ret < 0)
+  if (ret < 0 || ret != framelen)
     {
+      if (ret >= 0)
+        {
+          ret = -ENOMEM;
+        }
+
       goto errout_with_iob;
     }
 
