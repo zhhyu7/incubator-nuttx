@@ -1,6 +1,10 @@
 {
   "admission": {
-    "modules": ["Vela_System_Arch_Os_Integration"],
-    "comment": "smoke: basic boot test for the nuttx repo"
+    "modules": [
+      "Vela_System_Arch_Os_Integration",
+      "Vela_System_Rpmsg_Cu_Integration",
+      "Vela_System_Rpmsg_Ping_Integration"
+    ],
+    "comment": "smoke: basic boot test and cross-core rpmsg for the nuttx repo"
   }
 }
